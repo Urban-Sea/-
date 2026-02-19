@@ -256,6 +256,181 @@ async def get_bos_analysis(ticker: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{ticker}/history")
+async def get_signal_history(
+    ticker: str,
+    period: str = Query("1y", description="分析期間: 3mo, 6mo, 1y, 2y"),
+    mode: str = Query("balanced", description="取引モード"),
+):
+    """
+    過去シグナル分析
+
+    指定期間内で発生した過去のエントリーシグナルを検出。
+    バックテスト的な分析結果を返す。
+
+    - **ticker**: 銘柄コード (例: NVDA)
+    - **period**: 分析期間 (3mo, 6mo, 1y, 2y)
+    - **mode**: 取引モード (aggressive, balanced, conservative)
+
+    Returns:
+        過去シグナル一覧、パフォーマンス統計
+    """
+    ticker = ticker.upper()
+    entry_mode = entry_mode_from_str(mode)
+
+    try:
+        import yfinance as yf
+        import pandas as pd
+        import numpy as np
+
+        # 株価データ取得
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period)
+
+        if df.empty or len(df) < 50:
+            raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
+
+        # EMA計算
+        df['EMA_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+        df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+        df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+
+        # RS計算（SPYとの相対強度）
+        try:
+            spy = yf.Ticker("SPY")
+            spy_df = spy.history(period=period)
+            if not spy_df.empty and len(spy_df) >= 20:
+                spy_df['RS'] = spy_df['Close'].pct_change(20) * 100
+                # dfとspy_dfの日付を合わせる
+                df = df.join(spy_df[['RS']].rename(columns={'RS': 'SPY_RS'}), how='left')
+                df['RS'] = df['Close'].pct_change(20) * 100
+                df['RS_diff'] = df['RS'] - df['SPY_RS'].fillna(0)
+        except Exception:
+            df['RS_diff'] = 0
+
+        highs = df['High'].tolist()
+        lows = df['Low'].tolist()
+        closes = df['Close'].tolist()
+
+        # BOS/CHoCH検出
+        bos_detector = BOSDetector()
+        bos_signals = bos_detector.detect_bos(highs, lows)
+        choch_signals = bos_detector.detect_choch(highs, lows)
+
+        # シグナル検出ロジック
+        signals = []
+
+        # CHoCHをインデックスでマップ
+        bearish_choch_indices = set()
+        bullish_choch_indices = set()
+        for choch in choch_signals:
+            if choch.choch_type.value == "BEARISH":
+                bearish_choch_indices.add(choch.index)
+            else:
+                bullish_choch_indices.add(choch.index)
+
+        # シグナル検出（50日目から開始）
+        for i in range(50, len(df)):
+            # 直近でBearish CHoCH → Bullish CHoCHのシーケンスを確認
+            recent_bearish = None
+            recent_bullish = None
+
+            for idx in range(max(0, i - 30), i):
+                if idx in bearish_choch_indices:
+                    recent_bearish = idx
+                if idx in bullish_choch_indices and recent_bearish is not None and idx > recent_bearish:
+                    recent_bullish = idx
+
+            if recent_bearish is None or recent_bullish is None:
+                continue
+
+            # EMA収束チェック
+            ema_8 = df['EMA_8'].iloc[i]
+            ema_21 = df['EMA_21'].iloc[i]
+            ema_conv = abs(ema_8 - ema_21) / df['Close'].iloc[i] * 100
+            if ema_conv > 2.0:  # 2%以上離れていたらスキップ
+                continue
+
+            # RS チェック（balanced mode）
+            rs_diff = df['RS_diff'].iloc[i] if 'RS_diff' in df.columns else 0
+            if mode == "balanced" and rs_diff < -10:
+                continue
+
+            # シグナル発生
+            date = df.index[i]
+            entry_price = float(df['Close'].iloc[i])
+
+            # 将来のパフォーマンス計算（5日後、10日後、20日後）
+            pnl_5d = None
+            pnl_10d = None
+            pnl_20d = None
+            max_pnl = None
+            min_pnl = None
+
+            if i + 5 < len(df):
+                pnl_5d = (df['Close'].iloc[i + 5] - entry_price) / entry_price * 100
+            if i + 10 < len(df):
+                pnl_10d = (df['Close'].iloc[i + 10] - entry_price) / entry_price * 100
+            if i + 20 < len(df):
+                pnl_20d = (df['Close'].iloc[i + 20] - entry_price) / entry_price * 100
+                # 20日間の最大・最小
+                future_prices = df['Close'].iloc[i:i+20]
+                max_pnl = (future_prices.max() - entry_price) / entry_price * 100
+                min_pnl = (future_prices.min() - entry_price) / entry_price * 100
+
+            signals.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "price": round(entry_price, 2),
+                "ema_convergence": round(ema_conv, 2),
+                "rs_diff": round(float(rs_diff) if not pd.isna(rs_diff) else 0, 2),
+                "pnl_5d": round(float(pnl_5d), 2) if pnl_5d is not None and not pd.isna(pnl_5d) else None,
+                "pnl_10d": round(float(pnl_10d), 2) if pnl_10d is not None and not pd.isna(pnl_10d) else None,
+                "pnl_20d": round(float(pnl_20d), 2) if pnl_20d is not None and not pd.isna(pnl_20d) else None,
+                "max_pnl_20d": round(float(max_pnl), 2) if max_pnl is not None and not pd.isna(max_pnl) else None,
+                "min_pnl_20d": round(float(min_pnl), 2) if min_pnl is not None and not pd.isna(min_pnl) else None,
+            })
+
+        # 統計計算
+        stats = {
+            "total_signals": len(signals),
+            "avg_pnl_5d": None,
+            "avg_pnl_10d": None,
+            "avg_pnl_20d": None,
+            "win_rate_5d": None,
+            "win_rate_10d": None,
+            "win_rate_20d": None,
+        }
+
+        if signals:
+            pnl_5d_list = [s["pnl_5d"] for s in signals if s["pnl_5d"] is not None]
+            pnl_10d_list = [s["pnl_10d"] for s in signals if s["pnl_10d"] is not None]
+            pnl_20d_list = [s["pnl_20d"] for s in signals if s["pnl_20d"] is not None]
+
+            if pnl_5d_list:
+                stats["avg_pnl_5d"] = round(float(np.mean(pnl_5d_list)), 2)
+                stats["win_rate_5d"] = round(len([p for p in pnl_5d_list if p > 0]) / len(pnl_5d_list) * 100, 1)
+            if pnl_10d_list:
+                stats["avg_pnl_10d"] = round(float(np.mean(pnl_10d_list)), 2)
+                stats["win_rate_10d"] = round(len([p for p in pnl_10d_list if p > 0]) / len(pnl_10d_list) * 100, 1)
+            if pnl_20d_list:
+                stats["avg_pnl_20d"] = round(float(np.mean(pnl_20d_list)), 2)
+                stats["win_rate_20d"] = round(len([p for p in pnl_20d_list if p > 0]) / len(pnl_20d_list) * 100, 1)
+
+        return {
+            "ticker": ticker,
+            "period": period,
+            "mode": mode,
+            "timestamp": datetime.now().isoformat(),
+            "signals": signals[-20:],  # 直近20件
+            "stats": stats,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{ticker}/regime")
 async def get_regime_for_ticker(ticker: str):
     """
