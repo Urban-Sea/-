@@ -10,7 +10,7 @@ asyncpg==0.29.0
 # Data processing
 pandas==2.2.0
 numpy==1.26.3
-yfinance==0.2.36
+yfinance>=0.2.40
 
 # Utilities
 python-dotenv==1.0.1
