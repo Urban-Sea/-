@@ -1,0 +1,19 @@
+# FastAPI
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Database
+supabase==2.3.4
+asyncpg==0.29.0
+
+# Data processing
+pandas==2.2.0
+numpy==1.26.3
+yfinance==0.2.36
+
+# Utilities
+python-dotenv==1.0.1
+httpx==0.26.0
+pydantic==2.6.1
+pydantic-settings==2.1.0
