@@ -786,8 +786,8 @@ async def get_chart_markers(
         bos_signals = bos_detector.detect_bos(highs, lows)
         choch_signals = bos_detector.detect_choch(highs, lows)
 
-        # FVG（Fair Value Gap）検出
-        fvg_list = []
+        # FVG（Fair Value Gap）検出 - 未埋めのみを返す
+        all_fvgs = []
         for i in range(2, len(df)):
             prev_high = df['High'].iloc[i-2]
             current_low = df['Low'].iloc[i]
@@ -797,8 +797,9 @@ async def get_chart_markers(
             # Bullish FVG: 2本前の高値 < 現在の安値（ギャップアップ）
             if prev_high < current_low:
                 gap_size = (current_low - prev_high) / prev_high * 100
-                if gap_size >= 1.0:  # 1.0%以上のギャップ（小さいFVGを除外）
-                    fvg_list.append({
+                if gap_size >= 1.5:  # 1.5%以上のギャップ（小さいFVGを除外）
+                    all_fvgs.append({
+                        "index": i,
                         "date": df['Date'].iloc[i],
                         "type": "BULLISH",
                         "top": float(current_low),
@@ -809,14 +810,38 @@ async def get_chart_markers(
             # Bearish FVG: 2本前の安値 > 現在の高値（ギャップダウン）
             if prev_low > current_high:
                 gap_size = (prev_low - current_high) / prev_low * 100
-                if gap_size >= 1.0:
-                    fvg_list.append({
+                if gap_size >= 1.5:
+                    all_fvgs.append({
+                        "index": i,
                         "date": df['Date'].iloc[i],
                         "type": "BEARISH",
                         "top": float(prev_low),
                         "bottom": float(current_high),
                         "gap_pct": round(gap_size, 2),
                     })
+
+        # 埋まったFVGを除外（後続の価格がギャップ内に入ったら埋まったとみなす）
+        fvg_list = []
+        for fvg in all_fvgs:
+            filled = False
+            for j in range(fvg["index"] + 1, len(df)):
+                price_low = df['Low'].iloc[j]
+                price_high = df['High'].iloc[j]
+                # Bullish FVG: 価格がギャップの下端(bottom)まで下落したら埋まった
+                if fvg["type"] == "BULLISH" and price_low <= fvg["bottom"]:
+                    filled = True
+                    break
+                # Bearish FVG: 価格がギャップの上端(top)まで上昇したら埋まった
+                if fvg["type"] == "BEARISH" and price_high >= fvg["top"]:
+                    filled = True
+                    break
+            if not filled:
+                # indexを削除してからリストに追加
+                fvg_clean = {k: v for k, v in fvg.items() if k != "index"}
+                fvg_list.append(fvg_clean)
+
+        # 最新10個に制限
+        fvg_list = fvg_list[-10:]
 
         # BOSマーカーを日付付きに変換
         bos_list = []
