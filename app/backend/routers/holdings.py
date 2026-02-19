@@ -1,5 +1,6 @@
 """
 /api/holdings - 保有銘柄CRUD
+設計ドキュメント準拠
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -11,13 +12,20 @@ router = APIRouter()
 
 class HoldingRecord(BaseModel):
     """保有銘柄レコード"""
-    id: Optional[int] = None
-    user_id: str
+    id: Optional[str] = None
+    user_id: Optional[str] = None
     ticker: str
     shares: float
-    avg_cost: float
+    avg_price: float
     entry_date: Optional[str] = None
+    account_type: Optional[str] = None  # 'nisa', 'tokutei'
     sector: Optional[str] = None
+    regime_at_entry: Optional[str] = None  # 'BULL', 'BEAR', 'RECOVERY', 'WEAKENING'
+    rs_at_entry: Optional[str] = None  # 'UP', 'FLAT', 'DOWN'
+    fx_rate: Optional[float] = 150.0
+    target_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    thesis: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -27,17 +35,28 @@ class HoldingCreate(BaseModel):
     """保有銘柄作成"""
     ticker: str
     shares: float
-    avg_cost: float
+    avg_price: float
     entry_date: Optional[str] = None
+    account_type: Optional[str] = "tokutei"
     sector: Optional[str] = None
+    regime_at_entry: Optional[str] = None
+    rs_at_entry: Optional[str] = None
+    fx_rate: Optional[float] = 150.0
+    target_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    thesis: Optional[str] = None
     notes: Optional[str] = None
 
 
 class HoldingUpdate(BaseModel):
     """保有銘柄更新"""
     shares: Optional[float] = None
-    avg_cost: Optional[float] = None
+    avg_price: Optional[float] = None
+    account_type: Optional[str] = None
     sector: Optional[str] = None
+    target_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    thesis: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -50,7 +69,7 @@ class HoldingsResponse(BaseModel):
 
 @router.get("", response_model=HoldingsResponse)
 async def get_holdings(
-    user_id: str = Query(..., description="ユーザーID"),
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     保有銘柄一覧を取得
@@ -60,18 +79,17 @@ async def get_holdings(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        result = (
-            supabase.table("holdings")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("ticker")
-            .execute()
-        )
+        query = supabase.table("holdings").select("*")
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        result = query.order("ticker").execute()
 
         holdings = [HoldingRecord(**row) for row in result.data]
 
-        # 合計評価額（avg_cost * shares）
-        total_value = sum(h.shares * h.avg_cost for h in holdings)
+        # 合計評価額（avg_price * shares）
+        total_value = sum(h.shares * h.avg_price for h in holdings)
 
         return HoldingsResponse(
             holdings=holdings,
@@ -86,7 +104,7 @@ async def get_holdings(
 @router.get("/{ticker}", response_model=HoldingRecord)
 async def get_holding(
     ticker: str,
-    user_id: str = Query(..., description="ユーザーID"),
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     特定銘柄の保有情報を取得
@@ -96,19 +114,17 @@ async def get_holding(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        result = (
-            supabase.table("holdings")
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("ticker", ticker.upper())
-            .single()
-            .execute()
-        )
+        query = supabase.table("holdings").select("*").eq("ticker", ticker.upper())
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        result = query.limit(1).execute()
 
         if not result.data:
             raise HTTPException(status_code=404, detail=f"Holding {ticker} not found")
 
-        return HoldingRecord(**result.data)
+        return HoldingRecord(**result.data[0])
 
     except HTTPException:
         raise
@@ -119,7 +135,7 @@ async def get_holding(
 @router.post("", response_model=HoldingRecord)
 async def create_holding(
     holding: HoldingCreate,
-    user_id: str = Query(..., description="ユーザーID"),
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     保有銘柄を追加
@@ -130,14 +146,23 @@ async def create_holding(
 
     try:
         data = {
-            "user_id": user_id,
             "ticker": holding.ticker.upper(),
             "shares": holding.shares,
-            "avg_cost": holding.avg_cost,
+            "avg_price": holding.avg_price,
             "entry_date": holding.entry_date,
+            "account_type": holding.account_type,
             "sector": holding.sector,
+            "regime_at_entry": holding.regime_at_entry,
+            "rs_at_entry": holding.rs_at_entry,
+            "fx_rate": holding.fx_rate,
+            "target_price": holding.target_price,
+            "stop_loss": holding.stop_loss,
+            "thesis": holding.thesis,
             "notes": holding.notes,
         }
+
+        if user_id:
+            data["user_id"] = user_id
 
         result = supabase.table("holdings").insert(data).execute()
 
@@ -152,11 +177,11 @@ async def create_holding(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/{ticker}", response_model=HoldingRecord)
+@router.put("/{holding_id}", response_model=HoldingRecord)
 async def update_holding(
-    ticker: str,
+    holding_id: str,
     holding: HoldingUpdate,
-    user_id: str = Query(..., description="ユーザーID"),
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     保有銘柄を更新
@@ -170,26 +195,33 @@ async def update_holding(
         update_data = {}
         if holding.shares is not None:
             update_data["shares"] = holding.shares
-        if holding.avg_cost is not None:
-            update_data["avg_cost"] = holding.avg_cost
+        if holding.avg_price is not None:
+            update_data["avg_price"] = holding.avg_price
+        if holding.account_type is not None:
+            update_data["account_type"] = holding.account_type
         if holding.sector is not None:
             update_data["sector"] = holding.sector
+        if holding.target_price is not None:
+            update_data["target_price"] = holding.target_price
+        if holding.stop_loss is not None:
+            update_data["stop_loss"] = holding.stop_loss
+        if holding.thesis is not None:
+            update_data["thesis"] = holding.thesis
         if holding.notes is not None:
             update_data["notes"] = holding.notes
 
         if not update_data:
             raise HTTPException(status_code=400, detail="No update data provided")
 
-        result = (
-            supabase.table("holdings")
-            .update(update_data)
-            .eq("user_id", user_id)
-            .eq("ticker", ticker.upper())
-            .execute()
-        )
+        query = supabase.table("holdings").update(update_data).eq("id", holding_id)
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        result = query.execute()
 
         if not result.data:
-            raise HTTPException(status_code=404, detail=f"Holding {ticker} not found")
+            raise HTTPException(status_code=404, detail=f"Holding not found")
 
         return HoldingRecord(**result.data[0])
 
@@ -199,10 +231,10 @@ async def update_holding(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{ticker}")
+@router.delete("/{holding_id}")
 async def delete_holding(
-    ticker: str,
-    user_id: str = Query(..., description="ユーザーID"),
+    holding_id: str,
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     保有銘柄を削除
@@ -212,18 +244,17 @@ async def delete_holding(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        result = (
-            supabase.table("holdings")
-            .delete()
-            .eq("user_id", user_id)
-            .eq("ticker", ticker.upper())
-            .execute()
-        )
+        query = supabase.table("holdings").delete().eq("id", holding_id)
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        result = query.execute()
 
         if not result.data:
-            raise HTTPException(status_code=404, detail=f"Holding {ticker} not found")
+            raise HTTPException(status_code=404, detail=f"Holding not found")
 
-        return {"status": "deleted", "ticker": ticker.upper()}
+        return {"status": "deleted", "holding_id": holding_id}
 
     except HTTPException:
         raise
@@ -231,12 +262,12 @@ async def delete_holding(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{ticker}/add")
-async def add_to_holding(
-    ticker: str,
+@router.post("/{holding_id}/add-shares")
+async def add_shares(
+    holding_id: str,
     shares: float = Query(..., description="追加株数"),
     price: float = Query(..., description="取得単価"),
-    user_id: str = Query(..., description="ユーザーID"),
+    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
 ):
     """
     既存の保有銘柄に買い増し（平均取得単価を再計算）
@@ -247,41 +278,38 @@ async def add_to_holding(
 
     try:
         # 現在の保有を取得
-        current = (
-            supabase.table("holdings")
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("ticker", ticker.upper())
-            .single()
-            .execute()
-        )
+        query = supabase.table("holdings").select("*").eq("id", holding_id)
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        current = query.single().execute()
 
         if not current.data:
-            raise HTTPException(status_code=404, detail=f"Holding {ticker} not found")
+            raise HTTPException(status_code=404, detail=f"Holding not found")
 
         old_shares = current.data["shares"]
-        old_cost = current.data["avg_cost"]
+        old_price = current.data["avg_price"]
 
         # 平均取得単価を再計算
         new_shares = old_shares + shares
-        new_avg_cost = ((old_shares * old_cost) + (shares * price)) / new_shares
+        new_avg_price = ((old_shares * old_price) + (shares * price)) / new_shares
 
         # 更新
         result = (
             supabase.table("holdings")
-            .update({"shares": new_shares, "avg_cost": new_avg_cost})
-            .eq("user_id", user_id)
-            .eq("ticker", ticker.upper())
+            .update({"shares": new_shares, "avg_price": new_avg_price})
+            .eq("id", holding_id)
             .execute()
         )
 
         return {
             "status": "updated",
-            "ticker": ticker.upper(),
+            "holding_id": holding_id,
             "old_shares": old_shares,
             "new_shares": new_shares,
-            "old_avg_cost": old_cost,
-            "new_avg_cost": round(new_avg_cost, 4),
+            "old_avg_price": old_price,
+            "new_avg_price": round(new_avg_price, 4),
         }
 
     except HTTPException:
