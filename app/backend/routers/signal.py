@@ -467,3 +467,115 @@ async def get_regime_for_ticker(ticker: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{ticker}/chart-markers")
+async def get_chart_markers(
+    ticker: str,
+    period: str = Query("3mo", description="チャート期間: 1mo, 3mo, 6mo, 1y"),
+):
+    """
+    チャート用マーカーデータ
+
+    BOS、CHoCH、FVGのマーカー位置を日付付きで返す
+
+    - **ticker**: 銘柄コード (例: NVDA)
+    - **period**: チャート期間
+
+    Returns:
+        BOS/CHoCH/FVGマーカー（日付付き）
+    """
+    ticker = ticker.upper()
+
+    try:
+        import yfinance as yf
+        import pandas as pd
+
+        # 株価データ取得
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period)
+
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"No data for {ticker}")
+
+        # 日付をインデックスから列に変換
+        df = df.reset_index()
+        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+
+        # BOSとCHoCH検出
+        highs = df['High'].tolist()
+        lows = df['Low'].tolist()
+
+        bos_detector = BOSDetector()
+        bos_signals = bos_detector.detect_bos(highs, lows)
+        choch_signals = bos_detector.detect_choch(highs, lows)
+
+        # FVG（Fair Value Gap）検出
+        fvg_list = []
+        for i in range(2, len(df)):
+            prev_high = df['High'].iloc[i-2]
+            current_low = df['Low'].iloc[i]
+            current_high = df['High'].iloc[i]
+            prev_low = df['Low'].iloc[i-2]
+
+            # Bullish FVG: 2本前の高値 < 現在の安値（ギャップアップ）
+            if prev_high < current_low:
+                gap_size = (current_low - prev_high) / prev_high * 100
+                if gap_size >= 0.5:  # 0.5%以上のギャップ
+                    fvg_list.append({
+                        "date": df['Date'].iloc[i],
+                        "type": "BULLISH",
+                        "top": float(current_low),
+                        "bottom": float(prev_high),
+                        "gap_pct": round(gap_size, 2),
+                    })
+
+            # Bearish FVG: 2本前の安値 > 現在の高値（ギャップダウン）
+            if prev_low > current_high:
+                gap_size = (prev_low - current_high) / prev_low * 100
+                if gap_size >= 0.5:
+                    fvg_list.append({
+                        "date": df['Date'].iloc[i],
+                        "type": "BEARISH",
+                        "top": float(prev_low),
+                        "bottom": float(current_high),
+                        "gap_pct": round(gap_size, 2),
+                    })
+
+        # BOSマーカーを日付付きに変換
+        bos_list = []
+        for b in bos_signals:
+            if b.index < len(df):
+                bos_list.append({
+                    "date": df['Date'].iloc[b.index],
+                    "type": b.bos_type.value,
+                    "price": round(float(b.price), 2),
+                    "broken_level": round(float(b.broken_level), 2),
+                    "strength_pct": round(float(b.strength_pct), 2),
+                })
+
+        # CHoCHマーカーを日付付きに変換
+        choch_list = []
+        for c in choch_signals:
+            if c.index < len(df):
+                choch_list.append({
+                    "date": df['Date'].iloc[c.index],
+                    "type": c.choch_type.value,
+                    "price": round(float(c.price), 2),
+                    "previous_price": round(float(c.previous_price), 2),
+                })
+
+        return {
+            "ticker": ticker,
+            "period": period,
+            "timestamp": datetime.now().isoformat(),
+            "bos": bos_list,
+            "choch": choch_list,
+            "fvg": fvg_list,
+            "data_points": len(df),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
