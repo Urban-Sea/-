@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 
-from routers import stocks, signal, regime, liquidity, employment
+from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock
 
 
 # Supabase client (global)
@@ -62,6 +62,11 @@ app.include_router(signal.router, prefix="/api/signal", tags=["signal"])
 app.include_router(regime.router, prefix="/api/regime", tags=["regime"])
 app.include_router(liquidity.router, prefix="/api/liquidity", tags=["liquidity"])
 app.include_router(employment.router, prefix="/api/employment", tags=["employment"])
+app.include_router(market_state.router, prefix="/api/market-state", tags=["market-state"])
+app.include_router(holdings.router, prefix="/api/holdings", tags=["holdings"])
+app.include_router(trades.router, prefix="/api/trades", tags=["trades"])
+app.include_router(exit.router, prefix="/api/exit", tags=["exit"])
+app.include_router(stock.router, prefix="/api/stock", tags=["stock"])
 
 
 @app.get("/")
