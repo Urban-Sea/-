@@ -18,7 +18,10 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
-from .asset_class import AssetClass, get_config, JPBenchmark
+try:
+    from .asset_class import AssetClass, get_config, JPBenchmark
+except ImportError:
+    from analysis.asset_class import AssetClass, get_config, JPBenchmark
 
 
 @dataclass

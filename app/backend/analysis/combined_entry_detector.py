@@ -40,9 +40,14 @@ import numpy as np
 import yfinance as yf
 
 # 同じディレクトリの依存モジュール
-from .asset_class import AssetClass, JPBenchmark, get_config
-from .regime_detector import RegimeDetector
-from .choch_detector import CHoCHDetector, CHoCHType
+try:
+    from .asset_class import AssetClass, JPBenchmark, get_config
+    from .regime_detector import RegimeDetector
+    from .choch_detector import CHoCHDetector, CHoCHType
+except ImportError:
+    from analysis.asset_class import AssetClass, JPBenchmark, get_config
+    from analysis.regime_detector import RegimeDetector
+    from analysis.choch_detector import CHoCHDetector, CHoCHType
 
 
 class EntryMode(Enum):

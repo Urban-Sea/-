@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from datetime import datetime
 
 # 本格ロジックをインポート
-from ..analysis.regime_detector import RegimeDetector, RegimeResult
-from ..analysis.asset_class import AssetClass
+from analysis.regime_detector import RegimeDetector, RegimeResult
+from analysis.asset_class import AssetClass
 
 router = APIRouter()
 

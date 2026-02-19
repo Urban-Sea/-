@@ -15,7 +15,10 @@ from enum import Enum
 import pandas as pd
 
 # 同じディレクトリのchoch_detectorをインポート
-from .choch_detector import CHoCHDetector, CHoCHType as CanonicalCHoCHType
+try:
+    from .choch_detector import CHoCHDetector, CHoCHType as CanonicalCHoCHType
+except ImportError:
+    from analysis.choch_detector import CHoCHDetector, CHoCHType as CanonicalCHoCHType
 
 
 class BOSType(Enum):
