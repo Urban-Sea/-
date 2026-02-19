@@ -263,46 +263,70 @@ async def get_signal_history(
     mode: str = Query("balanced", description="取引モード"),
 ):
     """
-    過去シグナル分析
+    過去シグナル分析（demo版準拠）
 
-    指定期間内で発生した過去のエントリーシグナルを検出。
-    バックテスト的な分析結果を返す。
+    ENTRY, HEAT, RSI_HIGH, EXITの4種類のシグナルを検出。
+    タイムライン形式でシグナル履歴を返す。
 
     - **ticker**: 銘柄コード (例: NVDA)
     - **period**: 分析期間 (3mo, 6mo, 1y, 2y)
     - **mode**: 取引モード (aggressive, balanced, conservative)
 
     Returns:
-        過去シグナル一覧、パフォーマンス統計
+        timeline: 全種類のシグナル一覧
+        stats: 統計情報
     """
     ticker = ticker.upper()
-    entry_mode = entry_mode_from_str(mode)
 
     try:
         import yfinance as yf
         import pandas as pd
         import numpy as np
 
-        # 株価データ取得
+        # 株価データ取得（1年分+余裕）
         stock = yf.Ticker(ticker)
-        df = stock.history(period=period)
+        df = stock.history(period="2y" if period == "1y" else period)
 
         if df.empty or len(df) < 50:
             raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
 
-        # EMA計算
+        # 日付をDateカラムに
+        df = df.reset_index()
+        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+
+        # インジケータ計算
         df['EMA_8'] = df['Close'].ewm(span=8, adjust=False).mean()
         df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
         df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
+        # RSI計算
+        delta = df['Close'].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = (-delta).where(delta < 0, 0.0)
+        avg_gain = gain.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+        rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100)
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # ATR計算
+        tr = np.maximum(
+            df['High'] - df['Low'],
+            np.maximum(
+                abs(df['High'] - df['Close'].shift(1)),
+                abs(df['Low'] - df['Close'].shift(1))
+            )
+        )
+        df['ATR'] = tr.rolling(window=14).mean()
+
         # RS計算（SPYとの相対強度）
         try:
             spy = yf.Ticker("SPY")
-            spy_df = spy.history(period=period)
+            spy_df = spy.history(period="2y" if period == "1y" else period)
             if not spy_df.empty and len(spy_df) >= 20:
                 spy_df['RS'] = spy_df['Close'].pct_change(20) * 100
-                # dfとspy_dfの日付を合わせる
-                df = df.join(spy_df[['RS']].rename(columns={'RS': 'SPY_RS'}), how='left')
+                spy_df = spy_df.reset_index()
+                spy_df['Date'] = spy_df['Date'].dt.strftime('%Y-%m-%d')
+                df = df.merge(spy_df[['Date', 'RS']].rename(columns={'RS': 'SPY_RS'}), on='Date', how='left')
                 df['RS'] = df['Close'].pct_change(20) * 100
                 df['RS_diff'] = df['RS'] - df['SPY_RS'].fillna(0)
         except Exception:
@@ -317,9 +341,6 @@ async def get_signal_history(
         bos_signals = bos_detector.detect_bos(highs, lows)
         choch_signals = bos_detector.detect_choch(highs, lows)
 
-        # シグナル検出ロジック
-        signals = []
-
         # CHoCHをインデックスでマップ
         bearish_choch_indices = set()
         bullish_choch_indices = set()
@@ -329,70 +350,238 @@ async def get_signal_history(
             else:
                 bullish_choch_indices.add(choch.index)
 
-        # シグナル検出（50日目から開始）
-        for i in range(50, len(df)):
-            # 直近でBearish CHoCH → Bullish CHoCHのシーケンスを確認
+        # シグナル配列（タイムライン用）
+        timeline = []
+        legacy_signals = []  # 後方互換用
+
+        # ストリーク追跡
+        entry_streak = None
+        rsi_high_streak = None
+        exit_streak = None
+
+        # 閾値
+        RSI_HIGH_THRESHOLD = 80
+        EMA_CONV_THRESHOLD = 1.5
+
+        def _flush_entry():
+            nonlocal entry_streak
+            if entry_streak is None:
+                return
+            s = entry_streak
+            timeline.append({
+                "date": s["start_date"],
+                "end_date": s["end_date"],
+                "days": s["days"],
+                "type": "ENTRY",
+                "price": round(s["start_price"], 2),
+                "end_price": round(s["end_price"], 2),
+                "detail": f"買いシグナル（RS: {s['rs_trend']}）EMA収束 {s.get('ema_conv', 0):.1f}%",
+                "rs_trend": s["rs_trend"],
+                "size_pct": s["size_pct"],
+            })
+            entry_streak = None
+
+        def _flush_rsi():
+            nonlocal rsi_high_streak
+            if rsi_high_streak is None:
+                return
+            s = rsi_high_streak
+            if s["days"] == 1:
+                detail = f"RSI {s['max_rsi']:.0f} — 過熱警告"
+            else:
+                detail = f"RSI 最大{s['max_rsi']:.0f}（{s['days']}日間連続）"
+            timeline.append({
+                "date": s["start_date"],
+                "end_date": s["end_date"],
+                "days": s["days"],
+                "type": "RSI_HIGH",
+                "price": round(s["start_price"], 2),
+                "end_price": round(s["end_price"], 2),
+                "detail": detail,
+            })
+            rsi_high_streak = None
+
+        def _flush_exit():
+            nonlocal exit_streak
+            if exit_streak is None:
+                return
+            s = exit_streak
+            timeline.append({
+                "date": s["start_date"],
+                "end_date": s["end_date"],
+                "days": s["days"],
+                "type": "EXIT",
+                "price": round(s["start_price"], 2),
+                "end_price": round(s["end_price"], 2),
+                "detail": s["detail"],
+                "exit_type": s["exit_type"],
+                "exit_pct": s.get("exit_pct", 0),
+            })
+            exit_streak = None
+
+        # 走査開始インデックス（約1年前 or 50日目）
+        scan_start = max(50, len(df) - 252) if period == "1y" else 50
+        last_bearish_choch_idx = -999
+
+        for i in range(scan_start, len(df)):
+            date_str = df['Date'].iloc[i]
+            close = float(df['Close'].iloc[i])
+            ema_8 = float(df['EMA_8'].iloc[i])
+            ema_21 = float(df['EMA_21'].iloc[i])
+            rsi = float(df['RSI'].iloc[i]) if not pd.isna(df['RSI'].iloc[i]) else 50.0
+
+            # ===== ENTRY シグナル判定 =====
+            # Bearish CHoCH → Bullish CHoCHのシーケンスを確認
             recent_bearish = None
             recent_bullish = None
-
             for idx in range(max(0, i - 30), i):
                 if idx in bearish_choch_indices:
                     recent_bearish = idx
                 if idx in bullish_choch_indices and recent_bearish is not None and idx > recent_bearish:
                     recent_bullish = idx
 
-            if recent_bearish is None or recent_bullish is None:
-                continue
+            ema_conv = abs(ema_8 - ema_21) / close * 100
+            rs_diff = float(df['RS_diff'].iloc[i]) if 'RS_diff' in df.columns and not pd.isna(df['RS_diff'].iloc[i]) else 0
 
-            # EMA収束チェック
-            ema_8 = df['EMA_8'].iloc[i]
-            ema_21 = df['EMA_21'].iloc[i]
-            ema_conv = abs(ema_8 - ema_21) / df['Close'].iloc[i] * 100
-            if ema_conv > 2.0:  # 2%以上離れていたらスキップ
-                continue
+            entry_allowed = False
+            if recent_bearish is not None and recent_bullish is not None:
+                if i - recent_bullish <= 5 and ema_conv <= EMA_CONV_THRESHOLD:
+                    if mode != "balanced" or rs_diff >= -5:
+                        entry_allowed = True
 
-            # RS チェック（balanced mode）
-            rs_diff = df['RS_diff'].iloc[i] if 'RS_diff' in df.columns else 0
-            if mode == "balanced" and rs_diff < -10:
-                continue
+            rs_trend = "UP" if rs_diff >= 0 else ("FLAT" if rs_diff >= -5 else "DOWN")
+            size_pct = 100 if rs_trend != "DOWN" else (50 if mode == "conservative" else 0)
 
-            # シグナル発生
-            date = df.index[i]
-            entry_price = float(df['Close'].iloc[i])
+            if entry_allowed:
+                if entry_streak is None:
+                    entry_streak = {
+                        "start_date": date_str, "end_date": date_str,
+                        "start_price": close, "end_price": close,
+                        "rs_trend": rs_trend, "size_pct": size_pct,
+                        "ema_conv": ema_conv, "days": 1,
+                    }
+                else:
+                    entry_streak["end_date"] = date_str
+                    entry_streak["end_price"] = close
+                    entry_streak["days"] += 1
+            else:
+                _flush_entry()
 
-            # 将来のパフォーマンス計算（5日後、10日後、20日後）
-            pnl_5d = None
-            pnl_10d = None
-            pnl_20d = None
-            max_pnl = None
-            min_pnl = None
+            # ===== RSI過熱 シグナル判定 =====
+            is_rsi_high = rsi >= RSI_HIGH_THRESHOLD
+            if is_rsi_high:
+                if rsi_high_streak is None:
+                    rsi_high_streak = {
+                        "start_date": date_str, "end_date": date_str,
+                        "max_rsi": rsi, "start_price": close,
+                        "end_price": close, "days": 1,
+                    }
+                else:
+                    rsi_high_streak["end_date"] = date_str
+                    rsi_high_streak["max_rsi"] = max(rsi_high_streak["max_rsi"], rsi)
+                    rsi_high_streak["end_price"] = close
+                    rsi_high_streak["days"] += 1
+            else:
+                _flush_rsi()
 
-            if i + 5 < len(df):
-                pnl_5d = (df['Close'].iloc[i + 5] - entry_price) / entry_price * 100
-            if i + 10 < len(df):
-                pnl_10d = (df['Close'].iloc[i + 10] - entry_price) / entry_price * 100
-            if i + 20 < len(df):
-                pnl_20d = (df['Close'].iloc[i + 20] - entry_price) / entry_price * 100
-                # 20日間の最大・最小
-                future_prices = df['Close'].iloc[i:i+20]
-                max_pnl = (future_prices.max() - entry_price) / entry_price * 100
-                min_pnl = (future_prices.min() - entry_price) / entry_price * 100
+            # ===== EXIT シグナル判定 =====
+            is_bearish_choch = i in bearish_choch_indices
+            ema_death_cross = ema_8 < ema_21
 
-            signals.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "price": round(entry_price, 2),
-                "ema_convergence": round(ema_conv, 2),
-                "rs_diff": round(float(rs_diff) if not pd.isna(rs_diff) else 0, 2),
-                "pnl_5d": round(float(pnl_5d), 2) if pnl_5d is not None and not pd.isna(pnl_5d) else None,
-                "pnl_10d": round(float(pnl_10d), 2) if pnl_10d is not None and not pd.isna(pnl_10d) else None,
-                "pnl_20d": round(float(pnl_20d), 2) if pnl_20d is not None and not pd.isna(pnl_20d) else None,
-                "max_pnl_20d": round(float(max_pnl), 2) if max_pnl is not None and not pd.isna(max_pnl) else None,
-                "min_pnl_20d": round(float(min_pnl), 2) if min_pnl is not None and not pd.isna(min_pnl) else None,
-            })
+            if is_bearish_choch:
+                last_bearish_choch_idx = i
+
+            has_recent_bear_choch = (i - last_bearish_choch_idx) <= 20 if last_bearish_choch_idx >= 0 else False
+
+            # Mirror判定
+            mirror_state = ""
+            if has_recent_bear_choch and ema_death_cross:
+                mirror_state = "FULL"
+            elif has_recent_bear_choch and not ema_death_cross:
+                mirror_state = "WARN"
+
+            # Exit シグナル発生判定（Entry日はExitシグナルを出さない）
+            exit_type = None
+            exit_detail = None
+            exit_pct = 0
+
+            if not entry_allowed:
+                if mirror_state == "FULL":
+                    exit_type = "MIRROR_FULL"
+                    exit_pct = 100
+                    exit_detail = f"Mirror FULL → 100%売却（CHoCH+EMAクロス）"
+                elif mirror_state == "WARN":
+                    exit_type = "MIRROR_WARN"
+                    exit_pct = 50
+                    exit_detail = f"Mirror WARN → 50%売却（CHoCH検出）"
+                elif is_bearish_choch:
+                    exit_type = "BEAR_CHOCH"
+                    exit_pct = 0
+                    exit_detail = f"Bearish CHoCH（構造転換の兆候）"
+
+            if exit_type:
+                if exit_streak is None:
+                    exit_streak = {
+                        "start_date": date_str, "end_date": date_str,
+                        "start_price": close, "end_price": close,
+                        "exit_type": exit_type, "detail": exit_detail,
+                        "exit_pct": exit_pct, "days": 1,
+                    }
+                else:
+                    if exit_streak["exit_type"] == exit_type:
+                        exit_streak["end_date"] = date_str
+                        exit_streak["end_price"] = close
+                        exit_streak["days"] += 1
+                    else:
+                        _flush_exit()
+                        exit_streak = {
+                            "start_date": date_str, "end_date": date_str,
+                            "start_price": close, "end_price": close,
+                            "exit_type": exit_type, "detail": exit_detail,
+                            "exit_pct": exit_pct, "days": 1,
+                        }
+            else:
+                _flush_exit()
+
+            # 後方互換用のシグナル（ENTRY時のみ）
+            if entry_allowed and (entry_streak is None or entry_streak["days"] == 1):
+                pnl_5d = None
+                pnl_10d = None
+                pnl_20d = None
+                if i + 5 < len(df):
+                    pnl_5d = (df['Close'].iloc[i + 5] - close) / close * 100
+                if i + 10 < len(df):
+                    pnl_10d = (df['Close'].iloc[i + 10] - close) / close * 100
+                if i + 20 < len(df):
+                    pnl_20d = (df['Close'].iloc[i + 20] - close) / close * 100
+
+                legacy_signals.append({
+                    "date": date_str,
+                    "price": round(close, 2),
+                    "ema_convergence": round(ema_conv, 2),
+                    "rs_diff": round(rs_diff, 2),
+                    "pnl_5d": round(float(pnl_5d), 2) if pnl_5d is not None and not pd.isna(pnl_5d) else None,
+                    "pnl_10d": round(float(pnl_10d), 2) if pnl_10d is not None and not pd.isna(pnl_10d) else None,
+                    "pnl_20d": round(float(pnl_20d), 2) if pnl_20d is not None and not pd.isna(pnl_20d) else None,
+                    "max_pnl_20d": None,
+                    "min_pnl_20d": None,
+                })
+
+        # ループ終了後の残りストリークをflush
+        _flush_entry()
+        _flush_rsi()
+        _flush_exit()
+
+        # 時系列ソート
+        timeline.sort(key=lambda x: x['date'])
 
         # 統計計算
+        entry_signals = [s for s in timeline if s['type'] == 'ENTRY']
         stats = {
-            "total_signals": len(signals),
+            "total_signals": len(timeline),
+            "entry_count": len(entry_signals),
+            "exit_count": len([s for s in timeline if s['type'] == 'EXIT']),
+            "rsi_high_count": len([s for s in timeline if s['type'] == 'RSI_HIGH']),
             "avg_pnl_5d": None,
             "avg_pnl_10d": None,
             "avg_pnl_20d": None,
@@ -401,10 +590,10 @@ async def get_signal_history(
             "win_rate_20d": None,
         }
 
-        if signals:
-            pnl_5d_list = [s["pnl_5d"] for s in signals if s["pnl_5d"] is not None]
-            pnl_10d_list = [s["pnl_10d"] for s in signals if s["pnl_10d"] is not None]
-            pnl_20d_list = [s["pnl_20d"] for s in signals if s["pnl_20d"] is not None]
+        if legacy_signals:
+            pnl_5d_list = [s["pnl_5d"] for s in legacy_signals if s["pnl_5d"] is not None]
+            pnl_10d_list = [s["pnl_10d"] for s in legacy_signals if s["pnl_10d"] is not None]
+            pnl_20d_list = [s["pnl_20d"] for s in legacy_signals if s["pnl_20d"] is not None]
 
             if pnl_5d_list:
                 stats["avg_pnl_5d"] = round(float(np.mean(pnl_5d_list)), 2)
@@ -421,7 +610,9 @@ async def get_signal_history(
             "period": period,
             "mode": mode,
             "timestamp": datetime.now().isoformat(),
-            "signals": signals[-20:],  # 直近20件
+            "signals": legacy_signals[-20:],  # 後方互換（ENTRY only）
+            "timeline": timeline,  # 全シグナル（demo準拠）
+            "total_signals": len(timeline),
             "stats": stats,
         }
 
@@ -521,7 +712,7 @@ async def get_chart_markers(
             # Bullish FVG: 2本前の高値 < 現在の安値（ギャップアップ）
             if prev_high < current_low:
                 gap_size = (current_low - prev_high) / prev_high * 100
-                if gap_size >= 0.5:  # 0.5%以上のギャップ
+                if gap_size >= 1.0:  # 1.0%以上のギャップ（小さいFVGを除外）
                     fvg_list.append({
                         "date": df['Date'].iloc[i],
                         "type": "BULLISH",
@@ -533,7 +724,7 @@ async def get_chart_markers(
             # Bearish FVG: 2本前の安値 > 現在の高値（ギャップダウン）
             if prev_low > current_high:
                 gap_size = (prev_low - current_high) / prev_low * 100
-                if gap_size >= 0.5:
+                if gap_size >= 1.0:
                     fvg_list.append({
                         "date": df['Date'].iloc[i],
                         "type": "BEARISH",
