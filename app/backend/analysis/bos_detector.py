@@ -334,11 +334,11 @@ class BOSDetector:
 
         # Grade判定
         details = {
-            "ema21_deviation": round(ema21_deviation, 2),
-            "has_bullish_choch": has_recent_choch,
-            "past_below_ema": past_below_ema,
-            "close": close,
-            "ema21": e21
+            "ema21_deviation": float(round(ema21_deviation, 2)),
+            "has_bullish_choch": bool(has_recent_choch),
+            "past_below_ema": bool(past_below_ema),
+            "close": float(close),
+            "ema21": float(e21)
         }
 
         # REVERSAL: CHoCH直後 or 21EMA下から回復
@@ -504,10 +504,10 @@ class BOSDetector:
         )
 
         return {
-            "entry_ready": entry_ready,
+            "entry_ready": bool(entry_ready),
             "bos_grade": bos_analysis.grade.value,
-            "in_8ema_zone": in_zone,
-            "ema8_distance_pct": round(ema8_distance_pct, 2),
+            "in_8ema_zone": bool(in_zone),
+            "ema8_distance_pct": float(round(ema8_distance_pct, 2)),
             "reasons": self._get_entry_reasons(bos_analysis, in_zone)
         }
 
