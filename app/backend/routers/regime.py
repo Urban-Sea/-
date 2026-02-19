@@ -43,16 +43,18 @@ async def get_regime():
     - BEAR: SPY < 200EMA & 21EMA下降
     """
     try:
-        # SPYデータ取得
+        # SPYデータ取得（2年分で確実に200日以上）
         spy = yf.Ticker("SPY")
-        df = spy.history(period="1y")
+        df = spy.history(period="2y")
 
-        if len(df) < 200:
+        if len(df) < 21:
             raise HTTPException(status_code=500, detail="Insufficient data for regime calculation")
 
         # 指標計算
         current_price = df['Close'].iloc[-1]
-        ema200 = calculate_ema(df['Close'], 200).iloc[-1]
+        # 200日分ない場合は利用可能な最大期間で計算
+        ema_period = min(200, len(df))
+        ema200 = calculate_ema(df['Close'], ema_period).iloc[-1]
         ema21 = calculate_ema(df['Close'], 21)
 
         # 21EMAの傾き（5日間）
