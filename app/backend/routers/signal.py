@@ -176,6 +176,91 @@ async def get_signal(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BatchRequest(BaseModel):
+    """バッチリクエスト"""
+    tickers: list[str]
+    mode: str = "balanced"
+
+
+class BatchResult(BaseModel):
+    """バッチ結果（1銘柄）"""
+    ticker: str
+    price: Optional[float] = None
+    price_change_pct: Optional[float] = None
+    combined_ready: bool = False
+    entry_allowed: bool = False
+    position_size_pct: int = 0
+    relative_strength: Optional[Dict[str, Any]] = None
+    regime: Optional[str] = None
+    error: bool = False
+    error_message: Optional[str] = None
+
+
+class BatchResponse(BaseModel):
+    """バッチレスポンス"""
+    mode: str
+    total_analyzed: int
+    entry_ready_count: int
+    results: list[BatchResult]
+    timestamp: str
+
+
+@router.post("/batch", response_model=BatchResponse)
+async def analyze_batch(request: BatchRequest):
+    """
+    一括シグナル分析
+
+    複数銘柄を一度に分析し、エントリー可否を判定する。
+
+    - **tickers**: 銘柄コードリスト (例: ["NVDA", "TSLA", "META"])
+    - **mode**: aggressive=攻め, balanced=バランス, conservative=守り
+    """
+    entry_mode = entry_mode_from_str(request.mode)
+    results = []
+    entry_ready_count = 0
+
+    for ticker in request.tickers:
+        ticker = ticker.upper()
+        try:
+            detector = CombinedEntryDetector(
+                use_v9_regime=True,
+                use_v10_price_category=True
+            )
+            result = detector.analyze(ticker, entry_mode)
+
+            if result.entry_allowed:
+                entry_ready_count += 1
+
+            results.append(BatchResult(
+                ticker=result.ticker,
+                price=result.price,
+                price_change_pct=result.price_change_pct,
+                combined_ready=result.combined_ready,
+                entry_allowed=result.entry_allowed,
+                position_size_pct=result.position_size_pct,
+                relative_strength={
+                    "change_pct": result.rs_change_pct,
+                    "trend": result.rs_trend,
+                },
+                regime=result.regime,
+                error=False,
+            ))
+        except Exception as e:
+            results.append(BatchResult(
+                ticker=ticker,
+                error=True,
+                error_message=str(e),
+            ))
+
+    return BatchResponse(
+        mode=request.mode,
+        total_analyzed=len(request.tickers),
+        entry_ready_count=entry_ready_count,
+        results=results,
+        timestamp=datetime.now().isoformat(),
+    )
+
+
 @router.get("/{ticker}/bos")
 async def get_bos_analysis(ticker: str):
     """
