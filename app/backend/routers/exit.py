@@ -43,9 +43,9 @@ class ExitAnalysisResponse(BaseModel):
 def calculate_emas(prices: pd.Series) -> dict:
     """EMA計算"""
     return {
-        "ema_8": prices.ewm(span=8, adjust=False).mean().iloc[-1],
-        "ema_13": prices.ewm(span=13, adjust=False).mean().iloc[-1],
-        "ema_21": prices.ewm(span=21, adjust=False).mean().iloc[-1],
+        "ema_8": float(prices.ewm(span=8, adjust=False).mean().iloc[-1]),
+        "ema_13": float(prices.ewm(span=13, adjust=False).mean().iloc[-1]),
+        "ema_21": float(prices.ewm(span=21, adjust=False).mean().iloc[-1]),
     }
 
 
@@ -60,10 +60,10 @@ def find_swing_points(df: pd.DataFrame, lookback: int = 5) -> tuple:
     for i in range(lookback, len(df) - lookback):
         # Swing High
         if highs[i] == max(highs[i-lookback:i+lookback+1]):
-            swing_highs.append(highs[i])
+            swing_highs.append(float(highs[i]))
         # Swing Low
         if lows[i] == min(lows[i-lookback:i+lookback+1]):
-            swing_lows.append(lows[i])
+            swing_lows.append(float(lows[i]))
 
     return swing_highs[-5:] if swing_highs else [], swing_lows[-5:] if swing_lows else []
 
@@ -131,9 +131,9 @@ async def analyze_exit(
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Stock data not found for {ticker}")
 
-        current_price = df["Close"].iloc[-1]
-        current_high = df["High"].iloc[-1]
-        current_low = df["Low"].iloc[-1]
+        current_price = float(df["Close"].iloc[-1])
+        current_high = float(df["High"].iloc[-1])
+        current_low = float(df["Low"].iloc[-1])
 
         # PnL計算
         pnl_pct = (current_price / entry_price - 1) * 100
@@ -234,7 +234,7 @@ async def analyze_exit(
             name="Structure Stop",
             status=l3_status,
             detail=l3_detail,
-            trigger_price=structure_stop
+            trigger_price=float(structure_stop) if structure_stop else None
         ))
 
         # Layer 4: EMA Cascade
@@ -259,7 +259,7 @@ async def analyze_exit(
             name="EMA Cascade",
             status=l4_status,
             detail=l4_detail,
-            trigger_price=ema_8
+            trigger_price=float(ema_8) if ema_8 else None
         ))
 
         # Layer 5: Time Stop
