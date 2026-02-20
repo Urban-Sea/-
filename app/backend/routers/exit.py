@@ -269,7 +269,9 @@ async def analyze_exit(
 
         if entry_date:
             try:
-                entry_dt = datetime.strptime(entry_date, "%Y-%m-%d")
+                entry_dt = pd.Timestamp(entry_date)
+                if df.index.tz is not None:
+                    entry_dt = entry_dt.tz_localize(df.index.tz)
                 entry_df = df[df.index >= entry_dt]
                 if not entry_df.empty:
                     highest_idx = entry_df["High"].idxmax()
@@ -286,7 +288,7 @@ async def analyze_exit(
                             urgency = "HIGH"
                     elif days_since_high >= 20:
                         l5_status = "WARNING"
-            except ValueError:
+            except Exception:
                 l5_detail = "日付形式エラー"
 
         layers.append(ExitLayerStatus(
