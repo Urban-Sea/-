@@ -462,7 +462,6 @@ export default function SignalsPage() {
             <div className="relative p-5 md:p-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                  <TickerIcon ticker={signal.ticker} size={48} />
                   <div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-extrabold tracking-tight">{signal.ticker}</span>
@@ -637,13 +636,14 @@ export default function SignalsPage() {
                     {signal.entry_allowed && (
                       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20 plumb-glow" style={{ background: '#10b981' }} />
                     )}
-                    <div className="relative">
+                    <div className="relative flex flex-col items-center gap-3">
+                      <TickerIcon ticker={signal.ticker} size={48} />
                       <div className={`text-4xl font-extrabold tracking-[0.2em] ${
                         signal.entry_allowed ? 'text-emerald-400' : 'text-zinc-600'
                       }`}>
                         {signal.entry_allowed ? 'BUY' : 'NO ENTRY'}
                       </div>
-                      <div className="text-sm text-zinc-400 mt-2">
+                      <div className="text-sm text-zinc-400">
                         {signal.entry_allowed
                           ? `ポジションサイズ: ${signal.position_size_pct}%`
                           : signal.mode_note || '条件未達成'}
@@ -979,7 +979,7 @@ export default function SignalsPage() {
                             const priceRange = s.days > 1 && s.end_price ? `$${s.price.toFixed(2)} → $${s.end_price.toFixed(2)}` : `$${s.price.toFixed(2)}`;
                             return (
                               <div key={i} className="relative py-3 border-b border-white/[0.03] last:border-b-0">
-                                <div className={`absolute -left-[15px] top-4 w-2.5 h-2.5 rounded-full border-2 ${style.dot}`} />
+                                <div className={`absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full border-2 ${style.dot}`} />
                                 <div className="flex items-center gap-2.5 mb-1 flex-wrap">
                                   <span className="text-[11px] text-zinc-500 font-mono">{dateRange}</span>
                                   <StatusChip label={style.label} color={style.badge} />
@@ -998,7 +998,7 @@ export default function SignalsPage() {
                           <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-700 to-zinc-800/50 rounded" />
                           {signalHistory.signals.slice().reverse().map((s, i) => (
                             <div key={i} className="relative py-3 border-b border-white/[0.03] last:border-b-0">
-                              <div className="absolute -left-[15px] top-4 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                              <div className="absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
                               <div className="flex items-center gap-2.5 mb-1 flex-wrap">
                                 <span className="text-[11px] text-zinc-500 font-mono">{s.date}</span>
                                 <StatusChip label="買いシグナル" color="green" />

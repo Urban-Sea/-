@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 const TICKER_COLORS = [
   '#3b82f6', // blue
   '#8b5cf6', // violet
@@ -21,10 +25,38 @@ function hashTicker(ticker: string): number {
   return Math.abs(hash);
 }
 
+const LOGO_CDN = 'https://cdn.jsdelivr.net/gh/nvstly/icons/ticker_icons';
+
 export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: number }) {
+  const [logoFailed, setLogoFailed] = useState(false);
   const color = TICKER_COLORS[hashTicker(ticker) % TICKER_COLORS.length];
   const abbr = ticker.length <= 2 ? ticker : ticker.slice(0, 2);
   const fontSize = size <= 24 ? 9 : size <= 32 ? 11 : 14;
+  const logoUrl = `${LOGO_CDN}/${ticker.toUpperCase()}.png`;
+
+  if (!logoFailed) {
+    return (
+      <div
+        className="inline-flex items-center justify-center rounded-lg shrink-0 overflow-hidden"
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: `${color}08`,
+          border: `1px solid ${color}20`,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={logoUrl}
+          alt={ticker}
+          width={size - 4}
+          height={size - 4}
+          className="object-contain"
+          onError={() => setLogoFailed(true)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
