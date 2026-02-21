@@ -455,7 +455,7 @@ export default function SignalsPage() {
             <div className="relative p-5 md:p-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                  <TickerIcon ticker={signal.ticker} size={44} />
+                  <TickerIcon ticker={signal.ticker} size={56} />
                   <div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-extrabold tracking-tight">{signal.ticker}</span>
