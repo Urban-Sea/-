@@ -465,3 +465,375 @@ async def get_market_indicators(
         return {"data": result.data, "count": len(result.data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history-charts")
+async def get_history_charts(
+    period: str = Query("2y", description="期間: 1y, 2y, 5y, 10y, all"),
+    start_date: Optional[str] = Query(None, description="開始日 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="終了日 YYYY-MM-DD"),
+):
+    """
+    履歴グラフ用データ（6テーブル一括取得）
+    """
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        from datetime import timedelta
+
+        # 期間 → 日付範囲
+        if start_date and end_date:
+            sd, ed = start_date, end_date
+        else:
+            period_days = {
+                '1y': 365, '2y': 730, '5y': 1825, '10y': 3650, 'all': 36500
+            }
+            days = period_days.get(period, 730)
+            ed = datetime.now().strftime('%Y-%m-%d')
+            sd = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+        # 各テーブルクエリ（日付昇順）
+        fed_q = supabase.table("fed_balance_sheet") \
+            .select("date,soma_assets,rrp,tga") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(2000).execute()
+
+        margin_q = supabase.table("margin_debt") \
+            .select("date,debit_balance,change_2y") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(500).execute()
+
+        bank_q = supabase.table("bank_sector") \
+            .select("date,kre_close,kre_52w_change") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(2000).execute()
+
+        spreads_q = supabase.table("credit_spreads") \
+            .select("date,hy_spread,ig_spread") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(2000).execute()
+
+        indicators_q = supabase.table("market_indicators") \
+            .select("date,vix,sp500,nasdaq,dxy") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(2000).execute()
+
+        rates_q = supabase.table("interest_rates") \
+            .select("date,fed_funds,treasury_2y,treasury_10y,treasury_spread") \
+            .gte("date", sd).lte("date", ed) \
+            .order("date", desc=False) \
+            .limit(2000).execute()
+
+        # Net Liquidity計算
+        net_liq_data = []
+        for row in (fed_q.data or []):
+            soma = row.get('soma_assets')
+            rrp = row.get('rrp')
+            tga = row.get('tga')
+            nl = None
+            if soma is not None and rrp is not None and tga is not None:
+                nl = soma - rrp - tga
+            net_liq_data.append({
+                'date': row['date'],
+                'net_liquidity': nl,
+                'soma_assets': soma,
+                'rrp': rrp,
+                'tga': tga,
+            })
+
+        return {
+            "period": period,
+            "start_date": sd,
+            "end_date": ed,
+            "data": {
+                "net_liquidity": net_liq_data,
+                "margin_debt": margin_q.data or [],
+                "bank_sector": bank_q.data or [],
+                "credit_spreads": spreads_q.data or [],
+                "market_indicators": indicators_q.data or [],
+                "interest_rates": rates_q.data or [],
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/backtest-states")
+async def get_backtest_states(
+    limit: int = Query(120, description="月数（最大）"),
+):
+    """
+    バックテスト：月次の状態判定 + 統計
+
+    既存テーブルから月末データを集約し、各月のLayer Stress → State を計算。
+    SP500の6ヶ月後リターンも算出。
+    """
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        # 全FRBデータ（Net Liquidity Z-score計算用）
+        fed_all = supabase.table("fed_balance_sheet") \
+            .select("date,soma_assets,rrp,tga,reserves") \
+            .order("date", desc=False) \
+            .limit(5000).execute()
+
+        # SP500月次（リターン計算用）
+        sp500_q = supabase.table("market_indicators") \
+            .select("date,sp500,vix") \
+            .order("date", desc=False) \
+            .limit(5000).execute()
+
+        # Margin Debt月次
+        margin_q = supabase.table("margin_debt") \
+            .select("date,debit_balance,change_2y") \
+            .order("date", desc=False) \
+            .limit(500).execute()
+
+        # Bank Sector月次
+        bank_q = supabase.table("bank_sector") \
+            .select("date,kre_52w_change") \
+            .order("date", desc=False) \
+            .limit(500).execute()
+
+        # Credit Spreads
+        spreads_q = supabase.table("credit_spreads") \
+            .select("date,ig_spread,hy_spread") \
+            .order("date", desc=False) \
+            .limit(5000).execute()
+
+        # SRF Usage
+        srf_q = supabase.table("srf_usage") \
+            .select("date,amount") \
+            .order("date", desc=False) \
+            .limit(5000).execute()
+
+        # MMF
+        mmf_q = supabase.table("mmf_assets") \
+            .select("date,change_3m") \
+            .order("date", desc=False) \
+            .limit(500).execute()
+
+        # ============================================================
+        # 月末データをマップ化
+        # ============================================================
+        def to_month_map(rows, key_fields):
+            """各月の最終レコードをマップ化"""
+            m = {}
+            for row in (rows or []):
+                d = row.get('date', '')
+                month_key = d[:7]  # YYYY-MM
+                m[month_key] = {k: row.get(k) for k in key_fields}
+                m[month_key]['date'] = d
+            return m
+
+        # SP500を月次マップ化
+        sp500_map = to_month_map(sp500_q.data, ['sp500', 'vix'])
+
+        # Margin月次
+        margin_map = to_month_map(margin_q.data, ['debit_balance', 'change_2y'])
+
+        # Bank月次
+        bank_map = to_month_map(bank_q.data, ['kre_52w_change'])
+
+        # Spreads月次
+        spreads_map = to_month_map(spreads_q.data, ['ig_spread', 'hy_spread'])
+
+        # MMF月次
+        mmf_map = to_month_map(mmf_q.data, ['change_3m'])
+
+        # FRBデータ（Net Liquidity + 月次マップ）
+        fed_map = to_month_map(fed_all.data, ['soma_assets', 'rrp', 'tga', 'reserves'])
+
+        # Net Liquidity履歴（Z-score計算用）
+        nl_history = []
+        for row in (fed_all.data or []):
+            s = row.get('soma_assets')
+            r = row.get('rrp')
+            t = row.get('tga')
+            if s is not None and r is not None and t is not None:
+                nl_history.append(s - r - t)
+
+        # SRF月次集計
+        srf_monthly = {}
+        for row in (srf_q.data or []):
+            d = row.get('date', '')
+            month_key = d[:7]
+            amount = row.get('amount', 0) or 0
+            if month_key not in srf_monthly:
+                srf_monthly[month_key] = {'usage': 0, 'days': 0}
+            srf_monthly[month_key]['usage'] += amount
+            if amount > 0:
+                srf_monthly[month_key]['days'] += 1
+
+        # SP500月次キーをソート（6Mリターン計算用）
+        sp500_months_sorted = sorted(sp500_map.keys())
+
+        # ============================================================
+        # 各月のストレス計算
+        # ============================================================
+        # 対象月 = FRBデータがある月（最大limit件）
+        all_months = sorted(set(fed_map.keys()))
+        target_months = all_months[-limit:] if len(all_months) > limit else all_months
+
+        states = []
+        for mk in target_months:
+            fed_row = fed_map.get(mk, {})
+            soma = fed_row.get('soma_assets')
+            rrp_ = fed_row.get('rrp')
+            tga_ = fed_row.get('tga')
+            reserves = fed_row.get('reserves')
+
+            # Layer 1
+            l1_score = 50  # default
+            if soma is not None and rrp_ is not None and tga_ is not None and nl_history:
+                current_nl = soma - rrp_ - tga_
+                l1 = calculate_layer1_stress(current_nl, nl_history)
+                l1_score = l1['stress_score']
+
+            # Layer 2A
+            margin_row = margin_map.get(mk, {})
+            bank_row = bank_map.get(mk, {})
+            spread_row = spreads_map.get(mk, {})
+            srf_row = srf_monthly.get(mk, {'usage': 0, 'days': 0})
+
+            # 準備預金変化率（前月比）
+            prev_mk_list = [m for m in all_months if m < mk]
+            reserves_mom = None
+            if prev_mk_list and reserves is not None:
+                prev_fed = fed_map.get(prev_mk_list[-1], {})
+                prev_res = prev_fed.get('reserves')
+                if prev_res and prev_res != 0:
+                    reserves_mom = ((reserves - prev_res) / prev_res) * 100
+
+            l2a = calculate_layer2a_stress(
+                reserves_change_mom=reserves_mom,
+                kre_52w_change=bank_row.get('kre_52w_change'),
+                srf_usage=srf_row['usage'],
+                ig_spread=spread_row.get('ig_spread'),
+                srf_consecutive_days=srf_row['days'],
+                srf_days_90d=srf_row['days'],
+            )
+            l2a_score = l2a['stress_score']
+
+            # Layer 2B
+            change_2y = margin_row.get('change_2y')
+            mmf_row = mmf_map.get(mk, {})
+            sp500_row = sp500_map.get(mk, {})
+
+            l2b_score = 40  # default
+            if change_2y is not None:
+                l2b = calculate_layer2b_stress(
+                    margin_debt_2y=change_2y,
+                    margin_debt_1y=None,
+                    mmf_change=mmf_row.get('change_3m'),
+                    vix=sp500_row.get('vix'),
+                )
+                l2b_score = l2b['stress_score']
+
+            # State判定
+            ms = determine_market_state(l1_score, l2a_score, l2b_score,
+                                        l2a.get('interpretation_type'))
+
+            # 6ヶ月後リターン
+            return_6m = None
+            sp500_now = sp500_row.get('sp500')
+            if sp500_now:
+                # 6ヶ月後の月キーを探す
+                idx_candidates = [
+                    m for m in sp500_months_sorted
+                    if m >= mk[:5] + str(int(mk[5:7]) + 6).zfill(2)
+                    if int(mk[5:7]) + 6 <= 12
+                ]
+                if not idx_candidates and int(mk[5:7]) + 6 > 12:
+                    target_year = int(mk[:4]) + 1
+                    target_month = int(mk[5:7]) + 6 - 12
+                    idx_candidates = [
+                        m for m in sp500_months_sorted
+                        if m >= f"{target_year}-{str(target_month).zfill(2)}"
+                    ]
+                if idx_candidates:
+                    future_row = sp500_map.get(idx_candidates[0], {})
+                    sp500_future = future_row.get('sp500')
+                    if sp500_future and sp500_now > 0:
+                        return_6m = round(((sp500_future - sp500_now) / sp500_now) * 100, 2)
+
+            states.append({
+                'date': fed_row.get('date', mk + '-28'),
+                'state_code': ms['code'],
+                'state_label': ms['label'],
+                'color': ms['color'],
+                'action': ms['action'],
+                'layer1_stress': l1_score,
+                'layer2a_stress': l2a_score,
+                'layer2b_stress': l2b_score,
+                'sp500': sp500_now,
+                'return_6m': return_6m,
+            })
+
+        # ============================================================
+        # 統計計算
+        # ============================================================
+        from collections import defaultdict
+        stat_buckets = defaultdict(list)
+        for s in states:
+            if s['return_6m'] is not None:
+                stat_buckets[s['state_code']].append(s['return_6m'])
+
+        state_stats = {}
+        for code, returns in stat_buckets.items():
+            if not returns:
+                continue
+            wins = [r for r in returns if r > 0]
+            state_stats[code] = {
+                'avg_return_6m': round(sum(returns) / len(returns), 2),
+                'win_rate': round(len(wins) / len(returns) * 100, 1),
+                'max_drawdown': round(min(returns), 2),
+                'best_return': round(max(returns), 2),
+                'sample_count': len(returns),
+                'occurrence_pct': round(len(returns) / max(len(states), 1) * 100, 1),
+            }
+
+        # State定義
+        from analysis.liquidity_score import MARKET_STATE_DEFINITIONS
+        state_defs = []
+        for code in ['LIQUIDITY_SHOCK', 'CREDIT_CONTRACTION', 'POLICY_TIGHTENING',
+                      'SPLIT_BUBBLE', 'MARKET_OVERSHOOT', 'FINANCIAL_RALLY', 'HEALTHY', 'NEUTRAL']:
+            d = MARKET_STATE_DEFINITIONS[code]
+            conditions_map = {
+                'LIQUIDITY_SHOCK': 'L2A >= 65',
+                'CREDIT_CONTRACTION': 'L2A >= 50',
+                'POLICY_TIGHTENING': 'L1 >= 45',
+                'SPLIT_BUBBLE': 'L2A >= 40 AND L2B >= 70',
+                'MARKET_OVERSHOOT': 'L2B >= 80 AND L2A < 35',
+                'FINANCIAL_RALLY': 'L1 < 30 AND L2B > 60',
+                'HEALTHY': 'L1 < 35 AND L2A < 35 AND L2B < 40',
+                'NEUTRAL': 'いずれにも該当しない',
+            }
+            state_defs.append({
+                'code': code,
+                'label': d['label'],
+                'description': d['description'],
+                'conditions': conditions_map.get(code, ''),
+                'action': d['action'],
+                'color': d['color'],
+            })
+
+        return {
+            "states": states,
+            "state_definitions": state_defs,
+            "state_stats": state_stats,
+            "total_months": len(states),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -23,6 +23,8 @@ import type {
   SignalHistoryResponse,
   ChartMarkersResponse,
   BatchResponse,
+  HistoryChartsData,
+  BacktestData,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
@@ -273,4 +275,24 @@ export async function getBatchSignals(
     method: 'POST',
     body: JSON.stringify({ tickers, mode }),
   });
+}
+
+// History Charts API
+export async function getHistoryCharts(
+  period: string = '2y',
+  startDate?: string,
+  endDate?: string
+): Promise<HistoryChartsData> {
+  const params = new URLSearchParams();
+  params.set('period', period);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  return fetchAPI(`/api/liquidity/history-charts?${params.toString()}`);
+}
+
+// Backtest States API
+export async function getBacktestStates(
+  limit: number = 120
+): Promise<BacktestData> {
+  return fetchAPI(`/api/liquidity/backtest-states?limit=${limit}`);
 }

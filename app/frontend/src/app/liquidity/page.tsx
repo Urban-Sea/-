@@ -4,12 +4,24 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getPlumbingSummary } from '@/lib/api';
-import type { PlumbingSummary, LayerStress, CreditPressure, MarketStateInfo } from '@/types';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
+  ResponsiveContainer, AreaChart, Area, LineChart, Line,
+  ComposedChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, ReferenceLine,
+} from 'recharts';
+import { getPlumbingSummary, getHistoryCharts, getBacktestStates } from '@/lib/api';
+import type {
+  PlumbingSummary, LayerStress, CreditPressure, MarketStateInfo,
+  HistoryChartsData, BacktestData,
+} from '@/types';
 
 // ============================================================
-// Helpers
+// Shared Helpers
 // ============================================================
 
 function fmt(v: number | null | undefined, d = 0): string {
@@ -29,61 +41,52 @@ function fmtPctNoSign(v: number | null | undefined, d = 2): string {
   return `${v.toFixed(d)}%`;
 }
 
-// Score → color palette
-function scoreHue(score: number): { text: string; bg: string; ring: string; glow: string; border: string } {
-  if (score < 30) return {
-    text: 'text-emerald-400', bg: 'bg-emerald-500/10', ring: 'stroke-emerald-400',
-    glow: 'shadow-emerald-500/20', border: 'border-emerald-500/20',
-  };
-  if (score < 50) return {
-    text: 'text-yellow-400', bg: 'bg-yellow-500/10', ring: 'stroke-yellow-400',
-    glow: 'shadow-yellow-500/20', border: 'border-yellow-500/20',
-  };
-  if (score < 70) return {
-    text: 'text-orange-400', bg: 'bg-orange-500/10', ring: 'stroke-orange-400',
-    glow: 'shadow-orange-500/20', border: 'border-orange-500/20',
-  };
-  return {
-    text: 'text-red-400', bg: 'bg-red-500/10', ring: 'stroke-red-400',
-    glow: 'shadow-red-500/20', border: 'border-red-500/20',
-  };
+function scoreHue(score: number) {
+  if (score < 30) return { text: 'text-emerald-400', bg: 'bg-emerald-500/10', ring: 'stroke-emerald-400', border: 'border-emerald-500/20' };
+  if (score < 50) return { text: 'text-yellow-400', bg: 'bg-yellow-500/10', ring: 'stroke-yellow-400', border: 'border-yellow-500/20' };
+  if (score < 70) return { text: 'text-orange-400', bg: 'bg-orange-500/10', ring: 'stroke-orange-400', border: 'border-orange-500/20' };
+  return { text: 'text-red-400', bg: 'bg-red-500/10', ring: 'stroke-red-400', border: 'border-red-500/20' };
 }
-
 function scoreBarClass(score: number): string {
   if (score < 30) return 'bg-emerald-500';
   if (score < 50) return 'bg-yellow-500';
   if (score < 70) return 'bg-orange-500';
   return 'bg-red-500';
 }
-
 function scoreLabel(score: number): string {
   if (score < 30) return '安全';
   if (score < 50) return '注意';
   if (score < 70) return '警戒';
   return '危険';
 }
-
 function stateColors(color: string) {
-  const map: Record<string, { text: string; bg: string; border: string; dot: string; glow: string }> = {
-    green: { text: 'text-emerald-400', bg: 'bg-emerald-500/8', border: 'border-emerald-500/20', dot: 'bg-emerald-400', glow: 'shadow-emerald-500/10' },
-    cyan: { text: 'text-cyan-400', bg: 'bg-cyan-500/8', border: 'border-cyan-500/20', dot: 'bg-cyan-400', glow: 'shadow-cyan-500/10' },
-    yellow: { text: 'text-yellow-400', bg: 'bg-yellow-500/8', border: 'border-yellow-500/20', dot: 'bg-yellow-400', glow: 'shadow-yellow-500/10' },
-    orange: { text: 'text-orange-400', bg: 'bg-orange-500/8', border: 'border-orange-500/20', dot: 'bg-orange-400', glow: 'shadow-orange-500/10' },
-    red: { text: 'text-red-400', bg: 'bg-red-500/8', border: 'border-red-500/20', dot: 'bg-red-400 animate-pulse', glow: 'shadow-red-500/15' },
-    gray: { text: 'text-zinc-400', bg: 'bg-zinc-500/8', border: 'border-zinc-500/20', dot: 'bg-zinc-400', glow: '' },
+  const map: Record<string, { text: string; bg: string; border: string; dot: string }> = {
+    green: { text: 'text-emerald-400', bg: 'bg-emerald-500/8', border: 'border-emerald-500/20', dot: 'bg-emerald-400' },
+    cyan: { text: 'text-cyan-400', bg: 'bg-cyan-500/8', border: 'border-cyan-500/20', dot: 'bg-cyan-400' },
+    yellow: { text: 'text-yellow-400', bg: 'bg-yellow-500/8', border: 'border-yellow-500/20', dot: 'bg-yellow-400' },
+    orange: { text: 'text-orange-400', bg: 'bg-orange-500/8', border: 'border-orange-500/20', dot: 'bg-orange-400' },
+    red: { text: 'text-red-400', bg: 'bg-red-500/8', border: 'border-red-500/20', dot: 'bg-red-400 animate-pulse' },
+    gray: { text: 'text-zinc-400', bg: 'bg-zinc-500/8', border: 'border-zinc-500/20', dot: 'bg-zinc-400' },
   };
   return map[color] || map.gray;
 }
-
 function sensorDot(status: string): string {
   if (status === 'danger') return 'bg-red-400 animate-pulse';
   if (status === 'warning') return 'bg-amber-400';
   return 'bg-emerald-400';
 }
 
-// ============================================================
-// Score Ring SVG (circular gauge)
-// ============================================================
+// --- Shared components ---
+
+function GlassCard({ children, className = '', stagger = 0 }: {
+  children: ReactNode; className?: string; stagger?: number;
+}) {
+  return (
+    <div className={`plumb-glass plumb-glass-hover rounded-xl plumb-animate-in ${stagger > 0 ? `plumb-stagger-${stagger}` : ''} ${className}`}>
+      {children}
+    </div>
+  );
+}
 
 function ScoreRing({ score, size = 64, strokeWidth = 4 }: {
   score: number; size?: number; strokeWidth?: number;
@@ -92,25 +95,12 @@ function ScoreRing({ score, size = 64, strokeWidth = 4 }: {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (Math.min(score, 100) / 100) * circumference;
   const h = scoreHue(score);
-
   return (
     <div className="relative inline-flex items-center justify-center">
       <svg width={size} height={size} className="plumb-score-ring">
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-white/5"
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className={`${h.ring} plumb-ring-progress`}
-        />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-white/5" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={strokeWidth} strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={offset} className={`${h.ring} plumb-ring-progress`} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className={`text-lg font-bold tabular-nums font-mono ${h.text}`}>{score}</span>
@@ -119,21 +109,13 @@ function ScoreRing({ score, size = 64, strokeWidth = 4 }: {
   );
 }
 
-// Inline horizontal gauge
 function GaugeBar({ score, className = '' }: { score: number; className?: string }) {
   return (
     <div className={`w-full h-1 rounded-full bg-white/[0.04] overflow-hidden ${className}`}>
-      <div
-        className={`h-full rounded-full plumb-gauge-bar ${scoreBarClass(score)}`}
-        style={{ width: `${Math.min(score, 100)}%` }}
-      />
+      <div className={`h-full rounded-full plumb-gauge-bar ${scoreBarClass(score)}`} style={{ width: `${Math.min(score, 100)}%` }} />
     </div>
   );
 }
-
-// ============================================================
-// Metric display
-// ============================================================
 
 function Metric({ label, value, sub, children }: {
   label: string; value: string; sub?: string; children?: ReactNode;
@@ -164,26 +146,27 @@ function StatusChip({ label, color }: { label: string; color: string }) {
   );
 }
 
-// ============================================================
-// Glass Card wrapper
-// ============================================================
-
-function GlassCard({ children, className = '', stagger = 0 }: {
-  children: ReactNode; className?: string; stagger?: number;
-}) {
+function ScoreLegend() {
+  const levels = [
+    { range: '0-29', label: '安全', color: 'bg-emerald-500' },
+    { range: '30-49', label: '注意', color: 'bg-yellow-500' },
+    { range: '50-69', label: '警戒', color: 'bg-orange-500' },
+    { range: '70+', label: '危険', color: 'bg-red-500' },
+  ];
   return (
-    <div className={`
-      plumb-glass plumb-glass-hover rounded-xl
-      plumb-animate-in ${stagger > 0 ? `plumb-stagger-${stagger}` : ''}
-      ${className}
-    `}>
-      {children}
+    <div className="flex items-center gap-3">
+      {levels.map((l) => (
+        <div key={l.range} className="flex items-center gap-1">
+          <span className={`w-1.5 h-1.5 rounded-full ${l.color}`} />
+          <span className="text-[9px] text-zinc-500 font-mono">{l.range}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ============================================================
-// Market State Hero
+// TAB 1: Dashboard (existing content)
 // ============================================================
 
 function MarketStateHero({ state, l1, l2a, l2b }: {
@@ -191,58 +174,30 @@ function MarketStateHero({ state, l1, l2a, l2b }: {
 }) {
   const c = stateColors(state.color);
   const isDanger = state.color === 'red' || state.color === 'orange';
-
   return (
-    <div className={`
-      relative rounded-2xl border ${c.border} overflow-hidden
-      plumb-animate-scale
-    `}>
-      {/* Background glow */}
+    <div className={`relative rounded-2xl border ${c.border} overflow-hidden plumb-animate-scale`}>
       <div className={`absolute inset-0 ${c.bg}`} />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] rounded-full blur-[100px] opacity-20 plumb-glow"
-        style={{ background: state.color === 'green' ? '#10b981' : state.color === 'red' ? '#ef4444' : state.color === 'orange' ? '#f97316' : state.color === 'yellow' ? '#eab308' : state.color === 'cyan' ? '#06b6d4' : '#71717a' }}
-      />
-
+        style={{ background: state.color === 'green' ? '#10b981' : state.color === 'red' ? '#ef4444' : state.color === 'orange' ? '#f97316' : state.color === 'yellow' ? '#eab308' : state.color === 'cyan' ? '#06b6d4' : '#71717a' }} />
       <div className="relative p-6 md:p-8">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          {/* Left: State Info */}
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <span className={`w-3 h-3 rounded-full ${c.dot} ring-4 ring-current/10`} />
-              <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${c.text}`}>
-                {state.label}
-              </h2>
+              <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${c.text}`}>{state.label}</h2>
             </div>
-
             {state.state_count > 1 && (
               <div className="flex flex-wrap gap-1.5 pl-6">
-                {state.all_states.slice(1).map((s) => {
-                  const sc = stateColors(s.color);
-                  return (
-                    <Badge key={s.code} variant="outline" className={`${sc.text} ${sc.border} text-[10px] font-mono`}>
-                      {s.label}
-                    </Badge>
-                  );
-                })}
+                {state.all_states.slice(1).map((s) => { const sc = stateColors(s.color); return (
+                  <Badge key={s.code} variant="outline" className={`${sc.text} ${sc.border} text-[10px] font-mono`}>{s.label}</Badge>
+                ); })}
               </div>
             )}
-
-            <p className="text-sm text-zinc-400 max-w-lg leading-relaxed pl-6">
-              {state.description}
-            </p>
-
-            <div className={`
-              inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium ml-6
-              ${isDanger ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-zinc-800/50 text-zinc-300 border border-zinc-700/50'}
-            `}>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-              </svg>
+            <p className="text-sm text-zinc-400 max-w-lg leading-relaxed pl-6">{state.description}</p>
+            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium ml-6 ${isDanger ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-zinc-800/50 text-zinc-300 border border-zinc-700/50'}`}>
               {state.action}
             </div>
           </div>
-
-          {/* Right: Score Rings */}
           <div className="flex items-center gap-6 lg:gap-8">
             {[
               { label: 'L1', sub: '政策', score: l1, accent: 'text-blue-400' },
@@ -251,43 +206,30 @@ function MarketStateHero({ state, l1, l2a, l2b }: {
             ].map((item) => (
               <div key={item.label} className="text-center space-y-1">
                 <ScoreRing score={item.score} size={72} strokeWidth={5} />
-                <p className={`text-[10px] font-bold uppercase tracking-widest ${item.accent}`}>{item.label}</p>
+                <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${item.accent}`}>{item.label}</p>
                 <p className="text-[10px] text-zinc-500">{item.sub}</p>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Comment */}
         {state.comment && (
-          <div className="mt-5 rounded-lg bg-black/30 border border-white/[0.04] p-4 text-sm text-zinc-300 leading-relaxed plumb-shimmer-bg">
-            {state.comment}
-          </div>
+          <div className="mt-5 rounded-lg bg-black/30 border border-white/[0.04] p-4 text-sm text-zinc-300 leading-relaxed plumb-shimmer-bg">{state.comment}</div>
         )}
       </div>
     </div>
   );
 }
 
-// ============================================================
-// Market Indicators Ticker Bar
-// ============================================================
-
-function IndicatorBar({ indicators }: {
-  indicators: { vix?: number; dxy?: number; sp500?: number; nasdaq?: number } | null;
-}) {
+function IndicatorBar({ indicators }: { indicators: { vix?: number; dxy?: number; sp500?: number; nasdaq?: number } | null }) {
   if (!indicators) return null;
-
   const vixColor = (v: number) => v > 30 ? 'text-red-400' : v > 20 ? 'text-amber-400' : 'text-emerald-400';
   const dxyColor = (v: number) => v > 110 ? 'text-amber-400' : 'text-zinc-200';
-
   const items = [
     { label: 'VIX', value: indicators.vix, format: (v: number) => v.toFixed(2), color: indicators.vix ? vixColor(indicators.vix) : '' },
     { label: 'DXY', value: indicators.dxy, format: (v: number) => v.toFixed(2), color: indicators.dxy ? dxyColor(indicators.dxy) : '' },
     { label: 'S&P 500', value: indicators.sp500, format: (v: number) => fmt(v), color: 'text-zinc-200' },
     { label: 'NASDAQ', value: indicators.nasdaq, format: (v: number) => fmt(v), color: 'text-zinc-200' },
   ];
-
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 plumb-animate-in plumb-stagger-2">
       {items.map((item) => (
@@ -301,10 +243,6 @@ function IndicatorBar({ indicators }: {
     </div>
   );
 }
-
-// ============================================================
-// Layer Cards
-// ============================================================
 
 function LayerHeader({ number, label, sub, color, score }: {
   number: string; label: string; sub: string; color: string; score: number;
@@ -320,9 +258,7 @@ function LayerHeader({ number, label, sub, color, score }: {
         </div>
         <div className="flex flex-col items-center gap-1">
           <ScoreRing score={score} size={56} strokeWidth={4} />
-          <Badge variant="outline" className={`text-[9px] ${h.text} ${h.border} font-mono`}>
-            {scoreLabel(score)}
-          </Badge>
+          <Badge variant="outline" className={`text-[9px] ${h.text} ${h.border} font-mono`}>{scoreLabel(score)}</Badge>
         </div>
       </div>
       <GaugeBar score={score} className="mt-3" />
@@ -333,47 +269,37 @@ function LayerHeader({ number, label, sub, color, score }: {
 function Layer1Card({ layer }: { layer: LayerStress }) {
   const fed = layer.fed_data;
   const netLiq = layer.net_liquidity ?? 0;
-
   return (
     <GlassCard stagger={3} className="plumb-gradient-border before:bg-gradient-to-b before:from-blue-500/30 before:to-transparent">
-      <LayerHeader
-        number="LAYER 1" label="政策流動性" sub="元栓 — FRBバランスシート"
-        color="text-blue-400" score={layer.stress_score}
-      />
+      <LayerHeader number="LAYER 1" label="政策流動性" sub="元栓 — FRBバランスシート" color="text-blue-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
         <p className="text-xs text-zinc-400 leading-relaxed">{layer.interpretation}</p>
-
-        {fed && (
-          <>
-            <div className="rounded-lg bg-black/20 p-3 space-y-0.5">
-              <Metric label="SOMA資産" value={fmtB(fed.soma_assets)} />
-              <Metric label="準備預金" value={fmtB(fed.reserves)} />
-              <Metric label="RRP" value={fmtB(fed.rrp)} />
-              <Metric label="TGA" value={fmtB(fed.tga)} />
-            </div>
-
-            {/* Net Liquidity highlight */}
-            <div className="rounded-lg bg-blue-500/[0.06] border border-blue-500/10 p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-blue-400/70 uppercase tracking-wider font-medium">純流動性</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">SOMA − RRP − TGA</p>
-                </div>
-                <p className="text-xl font-bold tabular-nums font-mono text-blue-400">{fmtB(netLiq)}</p>
+        {fed && (<>
+          <div className="rounded-lg bg-black/20 p-3 space-y-0.5">
+            <Metric label="SOMA資産" value={fmtB(fed.soma_assets)} />
+            <Metric label="準備預金" value={fmtB(fed.reserves)} />
+            <Metric label="RRP" value={fmtB(fed.rrp)} />
+            <Metric label="TGA" value={fmtB(fed.tga)} />
+          </div>
+          <div className="rounded-lg bg-blue-500/[0.06] border border-blue-500/10 p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-blue-400/70 uppercase tracking-wider font-medium">純流動性</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5">SOMA − RRP − TGA</p>
               </div>
-              {layer.z_score != null && (
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-500/10">
-                  <span className="text-[10px] text-zinc-500">Z-Score</span>
-                  <span className={`text-xs font-mono font-bold ${layer.z_score > 1 ? 'text-emerald-400' : layer.z_score < -1 ? 'text-red-400' : 'text-zinc-300'}`}>
-                    {layer.z_score > 0 ? '+' : ''}{layer.z_score}
-                  </span>
-                </div>
-              )}
+              <p className="text-xl font-bold tabular-nums font-mono text-blue-400">{fmtB(netLiq)}</p>
             </div>
-
-            <p className="text-[10px] text-zinc-600 font-mono">UPD {fed.date}</p>
-          </>
-        )}
+            {layer.z_score != null && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-500/10">
+                <span className="text-[10px] text-zinc-500">Z-Score</span>
+                <span className={`text-xs font-mono font-bold ${layer.z_score > 1 ? 'text-emerald-400' : layer.z_score < -1 ? 'text-red-400' : 'text-zinc-300'}`}>
+                  {layer.z_score > 0 ? '+' : ''}{layer.z_score}
+                </span>
+              </div>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-600 font-mono">UPD {fed.date}</p>
+        </>)}
       </div>
     </GlassCard>
   );
@@ -381,51 +307,36 @@ function Layer1Card({ layer }: { layer: LayerStress }) {
 
 function Layer2ACard({ layer }: { layer: LayerStress }) {
   const c = layer.components as Record<string, unknown> | undefined;
-
   return (
     <GlassCard stagger={4} className="plumb-gradient-border before:bg-gradient-to-b before:from-purple-500/30 before:to-transparent">
-      <LayerHeader
-        number="LAYER 2A" label="銀行システム" sub="配管 — 準備預金・KRE・SRF"
-        color="text-purple-400" score={layer.stress_score}
-      />
+      <LayerHeader number="LAYER 2A" label="銀行システム" sub="配管 — 準備預金・KRE・SRF" color="text-purple-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
         <p className="text-xs text-zinc-400 leading-relaxed">{layer.interpretation}</p>
-
         {c && (
           <div className="rounded-lg bg-black/20 p-3 space-y-0.5">
             {c.reserves_value != null && (
               <Metric label="準備預金" value={fmtB(c.reserves_value as number)}>
                 {c.reserves_change_mom != null && (
-                  <StatusChip
-                    label={`${(c.reserves_change_mom as number) > 0 ? '+' : ''}${(c.reserves_change_mom as number).toFixed(1)}%`}
-                    color={(c.reserves_change_mom as number) < 0 ? 'red' : 'green'}
-                  />
+                  <StatusChip label={`${(c.reserves_change_mom as number) > 0 ? '+' : ''}${(c.reserves_change_mom as number).toFixed(1)}%`}
+                    color={(c.reserves_change_mom as number) < 0 ? 'red' : 'green'} />
                 )}
               </Metric>
             )}
             {c.kre_52w_change != null && (
               <Metric label="KRE 52W変化率" value={fmtPct(c.kre_52w_change as number, 1)}>
-                <StatusChip
-                  label={(c.kre_52w_change as number) < -20 ? '危険' : (c.kre_52w_change as number) < -10 ? '警戒' : '安定'}
-                  color={(c.kre_52w_change as number) < -20 ? 'red' : (c.kre_52w_change as number) < -10 ? 'amber' : 'green'}
-                />
+                <StatusChip label={(c.kre_52w_change as number) < -20 ? '危険' : (c.kre_52w_change as number) < -10 ? '警戒' : '安定'}
+                  color={(c.kre_52w_change as number) < -20 ? 'red' : (c.kre_52w_change as number) < -10 ? 'amber' : 'green'} />
               </Metric>
             )}
-            {c.srf_usage != null && (
-              <Metric label="SRF利用 (30日)" value={`$${fmt(c.srf_usage as number)}B`} />
-            )}
+            {c.srf_usage != null && <Metric label="SRF利用 (30日)" value={`$${fmt(c.srf_usage as number)}B`} />}
             {c.ig_spread != null && (
               <Metric label="IGスプレッド" value={fmtPctNoSign(c.ig_spread as number)}>
-                <StatusChip
-                  label={(c.ig_spread as number) > 1.5 ? '拡大' : '正常'}
-                  color={(c.ig_spread as number) > 1.5 ? 'red' : (c.ig_spread as number) > 1.0 ? 'amber' : 'green'}
-                />
+                <StatusChip label={(c.ig_spread as number) > 1.5 ? '拡大' : '正常'}
+                  color={(c.ig_spread as number) > 1.5 ? 'red' : (c.ig_spread as number) > 1.0 ? 'amber' : 'green'} />
               </Metric>
             )}
           </div>
         )}
-
-        {/* Alerts */}
         {layer.alerts && layer.alerts.length > 0 && (
           <div className="space-y-1.5">
             {layer.alerts.map((alert, i) => (
@@ -443,28 +354,17 @@ function Layer2ACard({ layer }: { layer: LayerStress }) {
 
 function Layer2BCard({ layer }: { layer: LayerStress }) {
   const itPct = layer.it_bubble_comparison ?? 0;
-
   return (
     <GlassCard stagger={5} className="plumb-gradient-border before:bg-gradient-to-b before:from-cyan-500/30 before:to-transparent">
-      <LayerHeader
-        number="LAYER 2B" label="リスク許容度" sub="蛇口 — 信用取引・MMF"
-        color="text-cyan-400" score={layer.stress_score}
-      />
+      <LayerHeader number="LAYER 2B" label="リスク許容度" sub="蛇口 — 信用取引・MMF" color="text-cyan-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
-        {/* Margin Debt */}
         <div className="rounded-lg bg-black/20 p-3 space-y-0.5">
-          {layer.margin_debt_2y != null && (
-            <Metric label="信用取引 2Y変化率" value={fmtPct(layer.margin_debt_2y, 1)} />
-          )}
-          {layer.margin_debt_1y != null && (
-            <Metric label="信用取引 1Y変化率" value={fmtPct(layer.margin_debt_1y, 1)} sub="参考" />
-          )}
+          {layer.margin_debt_2y != null && <Metric label="信用取引 2Y変化率" value={fmtPct(layer.margin_debt_2y, 1)} />}
+          {layer.margin_debt_1y != null && <Metric label="信用取引 1Y変化率" value={fmtPct(layer.margin_debt_1y, 1)} sub="参考" />}
           {layer.components && (layer.components as Record<string, unknown>).mmf_change != null && (
             <Metric label="MMF 3M変化率" value={fmtPctNoSign((layer.components as Record<string, unknown>).mmf_change as number, 1)} sub="逆相関" />
           )}
         </div>
-
-        {/* IT Bubble Comparison — the premium gauge */}
         {layer.it_bubble_comparison != null && (
           <div className="rounded-lg bg-black/20 border border-white/[0.03] p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -473,73 +373,44 @@ function Layer2BCard({ layer }: { layer: LayerStress }) {
                 {itPct.toFixed(0)}%
               </span>
             </div>
-
-            {/* Multi-segment gauge */}
             <div className="relative">
               <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-800/80">
-                {/* Green zone 0-50 */}
                 <div className="h-full bg-emerald-500/30" style={{ width: '50%' }} />
-                {/* Yellow zone 50-70 */}
                 <div className="h-full bg-yellow-500/30" style={{ width: '20%' }} />
-                {/* Orange zone 70-90 */}
                 <div className="h-full bg-orange-500/30" style={{ width: '20%' }} />
-                {/* Red zone 90-100 */}
                 <div className="h-full bg-red-500/30" style={{ width: '10%' }} />
               </div>
-              {/* Current position indicator */}
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-white shadow-lg shadow-white/20 transition-all duration-1000"
-                style={{ left: `${Math.min(itPct, 100)}%` }}
-              />
+              <div className="absolute top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-white shadow-lg shadow-white/20 transition-all duration-1000"
+                style={{ left: `${Math.min(itPct, 100)}%` }} />
             </div>
-
             <div className="flex justify-between text-[9px] text-zinc-600 font-mono">
-              <span>0</span>
-              <span className="text-zinc-500">50</span>
-              <span className="text-amber-500/60">70</span>
+              <span>0</span><span className="text-zinc-500">50</span><span className="text-amber-500/60">70</span>
               <span className="text-red-500/60">PEAK {layer.it_bubble_peak?.toFixed(0)}%</span>
             </div>
           </div>
         )}
-
         {layer.phase && (
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-zinc-500">フェーズ</span>
-            <Badge variant="outline" className="text-[10px] text-cyan-400 border-cyan-500/20 font-mono">
-              {layer.phase}
-            </Badge>
+            <Badge variant="outline" className="text-[10px] text-cyan-400 border-cyan-500/20 font-mono">{layer.phase}</Badge>
           </div>
         )}
-
-        {layer.data_date && (
-          <p className="text-[10px] text-zinc-600 font-mono">UPD {layer.data_date}</p>
-        )}
+        {layer.data_date && <p className="text-[10px] text-zinc-600 font-mono">UPD {layer.data_date}</p>}
       </div>
     </GlassCard>
   );
 }
 
-// ============================================================
-// Net Liquidity Flow — Pipeline Visualization
-// ============================================================
-
-function NetLiquidityFlow({ fed }: {
-  fed: { soma_assets: number | null; rrp: number | null; tga: number | null } | undefined;
-}) {
+function NetLiquidityFlow({ fed }: { fed: { soma_assets: number | null; rrp: number | null; tga: number | null } | undefined }) {
   if (!fed) return null;
-  const soma = fed.soma_assets ?? 0;
-  const rrp = fed.rrp ?? 0;
-  const tga = fed.tga ?? 0;
-  const net = soma - rrp - tga;
-  const max = soma || 1;
-
+  const soma = fed.soma_assets ?? 0, rrp = fed.rrp ?? 0, tga = fed.tga ?? 0;
+  const net = soma - rrp - tga, max = soma || 1;
   const segments = [
     { label: 'SOMA', value: soma, pct: 100, color: 'border-blue-500/20 bg-blue-500/[0.06]', accent: 'text-blue-400', op: '' },
     { label: 'RRP', value: rrp, pct: (rrp / max) * 100, color: 'border-orange-500/20 bg-orange-500/[0.06]', accent: 'text-orange-400', op: '−' },
     { label: 'TGA', value: tga, pct: (tga / max) * 100, color: 'border-amber-500/20 bg-amber-500/[0.06]', accent: 'text-amber-400', op: '−' },
     { label: 'NET', value: net, pct: (net / max) * 100, color: 'border-emerald-500/20 bg-emerald-500/[0.06] ring-1 ring-emerald-500/10', accent: 'text-emerald-400', op: '=' },
   ];
-
   return (
     <GlassCard stagger={6}>
       <div className="p-5">
@@ -550,7 +421,6 @@ function NetLiquidityFlow({ fed }: {
           </div>
           <p className="text-xs text-zinc-500 font-mono">SOMA − RRP − TGA = Net</p>
         </div>
-
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {segments.map((s) => (
             <div key={s.label} className={`rounded-xl border p-4 ${s.color} plumb-flow-pipe transition-all duration-300 hover:scale-[1.02]`}>
@@ -560,10 +430,7 @@ function NetLiquidityFlow({ fed }: {
               </div>
               <p className={`text-xl font-bold tabular-nums font-mono ${s.accent}`}>{fmtB(s.value)}</p>
               <div className="mt-3 h-1 rounded-full bg-white/[0.04] overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-current opacity-30 plumb-gauge-bar"
-                  style={{ width: `${Math.min(Math.max(s.pct, 0), 100)}%` }}
-                />
+                <div className="h-full rounded-full bg-current opacity-30 plumb-gauge-bar" style={{ width: `${Math.min(Math.max(s.pct, 0), 100)}%` }} />
               </div>
             </div>
           ))}
@@ -573,46 +440,19 @@ function NetLiquidityFlow({ fed }: {
   );
 }
 
-// ============================================================
-// Credit Pressure — Sensor Grid
-// ============================================================
-
 function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
   const levelColor = credit.level === 'High' ? 'text-red-400' : credit.level === 'Medium' ? 'text-amber-400' : 'text-emerald-400';
   const levelBg = credit.level === 'High' ? 'bg-red-500/10 border-red-500/20' : credit.level === 'Medium' ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
-
   const sensors = [
-    {
-      label: 'HYスプレッド', sub: 'ハイイールド債',
-      value: credit.components.hy_spread?.value,
-      format: fmtPctNoSign, status: credit.components.hy_spread?.status ?? 'normal',
-      info: '> 5% 危険',
-    },
-    {
-      label: 'IGスプレッド', sub: '投資適格債',
-      value: credit.components.ig_spread?.value,
-      format: fmtPctNoSign, status: credit.components.ig_spread?.status ?? 'normal',
-      info: '> 1.5% 危険',
-    },
-    {
-      label: 'イールドカーブ', sub: '10Y − 2Y',
-      value: credit.components.yield_curve?.value,
-      format: (v: number | null | undefined) => {
-        if (v == null) return '—';
-        return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
-      },
-      status: credit.components.yield_curve?.status ?? 'normal',
-      info: '逆転 = 景気後退',
-    },
-    {
-      label: 'DXY', sub: 'ドル指数',
-      value: credit.components.dxy?.value,
+    { label: 'HYスプレッド', sub: 'ハイイールド債', value: credit.components.hy_spread?.value, format: fmtPctNoSign, status: credit.components.hy_spread?.status ?? 'normal', info: '> 5% 危険' },
+    { label: 'IGスプレッド', sub: '投資適格債', value: credit.components.ig_spread?.value, format: fmtPctNoSign, status: credit.components.ig_spread?.status ?? 'normal', info: '> 1.5% 危険' },
+    { label: 'イールドカーブ', sub: '10Y − 2Y', value: credit.components.yield_curve?.value,
+      format: (v: number | null | undefined) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—',
+      status: credit.components.yield_curve?.status ?? 'normal', info: '逆転 = 景気後退' },
+    { label: 'DXY', sub: 'ドル指数', value: credit.components.dxy?.value,
       format: (v: number | null | undefined) => v != null ? v.toFixed(1) : '—',
-      status: credit.components.dxy?.status ?? 'normal',
-      info: '> 110 ドル高警戒',
-    },
+      status: credit.components.dxy?.status ?? 'normal', info: '> 110 ドル高警戒' },
   ];
-
   return (
     <GlassCard stagger={7}>
       <div className="p-5">
@@ -628,7 +468,6 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
             {credit.level === 'High' ? 'HIGH' : credit.level === 'Medium' ? 'MED' : 'LOW'}
           </Badge>
         </div>
-
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {sensors.map((s) => (
             <Tooltip key={s.label}>
@@ -638,22 +477,16 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
                     <span className={`w-1.5 h-1.5 rounded-full ${sensorDot(s.status)}`} />
                     <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{s.label}</p>
                   </div>
-                  <p className={`text-xl font-bold tabular-nums font-mono ${
-                    s.status === 'danger' ? 'text-red-400' : s.status === 'warning' ? 'text-amber-400' : 'text-zinc-200'
-                  }`}>
+                  <p className={`text-xl font-bold tabular-nums font-mono ${s.status === 'danger' ? 'text-red-400' : s.status === 'warning' ? 'text-amber-400' : 'text-zinc-200'}`}>
                     {s.format(s.value)}
                   </p>
                   <p className="text-[9px] text-zinc-600 mt-1.5">{s.sub}</p>
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p className="text-xs">{s.info}</p>
-              </TooltipContent>
+              <TooltipContent side="bottom"><p className="text-xs">{s.info}</p></TooltipContent>
             </Tooltip>
           ))}
         </div>
-
-        {/* Alerts */}
         {credit.alerts.length > 0 && (
           <div className="mt-4 space-y-1.5">
             {credit.alerts.map((alert, i) => (
@@ -669,44 +502,670 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
   );
 }
 
-// ============================================================
-// Score Legend
-// ============================================================
-
-function ScoreLegend() {
-  const levels = [
-    { range: '0-29', label: '安全', color: 'bg-emerald-500' },
-    { range: '30-49', label: '注意', color: 'bg-yellow-500' },
-    { range: '50-69', label: '警戒', color: 'bg-orange-500' },
-    { range: '70+', label: '危険', color: 'bg-red-500' },
-  ];
-
+function DashboardTab({ data }: { data: PlumbingSummary }) {
+  const { layers, market_state, credit_pressure, market_indicators } = data;
+  const l1 = layers.layer1, l2a = layers.layer2a, l2b = layers.layer2b;
   return (
-    <div className="flex items-center gap-3">
-      {levels.map((l) => (
-        <div key={l.range} className="flex items-center gap-1">
-          <span className={`w-1.5 h-1.5 rounded-full ${l.color}`} />
-          <span className="text-[9px] text-zinc-500 font-mono">{l.range}</span>
-        </div>
-      ))}
+    <div className="space-y-4">
+      {market_state && l1 && l2a && l2b && <MarketStateHero state={market_state} l1={l1.stress_score} l2a={l2a.stress_score} l2b={l2b.stress_score} />}
+      <IndicatorBar indicators={market_indicators} />
+      <div className="grid gap-4 lg:grid-cols-3">
+        {l1 && <Layer1Card layer={l1} />}
+        {l2a && <Layer2ACard layer={l2a} />}
+        {l2b && <Layer2BCard layer={l2b} />}
+      </div>
+      {l1?.fed_data && <NetLiquidityFlow fed={l1.fed_data} />}
+      {credit_pressure && <CreditPressurePanel credit={credit_pressure} />}
+      <div className="flex justify-end">
+        <p className="text-[10px] text-zinc-600 font-mono">
+          {data.timestamp ? `LAST UPDATE ${new Date(data.timestamp).toLocaleString('ja-JP')}` : ''}
+        </p>
+      </div>
     </div>
   );
 }
 
 // ============================================================
-// Loading
+// TAB 2: History Charts
+// ============================================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ChartTooltipContent({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="plumb-glass rounded-lg px-3 py-2 text-xs font-mono shadow-xl">
+      <p className="text-zinc-400 mb-1">{label}</p>
+      {payload.map((p: { name: string; value: number | null; color: string }, i: number) => (
+        <p key={i} style={{ color: p.color }} className="tabular-nums">
+          {p.name}: {p.value != null ? p.value.toLocaleString() : '—'}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+const CHART_TYPES = [
+  { key: 'net_liquidity', label: 'Net Liquidity' },
+  { key: 'margin_debt', label: '信用取引残高' },
+  { key: 'kre', label: 'KRE（地銀）' },
+  { key: 'spreads', label: 'クレジットスプレッド' },
+  { key: 'vix', label: 'VIX' },
+] as const;
+
+const PERIODS = [
+  { label: '1Y', value: '1y' },
+  { label: '2Y', value: '2y' },
+  { label: '5Y', value: '5y' },
+  { label: '10Y', value: '10y' },
+  { label: 'ALL', value: 'all' },
+];
+
+const CRISIS_PRESETS = [
+  { label: 'リーマン', start: '2007-06-01', end: '2010-06-01' },
+  { label: '欧州債務', start: '2011-01-01', end: '2012-12-31' },
+  { label: 'コロナ', start: '2019-10-01', end: '2021-06-01' },
+  { label: 'QT', start: '2021-10-01', end: '2023-12-31' },
+];
+
+type ChartType = typeof CHART_TYPES[number]['key'];
+
+function HistoryChartsTab() {
+  const [histData, setHistData] = useState<HistoryChartsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState('2y');
+  const [chartType, setChartType] = useState<ChartType>('net_liquidity');
+  const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
+
+  const fetchHistory = useCallback(async (p: string, start?: string, end?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getHistoryCharts(p, start, end);
+      setHistData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'データ取得エラー');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (customRange) {
+      fetchHistory(period, customRange.start, customRange.end);
+    } else {
+      fetchHistory(period);
+    }
+  }, [period, customRange, fetchHistory]);
+
+  const handlePeriod = (p: string) => { setCustomRange(null); setPeriod(p); };
+  const handleCrisis = (start: string, end: string) => { setCustomRange({ start, end }); };
+
+  const axisStyle = { fill: '#71717a', fontSize: 10, fontFamily: 'var(--font-geist-mono)' };
+
+  function renderChart() {
+    if (!histData) return null;
+    const d = histData.data;
+
+    switch (chartType) {
+      case 'net_liquidity':
+        return (
+          <ResponsiveContainer width="100%" height={360}>
+            <AreaChart data={d.net_liquidity}>
+              <defs>
+                <linearGradient id="nlFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <YAxis tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v.toLocaleString()}B`} />
+              <RechartsTooltip content={<ChartTooltipContent />} />
+              <Area type="monotone" dataKey="net_liquidity" stroke="#3b82f6" fill="url(#nlFill)" strokeWidth={1.5} dot={false} name="Net Liquidity" connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        );
+      case 'margin_debt':
+        return (
+          <ResponsiveContainer width="100%" height={360}>
+            <ComposedChart data={d.margin_debt}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+              <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
+              <RechartsTooltip content={<ChartTooltipContent />} />
+              <Bar yAxisId="left" dataKey="debit_balance" fill="rgba(6,182,212,0.3)" name="残高 (M$)" />
+              <Line yAxisId="right" type="monotone" dataKey="change_2y" stroke="#f97316" strokeWidth={1.5} dot={false} name="2Y変化率 (%)" strokeDasharray="5 5" connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+      case 'kre':
+        return (
+          <ResponsiveContainer width="100%" height={360}>
+            <ComposedChart data={d.bank_sector}>
+              <defs>
+                <linearGradient id="kreFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v}`} />
+              <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
+              <RechartsTooltip content={<ChartTooltipContent />} />
+              <Area yAxisId="left" type="monotone" dataKey="kre_close" stroke="#a855f7" fill="url(#kreFill)" strokeWidth={1.5} dot={false} name="KRE ($)" connectNulls />
+              <Line yAxisId="right" type="monotone" dataKey="kre_52w_change" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="52W変化率 (%)" strokeDasharray="5 5" connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+      case 'spreads':
+        return (
+          <ResponsiveContainer width="100%" height={360}>
+            <LineChart data={d.credit_spreads}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <YAxis tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
+              <RechartsTooltip content={<ChartTooltipContent />} />
+              <ReferenceLine y={5} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: 'HY危険', fill: '#71717a', fontSize: 9 }} />
+              <Line type="monotone" dataKey="hy_spread" stroke="#ef4444" strokeWidth={1.5} dot={false} name="HYスプレッド (%)" connectNulls />
+              <Line type="monotone" dataKey="ig_spread" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="IGスプレッド (%)" connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        );
+      case 'vix':
+        return (
+          <ResponsiveContainer width="100%" height={360}>
+            <AreaChart data={d.market_indicators}>
+              <defs>
+                <linearGradient id="vixFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#fb923c" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#fb923c" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <YAxis tick={axisStyle} tickLine={false} />
+              <RechartsTooltip content={<ChartTooltipContent />} />
+              <ReferenceLine y={20} stroke="rgba(251,191,36,0.3)" strokeDasharray="4 4" label={{ value: '警戒', fill: '#71717a', fontSize: 9 }} />
+              <ReferenceLine y={30} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: '#71717a', fontSize: 9 }} />
+              <Area type="monotone" dataKey="vix" stroke="#fb923c" fill="url(#vixFill)" strokeWidth={1.5} dot={false} name="VIX" connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <div className="space-y-4 plumb-animate-in">
+      {/* Period + Crisis */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 plumb-glass rounded-lg p-1">
+          {PERIODS.map((p) => (
+            <button key={p.value} onClick={() => handlePeriod(p.value)}
+              className={`px-3 py-1.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider transition-colors ${
+                period === p.value && !customRange ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300'
+              }`}>{p.label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          {CRISIS_PRESETS.map((c) => (
+            <button key={c.label} onClick={() => handleCrisis(c.start, c.end)}
+              className={`px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+                customRange?.start === c.start ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+              }`}>{c.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart type selector */}
+      <div className="flex items-center gap-1 plumb-glass rounded-lg p-1 overflow-x-auto">
+        {CHART_TYPES.map((ct) => (
+          <button key={ct.key} onClick={() => setChartType(ct.key)}
+            className={`px-3 py-1.5 rounded-md text-[10px] font-medium whitespace-nowrap transition-colors ${
+              chartType === ct.key ? 'bg-white/[0.08] text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}>{ct.label}</button>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <GlassCard>
+        <div className="p-5">
+          {loading ? (
+            <div className="h-[360px] flex items-center justify-center">
+              <div className="text-xs text-zinc-500 font-mono">Loading...</div>
+            </div>
+          ) : error ? (
+            <div className="h-[360px] flex items-center justify-center">
+              <div className="text-xs text-red-400">{error}</div>
+            </div>
+          ) : (
+            <div className="plumb-chart">{renderChart()}</div>
+          )}
+        </div>
+      </GlassCard>
+
+      {histData && (
+        <p className="text-[10px] text-zinc-600 font-mono text-right">
+          {histData.start_date} — {histData.end_date}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// TAB 3: Backtest
+// ============================================================
+
+const STATE_COLOR_MAP: Record<string, string> = {
+  green: 'text-emerald-400', cyan: 'text-cyan-400', yellow: 'text-yellow-400',
+  orange: 'text-orange-400', red: 'text-red-400', gray: 'text-zinc-400',
+};
+const STATE_DOT_MAP: Record<string, string> = {
+  green: 'bg-emerald-400', cyan: 'bg-cyan-400', yellow: 'bg-yellow-400',
+  orange: 'bg-orange-400', red: 'bg-red-400', gray: 'bg-zinc-400',
+};
+
+function BacktestTab() {
+  const [btData, setBtData] = useState<BacktestData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stateFilter, setStateFilter] = useState<string>('ALL');
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await getBacktestStates(120);
+        setBtData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'データ取得エラー');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) return <div className="h-96 flex items-center justify-center"><Skeleton className="h-8 w-40" /></div>;
+  if (error) return <div className="text-red-400 text-sm text-center py-20">{error}</div>;
+  if (!btData) return null;
+
+  const { state_definitions, states, state_stats } = btData;
+
+  // Count occurrences for filter buttons
+  const stateCounts: Record<string, number> = {};
+  for (const s of states) {
+    stateCounts[s.state_code] = (stateCounts[s.state_code] || 0) + 1;
+  }
+
+  const filteredStates = stateFilter === 'ALL' ? states : states.filter(s => s.state_code === stateFilter);
+  const sortedStates = [...filteredStates].reverse(); // newest first
+
+  return (
+    <div className="space-y-5 plumb-animate-in">
+      {/* State Definitions */}
+      <GlassCard stagger={1}>
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-4 rounded-full bg-purple-500" />
+            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.15em]">状態定義テーブル</p>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[10px] font-mono">状態</TableHead>
+                  <TableHead className="text-[10px] font-mono">条件</TableHead>
+                  <TableHead className="text-[10px] font-mono">説明</TableHead>
+                  <TableHead className="text-[10px] font-mono">アクション</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state_definitions.map((def) => (
+                  <TableRow key={def.code} className="hover:bg-white/[0.02]">
+                    <TableCell className="py-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${STATE_DOT_MAP[def.color] ?? 'bg-zinc-400'}`} />
+                        <span className={`text-xs font-medium ${STATE_COLOR_MAP[def.color] ?? 'text-zinc-400'}`}>{def.label}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-[10px] text-cyan-400/80 font-mono py-2">{def.conditions}</TableCell>
+                    <TableCell className="text-[10px] text-zinc-400 py-2 max-w-[200px]">{def.description}</TableCell>
+                    <TableCell className="text-[10px] text-yellow-400/80 font-medium py-2">{def.action}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* State Performance Stats */}
+      {Object.keys(state_stats).length > 0 && (
+        <GlassCard stagger={2}>
+          <div className="p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-4 rounded-full bg-blue-500" />
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.15em]">状態別パフォーマンス</p>
+              <span className="text-[9px] text-zinc-600">（S&P500 6ヶ月後リターン）</span>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {state_definitions.filter(d => state_stats[d.code]).map((def) => {
+                const ss = state_stats[def.code];
+                if (!ss) return null;
+                return (
+                  <div key={def.code} className="rounded-xl bg-black/20 border border-white/[0.03] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`w-2 h-2 rounded-full ${STATE_DOT_MAP[def.color] ?? 'bg-zinc-400'}`} />
+                      <span className={`text-xs font-medium ${STATE_COLOR_MAP[def.color] ?? 'text-zinc-400'}`}>{def.label}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-[9px] text-zinc-500">平均6Mリターン</p>
+                        <p className={`text-sm font-bold font-mono tabular-nums ${ss.avg_return_6m >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {ss.avg_return_6m >= 0 ? '+' : ''}{ss.avg_return_6m}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-500">勝率</p>
+                        <p className="text-sm font-bold font-mono tabular-nums">{ss.win_rate}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-500">最大DD</p>
+                        <p className="text-sm font-bold font-mono tabular-nums text-red-400">{ss.max_drawdown}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-500">件数</p>
+                        <p className="text-sm font-bold font-mono tabular-nums">{ss.sample_count}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* State filter + Occurrence History */}
+      <GlassCard stagger={3}>
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-4 rounded-full bg-cyan-500" />
+            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.15em]">発生履歴</p>
+            <span className="text-[9px] text-zinc-600">({btData.total_months}ヶ月)</span>
+          </div>
+
+          {/* Filter buttons */}
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            <button onClick={() => setStateFilter('ALL')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-mono transition-colors ${stateFilter === 'ALL' ? 'bg-white/[0.08] text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>
+              ALL ({states.length})
+            </button>
+            {state_definitions.map((def) => {
+              const cnt = stateCounts[def.code] || 0;
+              if (cnt === 0) return null;
+              return (
+                <button key={def.code} onClick={() => setStateFilter(def.code)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    stateFilter === def.code
+                      ? `${STATE_COLOR_MAP[def.color]} bg-white/[0.06]`
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}>
+                  {def.label} ({cnt})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111]">日付</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111]">状態</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111] text-right">L1</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111] text-right">L2A</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111] text-right">L2B</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111] text-right">SP500</TableHead>
+                  <TableHead className="text-[10px] font-mono sticky top-0 bg-[#111] text-right">6Mリターン</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedStates.map((s, i) => (
+                  <TableRow key={i} className="hover:bg-white/[0.02]">
+                    <TableCell className="text-[10px] font-mono text-zinc-400 py-1.5">{s.date}</TableCell>
+                    <TableCell className="py-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${STATE_DOT_MAP[s.color] ?? 'bg-zinc-400'}`} />
+                        <span className={`text-[10px] font-medium ${STATE_COLOR_MAP[s.color] ?? 'text-zinc-400'}`}>{s.state_label}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className={`text-[10px] font-mono tabular-nums text-right py-1.5 ${scoreHue(s.layer1_stress).text}`}>{s.layer1_stress}</TableCell>
+                    <TableCell className={`text-[10px] font-mono tabular-nums text-right py-1.5 ${scoreHue(s.layer2a_stress).text}`}>{s.layer2a_stress}</TableCell>
+                    <TableCell className={`text-[10px] font-mono tabular-nums text-right py-1.5 ${scoreHue(s.layer2b_stress).text}`}>{s.layer2b_stress}</TableCell>
+                    <TableCell className="text-[10px] font-mono tabular-nums text-right py-1.5">{s.sp500 ? fmt(s.sp500) : '—'}</TableCell>
+                    <TableCell className={`text-[10px] font-mono tabular-nums text-right py-1.5 ${
+                      s.return_6m == null ? 'text-zinc-600' : s.return_6m >= 0 ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {s.return_6m != null ? `${s.return_6m >= 0 ? '+' : ''}${s.return_6m}%` : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+// ============================================================
+// TAB 4: System Docs (Static)
+// ============================================================
+
+function DocSection({ title, children, defaultOpen = false }: {
+  title: string; children: ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <GlassCard>
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-5 text-left">
+        <h3 className="text-sm font-bold">{title}</h3>
+        <svg className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 text-xs text-zinc-400 leading-relaxed space-y-3 border-t border-white/[0.04] pt-4">
+          {children}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+function DocTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-white/[0.06]">
+            {headers.map((h, i) => <th key={i} className="text-left py-1.5 pr-4 text-zinc-500 font-medium">{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-white/[0.03]">
+              {row.map((cell, j) => <td key={j} className="py-1.5 pr-4 font-mono">{cell}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SystemDocsTab() {
+  return (
+    <div className="space-y-3 plumb-animate-in">
+      <DocSection title="システム概要 ─ 3層流動性モデル" defaultOpen={true}>
+        <p>FRBの金融システムを「配管」に見立てた3層モデルで市場の流動性を監視します。</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+          {[
+            { layer: 'Layer 1', name: '政策流動性（元栓）', desc: 'FRBバランスシートのNet Liquidity（SOMA - RRP - TGA）をZ-scoreで評価。政策レベルの流動性供給を測定。', color: 'border-blue-500/20 text-blue-400' },
+            { layer: 'Layer 2A', name: '銀行システム（配管）', desc: '準備預金、KRE（地銀ETF）、SRF利用、IGスプレッドの加重スコア。銀行間の資金伝達を監視。', color: 'border-purple-500/20 text-purple-400' },
+            { layer: 'Layer 2B', name: 'リスク許容度（蛇口）', desc: '信用取引残高2年変化率（80%）+ MMF変化率（20%）。市場参加者のリスクテイク度を測定。', color: 'border-cyan-500/20 text-cyan-400' },
+          ].map((l) => (
+            <div key={l.layer} className={`rounded-lg border ${l.color} p-3`}>
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${l.color.split(' ')[1]}`}>{l.layer}</p>
+              <p className="text-xs font-medium mt-1">{l.name}</p>
+              <p className="text-[10px] text-zinc-500 mt-1">{l.desc}</p>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Layer 1: 政策流動性 ─ 計算方法">
+        <p className="font-mono text-cyan-400/80">Net Liquidity = SOMA資産 − RRP − TGA</p>
+        <p className="mt-2">10年間のNet Liquidity履歴からZ-scoreを算出し、ストレススコア（0-100）に変換：</p>
+        <DocTable headers={['Z-score', 'ストレス', '解釈']}
+          rows={[
+            ['> +1.5', '0-15', '流動性豊富（QE期など）'],
+            ['+0.5 〜 +1.5', '15-30', '安全圏'],
+            ['-0.5 〜 +0.5', '30-50', '中立'],
+            ['-1.5 〜 -0.5', '50-70', 'やや逼迫（QT期）'],
+            ['< -1.5', '70-90', '流動性危機水準'],
+            ['< -2.0', '90-100', '極度のストレス'],
+          ]} />
+      </DocSection>
+
+      <DocSection title="Layer 2A: 銀行システム ─ 4指標ウェイト">
+        <DocTable headers={['指標', 'ウェイト', '安全', '警戒', '危険']}
+          rows={[
+            ['SRF利用', '40%', '0日/30日', '3日以上', '10日以上（90日）'],
+            ['準備預金 MoM', '20%', '> +3%', '-5% 〜 0%', '< -10%'],
+            ['KRE 52W変化率', '20%', '> +10%', '-10% 〜 0%', '< -30%'],
+            ['IGスプレッド', '20%', '< 1.0%', '1.0-1.5%', '> 2.0%'],
+          ]} />
+        <p className="mt-2 text-amber-400/70">解釈タイプ: スコア50以上の場合、SRF主導なら「FED_DEPENDENCY」、KRE/IG主導なら「CREDIT_STRESS」、両方なら「CRISIS」と判定。</p>
+      </DocSection>
+
+      <DocSection title="Layer 2B: リスク許容度 ─ ITバブル比較">
+        <p className="font-mono text-cyan-400/80">Score = 信用取引残高2Y変化率 × 0.8 + MMF変化率(反転) × 0.2</p>
+        <p className="mt-2">ITバブルピーク時の2年変化率 <span className="text-red-400 font-mono">+104.68%</span> を基準に現在の過熱度を比較。</p>
+        <DocTable headers={['フェーズ', 'スコア', '意味']}
+          rows={[
+            ['悲観期', '0-20', '信用収縮中、逆張り機会'],
+            ['回復期', '20-40', '信用回復中'],
+            ['成長期', '40-60', '正常な信用拡大'],
+            ['過熱期', '60-80', '信用拡大が加速'],
+            ['バブル期', '80-100', 'ITバブルに匹敵する過熱'],
+          ]} />
+      </DocSection>
+
+      <DocSection title="市場状態（State）判定ロジック">
+        <p>3層のストレススコアの組み合わせから8つの市場状態を判定：</p>
+        <DocTable headers={['状態', '条件', 'アクション']}
+          rows={[
+            ['流動性ショック', 'L2A >= 65', '防御態勢、現金比率UP'],
+            ['信用収縮', 'L2A >= 50', '信用取引厳禁、様子見'],
+            ['政策引き締め', 'L1 >= 45', 'リスク資産への逆風に注意'],
+            ['分断型バブル', 'L2A >= 40 AND L2B >= 70', '段階的にリスク縮小'],
+            ['市場先行型', 'L2B >= 80 AND L2A < 35', '利確検討、新規抑制'],
+            ['金融相場', 'L1 < 30 AND L2B > 60', '積極的にリスクオン'],
+            ['健全相場', '全Layer < 35-40', '通常投資を継続'],
+            ['中立', 'いずれにも該当しない', '現状維持'],
+          ]} />
+        <p className="mt-2 text-zinc-500">判定は上から順に評価され、最初に該当した状態が主状態となります。複数該当する場合はすべて表示されます。</p>
+      </DocSection>
+
+      <DocSection title="Layer 3: 信用圧力センサー">
+        <DocTable headers={['指標', '安全', '警戒', '危険']}
+          rows={[
+            ['HYスプレッド', '< 4%', '4-5%', '> 5%'],
+            ['IGスプレッド', '< 1%', '1-1.5%', '> 1.5%'],
+            ['イールドカーブ (10Y-2Y)', '> 0.5%', '0 〜 0.5%', '逆転 (< 0)'],
+            ['DXY (ドル指数)', '< 100', '100-110', '> 110'],
+          ]} />
+      </DocSection>
+
+      <DocSection title="指標クイックリファレンス">
+        <DocTable headers={['Layer', '指標', '安全', '警戒', '危険']}
+          rows={[
+            ['L1', 'Net Liq Z-score', '> +0.5', '-0.5 〜 +0.5', '< -1.5'],
+            ['L2A', 'KRE 52W%', '> +20%', '-10% 〜 0%', '< -30%'],
+            ['L2A', '準備預金 MoM%', '> +3%', '-5% 〜 0%', '< -10%'],
+            ['L2A', 'SRF利用', '0日', '1-3日/30日', '> 10日/90日'],
+            ['L2A', 'IGスプレッド', '< 1.0%', '1.0-1.5%', '> 2.0%'],
+            ['L2B', '信用取引 2Y%', '< +30%', '+30-60%', '> +80%'],
+            ['L3', 'HYスプレッド', '< 4%', '4-5%', '> 5%'],
+            ['L3', 'VIX', '< 20', '20-30', '> 30'],
+          ]} />
+      </DocSection>
+
+      <DocSection title="QE/QT（量的緩和/引き締め）の仕組み">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-lg border border-emerald-500/20 p-3">
+            <p className="text-emerald-400 font-bold text-[11px]">QE（量的緩和）</p>
+            <p className="mt-1">FRBが国債を購入 → SOMA資産増加 → 準備預金増加 → 市場に資金流入</p>
+            <p className="text-[10px] text-zinc-500 mt-1">効果: 金利低下、資産価格上昇、ドル安</p>
+          </div>
+          <div className="rounded-lg border border-red-500/20 p-3">
+            <p className="text-red-400 font-bold text-[11px]">QT（量的引き締め）</p>
+            <p className="mt-1">FRBが国債を満期償還 → SOMA資産減少 → 準備預金減少 → 市場から資金流出</p>
+            <p className="text-[10px] text-zinc-500 mt-1">効果: 金利上昇、資産価格下落、ドル高</p>
+          </div>
+        </div>
+      </DocSection>
+
+      <DocSection title="用語集">
+        <DocTable headers={['用語', '説明']}
+          rows={[
+            ['SOMA', 'System Open Market Account — FRBの保有資産（国債、MBS等）'],
+            ['RRP', 'Reverse Repo — FRBが市場から資金を吸収する仕組み'],
+            ['TGA', 'Treasury General Account — 財務省のFRB口座残高'],
+            ['SRF', 'Standing Repo Facility — FRBの常設レポファシリティ（緊急流動性供給）'],
+            ['KRE', 'SPDR S&P Regional Banking ETF — 地方銀行の健全性指標'],
+            ['Z-score', '平均からの標準偏差数。±2以上は統計的に稀なイベント'],
+            ['HYスプレッド', 'ハイイールド債と国債の利回り差。信用リスクの指標'],
+            ['信用取引残高', 'マージン口座の借入残高。レバレッジの指標'],
+          ]} />
+      </DocSection>
+
+      <DocSection title="データ更新タイミング">
+        <DocTable headers={['データ', '頻度', '備考']}
+          rows={[
+            ['FRBバランスシート', '毎週', 'H.4.1レポート（木曜日）'],
+            ['信用取引残高', '毎月', 'FINRA発表（約3週間遅延）⚠️'],
+            ['VIX / KRE / SP500', '毎日', '市場営業日'],
+            ['クレジットスプレッド', '毎日', 'FRED / ICE BofA'],
+            ['SRF利用', '毎日', 'NY Fed公表'],
+          ]} />
+      </DocSection>
+    </div>
+  );
+}
+
+// ============================================================
+// Loading & Error
 // ============================================================
 
 function LoadingSkeleton() {
   return (
     <div className="space-y-5">
       <div className="flex justify-between items-center">
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-56" />
-          <Skeleton className="h-4 w-80" />
-        </div>
+        <div className="space-y-2"><Skeleton className="h-7 w-56" /><Skeleton className="h-4 w-80" /></div>
         <Skeleton className="h-9 w-20" />
       </div>
+      <Skeleton className="h-12 w-full rounded-lg" />
       <Skeleton className="h-56 w-full rounded-2xl" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
@@ -714,8 +1173,6 @@ function LoadingSkeleton() {
       <div className="grid gap-4 lg:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-xl" />)}
       </div>
-      <Skeleton className="h-28 w-full rounded-xl" />
-      <Skeleton className="h-44 w-full rounded-xl" />
     </div>
   );
 }
@@ -730,9 +1187,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
       </div>
       <h2 className="text-lg font-bold mb-2">データ取得エラー</h2>
       <p className="text-sm text-zinc-500 mb-5 text-center max-w-md">{error}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        再試行
-      </Button>
+      <Button variant="outline" size="sm" onClick={onRetry}>再試行</Button>
     </div>
   );
 }
@@ -752,7 +1207,6 @@ export default function LiquidityPage() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
-
       const summary = await getPlumbingSummary();
       setData(summary);
     } catch (err) {
@@ -769,11 +1223,6 @@ export default function LiquidityPage() {
   if (error) return <ErrorState error={error} onRetry={() => fetchData()} />;
   if (!data) return null;
 
-  const { layers, market_state, credit_pressure, market_indicators } = data;
-  const l1 = layers.layer1;
-  const l2a = layers.layer2a;
-  const l2b = layers.layer2b;
-
   return (
     <div className="space-y-4 pb-10">
       {/* Page Header */}
@@ -783,19 +1232,11 @@ export default function LiquidityPage() {
             <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-purple-500" />
             <h1 className="text-2xl font-bold tracking-tight">流動性配管システム</h1>
           </div>
-          <p className="text-xs text-zinc-500 pl-3.5">
-            FRB・銀行・信用取引の3層流動性モニタリング
-          </p>
+          <p className="text-xs text-zinc-500 pl-3.5">FRB・銀行・信用取引の3層流動性モニタリング</p>
         </div>
         <div className="flex items-center gap-4">
           <ScoreLegend />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchData(true)}
-            disabled={refreshing}
-            className="text-xs font-mono"
-          >
+          <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing} className="text-xs font-mono">
             {refreshing ? (
               <span className="flex items-center gap-1.5">
                 <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -809,38 +1250,31 @@ export default function LiquidityPage() {
         </div>
       </div>
 
-      {/* Market State Hero */}
-      {market_state && l1 && l2a && l2b && (
-        <MarketStateHero
-          state={market_state}
-          l1={l1.stress_score}
-          l2a={l2a.stress_score}
-          l2b={l2b.stress_score}
-        />
-      )}
+      {/* Tabs */}
+      <Tabs defaultValue="dashboard" className="plumb-tabs">
+        <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
+          <TabsTrigger value="dashboard" className="text-[11px] font-mono uppercase tracking-wider">ダッシュボード</TabsTrigger>
+          <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider">履歴グラフ</TabsTrigger>
+          <TabsTrigger value="backtest" className="text-[11px] font-mono uppercase tracking-wider">過去検証</TabsTrigger>
+          <TabsTrigger value="docs" className="text-[11px] font-mono uppercase tracking-wider">システム解説</TabsTrigger>
+        </TabsList>
 
-      {/* Market Indicators */}
-      <IndicatorBar indicators={market_indicators} />
+        <TabsContent value="dashboard">
+          <DashboardTab data={data} />
+        </TabsContent>
 
-      {/* Three Layer Cards */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {l1 && <Layer1Card layer={l1} />}
-        {l2a && <Layer2ACard layer={l2a} />}
-        {l2b && <Layer2BCard layer={l2b} />}
-      </div>
+        <TabsContent value="history">
+          <HistoryChartsTab />
+        </TabsContent>
 
-      {/* Net Liquidity Flow */}
-      {l1?.fed_data && <NetLiquidityFlow fed={l1.fed_data} />}
+        <TabsContent value="backtest">
+          <BacktestTab />
+        </TabsContent>
 
-      {/* Credit Pressure */}
-      {credit_pressure && <CreditPressurePanel credit={credit_pressure} />}
-
-      {/* Timestamp */}
-      <div className="flex justify-end">
-        <p className="text-[10px] text-zinc-600 font-mono">
-          {data.timestamp ? `LAST UPDATE ${new Date(data.timestamp).toLocaleString('ja-JP')}` : ''}
-        </p>
-      </div>
+        <TabsContent value="docs">
+          <SystemDocsTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

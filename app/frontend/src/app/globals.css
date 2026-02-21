@@ -309,3 +309,57 @@
   transform: rotate(-90deg);
   transform-origin: center;
 }
+
+/* ============================================================
+   Recharts overrides for plumbing page
+   ============================================================ */
+
+.plumb-chart .recharts-cartesian-grid-horizontal line,
+.plumb-chart .recharts-cartesian-grid-vertical line {
+  stroke: rgba(255, 255, 255, 0.04);
+}
+
+.plumb-chart .recharts-text {
+  fill: #71717a;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.plumb-chart .recharts-tooltip-cursor {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.plumb-chart .recharts-reference-line-label text {
+  fill: #71717a;
+  font-size: 9px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* ============================================================
+   Plumbing Tab styles
+   ============================================================ */
+
+.plumb-tabs [data-slot="tabs-list"] {
+  background: rgba(17, 17, 17, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.plumb-tabs [data-slot="tabs-trigger"] {
+  color: #71717a;
+  transition: color 0.2s, background 0.2s;
+}
+
+.plumb-tabs [data-slot="tabs-trigger"][data-state="active"] {
+  color: #e5e5e5;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.plumb-tabs [data-slot="tabs-trigger"]:hover:not([data-state="active"]) {
+  color: #a1a1aa;
+}
+
+.plumb-tabs [data-slot="tabs-trigger"]::after {
+  background: linear-gradient(90deg, #3b82f6, #a855f7) !important;
+}

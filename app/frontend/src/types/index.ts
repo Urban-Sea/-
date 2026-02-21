@@ -484,3 +484,87 @@ export interface BatchResponse {
   results: BatchResult[];
   timestamp: string;
 }
+
+// History Charts types
+export interface HistoryChartsData {
+  period: string;
+  start_date: string;
+  end_date: string;
+  data: {
+    net_liquidity: Array<{
+      date: string;
+      net_liquidity: number | null;
+      soma_assets: number | null;
+      rrp: number | null;
+      tga: number | null;
+    }>;
+    margin_debt: Array<{
+      date: string;
+      debit_balance: number | null;
+      change_2y: number | null;
+    }>;
+    bank_sector: Array<{
+      date: string;
+      kre_close: number | null;
+      kre_52w_change: number | null;
+    }>;
+    credit_spreads: Array<{
+      date: string;
+      hy_spread: number | null;
+      ig_spread: number | null;
+    }>;
+    market_indicators: Array<{
+      date: string;
+      vix: number | null;
+      sp500: number | null;
+      nasdaq: number | null;
+      dxy: number | null;
+    }>;
+    interest_rates: Array<{
+      date: string;
+      fed_funds: number | null;
+      treasury_2y: number | null;
+      treasury_10y: number | null;
+      treasury_spread: number | null;
+    }>;
+  };
+}
+
+// Backtest types
+export interface BacktestState {
+  date: string;
+  state_code: string;
+  state_label: string;
+  color: string;
+  action: string;
+  layer1_stress: number;
+  layer2a_stress: number;
+  layer2b_stress: number;
+  sp500: number | null;
+  return_6m: number | null;
+}
+
+export interface StateDefinition {
+  code: string;
+  label: string;
+  description: string;
+  conditions: string;
+  action: string;
+  color: string;
+}
+
+export interface StateStats {
+  avg_return_6m: number;
+  win_rate: number;
+  max_drawdown: number;
+  best_return: number;
+  sample_count: number;
+  occurrence_pct: number;
+}
+
+export interface BacktestData {
+  states: BacktestState[];
+  state_definitions: StateDefinition[];
+  state_stats: Record<string, StateStats>;
+  total_months: number;
+}
