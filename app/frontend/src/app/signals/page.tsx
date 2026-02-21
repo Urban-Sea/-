@@ -450,18 +450,12 @@ export default function SignalsPage() {
       {signal && !loading && (
         <div className="space-y-4 plumb-animate-in">
           {/* Hero Card */}
-          <div className={`relative rounded-2xl border overflow-hidden plumb-animate-scale ${
-            signal.entry_allowed
-              ? 'border-emerald-500/20'
-              : 'border-zinc-800'
-          }`}>
-            <div className={`absolute inset-0 ${signal.entry_allowed ? 'bg-emerald-500/[0.03]' : 'bg-zinc-500/[0.02]'}`} />
-            {signal.entry_allowed && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[150px] rounded-full blur-[80px] opacity-15 plumb-glow" style={{ background: '#10b981' }} />
-            )}
+          <div className="relative rounded-2xl border border-zinc-800 overflow-hidden plumb-animate-scale">
+            <div className="absolute inset-0 bg-zinc-500/[0.02]" />
             <div className="relative p-5 md:p-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
+                  <TickerIcon ticker={signal.ticker} size={44} />
                   <div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-extrabold tracking-tight">{signal.ticker}</span>
@@ -636,14 +630,13 @@ export default function SignalsPage() {
                     {signal.entry_allowed && (
                       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20 plumb-glow" style={{ background: '#10b981' }} />
                     )}
-                    <div className="relative flex flex-col items-center gap-3">
-                      <TickerIcon ticker={signal.ticker} size={48} />
+                    <div className="relative">
                       <div className={`text-4xl font-extrabold tracking-[0.2em] ${
                         signal.entry_allowed ? 'text-emerald-400' : 'text-zinc-600'
                       }`}>
                         {signal.entry_allowed ? 'BUY' : 'NO ENTRY'}
                       </div>
-                      <div className="text-sm text-zinc-400">
+                      <div className="text-sm text-zinc-400 mt-2">
                         {signal.entry_allowed
                           ? `ポジションサイズ: ${signal.position_size_pct}%`
                           : signal.mode_note || '条件未達成'}
