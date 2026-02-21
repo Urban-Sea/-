@@ -1,0 +1,486 @@
+// Stock types
+export interface StockMaster {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  industry: string | null;
+  price_category: 'penny' | 'mid' | 'large' | null;
+  watchlist_category: string | null;
+  market_cap: number | null;
+  exchange: string | null;
+  is_active: boolean;
+}
+
+// Signal types
+export interface SignalCondition {
+  found?: boolean;
+  date?: string;
+  strength?: string;
+  value?: number;
+  converged?: boolean;
+  threshold?: number;
+}
+
+export interface SignalResponse {
+  ticker: string;
+  timestamp: string;
+  price: number;
+  price_change_pct: number;
+  price_category: string;
+  combined_ready: boolean;
+  conditions: {
+    bearish_choch: SignalCondition;
+    bullish_choch: SignalCondition;
+    ema_convergence: SignalCondition;
+  };
+  relative_strength: {
+    change_pct: number;
+    trend: 'UP' | 'FLAT' | 'DOWN';
+    down_threshold: number;
+  };
+  regime: string;
+  mode: string;
+  entry_allowed: boolean;
+  position_size_pct: number;
+  mode_note: string;
+  other_modes: Record<string, { entry_allowed: boolean; position_size_pct: number }>;
+}
+
+// Regime types
+export interface RegimeResponse {
+  regime: 'BULL' | 'BEAR' | 'RECOVERY' | 'WEAKENING';
+  timestamp: string;
+  benchmark_ticker: string;
+  benchmark_price: number;
+  benchmark_ema_long: number;
+  benchmark_ema_short: number;
+  above_long_ema: boolean;
+  ema_short_slope: number;
+  description: string;
+  entry_recommendation: string;
+  asset_class: string;
+}
+
+// Market State types
+export interface MarketStateRecord {
+  id?: number;
+  date: string;
+  spy_regime?: string;
+  qqq_regime?: string;
+  btc_regime?: string;
+  overall_regime?: string;
+  layer1_stress?: number;
+  layer2_stress?: number;
+  layer3_stress?: number;
+  layer4_stress?: number;
+  overall_stress?: number;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface LatestMarketState {
+  date: string;
+  spy_regime?: string;
+  qqq_regime?: string;
+  btc_regime?: string;
+  overall_regime?: string;
+  stress_levels: {
+    layer1?: number;
+    layer2?: number;
+    layer3?: number;
+    layer4?: number;
+    overall?: number;
+  };
+  updated_at?: string;
+}
+
+// Liquidity types
+export interface FedBalanceSheet {
+  date: string;
+  reserves?: number;
+  rrp?: number;
+  tga?: number;
+  soma_assets?: number;
+}
+
+export interface InterestRates {
+  date: string;
+  fed_funds?: number;
+  treasury_2y?: number;
+  treasury_10y?: number;
+  treasury_spread?: number;
+}
+
+export interface CreditSpreads {
+  date: string;
+  hy_spread?: number;
+  ig_spread?: number;
+  ted_spread?: number;
+}
+
+export interface MarketIndicators {
+  date: string;
+  vix?: number;
+  dxy?: number;
+  sp500?: number;
+  nasdaq?: number;
+}
+
+export interface LiquidityOverview {
+  fed_balance_sheet: FedBalanceSheet | null;
+  interest_rates: InterestRates | null;
+  credit_spreads: CreditSpreads | null;
+  market_indicators: MarketIndicators | null;
+  liquidity_stress: 'Low' | 'Medium' | 'High';
+  stress_factors: string[];
+}
+
+// Plumbing Summary types (Layer stress calculations)
+export interface LayerStress {
+  stress_score: number;
+  interpretation: string;
+  z_score?: number;
+  net_liquidity?: number;
+  fed_data?: {
+    date: string;
+    soma_assets: number | null;
+    reserves: number | null;
+    rrp: number | null;
+    tga: number | null;
+  };
+  // Layer 2A
+  interpretation_type?: string;
+  alerts?: string[];
+  components?: Record<string, unknown>;
+  // Layer 2B
+  phase?: string;
+  margin_debt_2y?: number;
+  margin_debt_1y?: number;
+  it_bubble_comparison?: number;
+  it_bubble_peak?: number;
+  data_date?: string;
+}
+
+export interface CreditPressure {
+  level: 'Low' | 'Medium' | 'High';
+  pressure_count: number;
+  components: Record<string, { value: number | null; status: string }>;
+  alerts: string[];
+}
+
+export interface MarketStateInfo {
+  code: string;
+  label: string;
+  description: string;
+  action: string;
+  color: string;
+  comment: string;
+  all_states: Array<{
+    code: string;
+    label: string;
+    description: string;
+    action: string;
+    color: string;
+    priority: number;
+  }>;
+  state_count: number;
+}
+
+export interface PlumbingSummary {
+  timestamp: string;
+  layers: {
+    layer1: LayerStress | null;
+    layer2a: LayerStress | null;
+    layer2b: LayerStress | null;
+  };
+  credit_pressure: CreditPressure | null;
+  market_state: MarketStateInfo | null;
+  market_indicators: MarketIndicators | null;
+  interest_rates: InterestRates | null;
+  credit_spreads: CreditSpreads | null;
+}
+
+// Holdings types
+export interface HoldingRecord {
+  id?: string;
+  user_id?: string;
+  ticker: string;
+  shares: number;
+  avg_price: number;
+  entry_date?: string;
+  account_type?: 'nisa' | 'tokutei';
+  sector?: string;
+  regime_at_entry?: string;
+  rs_at_entry?: string;
+  fx_rate?: number;
+  target_price?: number;
+  stop_loss?: number;
+  thesis?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface HoldingsResponse {
+  holdings: HoldingRecord[];
+  total: number;
+  total_value?: number;
+}
+
+// Trade types
+export interface TradeRecord {
+  id?: string;
+  user_id?: string;
+  holding_id?: string;
+  ticker: string;
+  action: 'BUY' | 'SELL';
+  shares: number;
+  price: number;
+  fees?: number;
+  trade_date: string;
+  account_type?: string;
+  regime?: string;
+  rs_trend?: string;
+  reason?: string;
+  lessons_learned?: string;
+  profit_loss?: number;
+  profit_loss_pct?: number;
+  holding_days?: number;
+  created_at?: string;
+}
+
+export interface TradeStats {
+  total_trades: number;
+  buy_count: number;
+  sell_count: number;
+  total_profit_loss: number;
+  win_count: number;
+  loss_count: number;
+  win_rate: number;
+  avg_profit: number;
+  avg_loss: number;
+  profit_factor: number;
+}
+
+// Employment types
+export interface EconomicIndicator {
+  id: number;
+  indicator: string;
+  reference_period: string;
+  current_value?: number;
+  revision_count: number;
+  nfp_change?: number;
+  u3_rate?: number;
+  u6_rate?: number;
+  avg_hourly_earnings?: number;
+  wage_mom?: number;
+  labor_force_participation?: number;
+  notes?: string;
+}
+
+export interface WeeklyClaims {
+  week_ending: string;
+  initial_claims?: number;
+  continued_claims?: number;
+  initial_claims_4w_avg?: number;
+}
+
+export interface EmploymentOverview {
+  latest_nfp: EconomicIndicator | null;
+  latest_claims: WeeklyClaims | null;
+  alert_level: 'Low' | 'Medium' | 'High';
+  alert_factors: string[];
+}
+
+// Stock quote types
+export interface StockQuote {
+  ticker: string;
+  price: number;
+  change: number;
+  change_pct: number;
+  high: number;
+  low: number;
+  open: number;
+  prev_close: number;
+  volume: number;
+  market_cap?: number;
+  updated_at: string;
+}
+
+// Stock history types
+export interface StockHistoryData {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface StockHistoryResponse {
+  ticker: string;
+  period: string;
+  data: StockHistoryData[];
+  updated_at?: string;
+}
+
+// Exit types
+export interface ExitLayerStatus {
+  layer: number;
+  name: string;
+  status: 'SAFE' | 'WARNING' | 'TRIGGERED';
+  detail?: string;
+  trigger_price?: number;
+}
+
+export interface ExitAnalysisResponse {
+  ticker: string;
+  current_price: number;
+  entry_price: number;
+  pnl_pct: number;
+  should_exit: boolean;
+  exit_type?: string;
+  exit_pct: number;
+  exit_reason?: string;
+  urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  layers: ExitLayerStatus[];
+  targets: Array<{
+    type: string;
+    price: number;
+    pct: number;
+    exit_pct: number;
+  }>;
+  structure_stop: number;
+  ema_status: {
+    ema_8: number;
+    ema_13: number;
+    ema_21: number;
+    above_ema_8: boolean;
+    above_ema_13: boolean;
+    above_ema_21: boolean;
+  };
+  updated_at: string;
+}
+
+// Historical signal types (legacy - entry only)
+export interface HistoricalSignal {
+  date: string;
+  price: number;
+  ema_convergence: number;
+  rs_diff: number;
+  pnl_5d: number | null;
+  pnl_10d: number | null;
+  pnl_20d: number | null;
+  max_pnl_20d: number | null;
+  min_pnl_20d: number | null;
+}
+
+// Multi-type signal (ENTRY, HEAT, RSI_HIGH, EXIT)
+export type SignalType = 'ENTRY' | 'HEAT' | 'RSI_HIGH' | 'EXIT';
+export type ExitType = 'BOS' | 'MIRROR_FULL' | 'MIRROR_WARN' | 'TRAIL' | 'BEAR_CHOCH';
+
+export interface TimelineSignal {
+  date: string;
+  end_date?: string;
+  days: number;
+  type: SignalType;
+  price: number;
+  end_price?: number;
+  detail: string;
+  // ENTRY fields
+  rs_trend?: string;
+  size_pct?: number;
+  // HEAT fields
+  heat_score?: number;
+  heat_level?: string;
+  action?: string;
+  regime?: string;
+  // EXIT fields
+  exit_type?: ExitType;
+  exit_pct?: number;
+}
+
+export interface SignalHistoryStats {
+  total_signals: number;
+  entry_count?: number;
+  exit_count?: number;
+  rsi_high_count?: number;
+  heat_count?: number;
+  avg_pnl_5d: number | null;
+  avg_pnl_10d: number | null;
+  avg_pnl_20d: number | null;
+  win_rate_5d: number | null;
+  win_rate_10d: number | null;
+  win_rate_20d: number | null;
+}
+
+export interface SignalHistoryResponse {
+  ticker: string;
+  period: string;
+  mode: string;
+  timestamp: string;
+  signals: HistoricalSignal[];
+  stats: SignalHistoryStats;
+  // Timeline signals (full history with all types)
+  timeline?: TimelineSignal[];
+  total_signals?: number;
+}
+
+// Chart marker types
+export interface BOSMarker {
+  date: string;
+  type: 'BULLISH' | 'BEARISH';
+  price: number;
+  broken_level: number;
+  strength_pct: number;
+}
+
+export interface CHoCHMarker {
+  date: string;
+  type: 'BULLISH' | 'BEARISH';
+  price: number;
+  previous_price: number;
+}
+
+export interface FVGMarker {
+  date: string;
+  type: 'BULLISH' | 'BEARISH';
+  top: number;
+  bottom: number;
+  gap_pct: number;
+}
+
+export interface ChartMarkersResponse {
+  ticker: string;
+  period: string;
+  timestamp: string;
+  bos: BOSMarker[];
+  choch: CHoCHMarker[];
+  fvg: FVGMarker[];
+  data_points: number;
+}
+
+// Batch analysis types
+export interface BatchResult {
+  ticker: string;
+  price?: number;
+  price_change_pct?: number;
+  combined_ready: boolean;
+  entry_allowed: boolean;
+  position_size_pct: number;
+  relative_strength?: {
+    change_pct: number;
+    trend: 'UP' | 'FLAT' | 'DOWN';
+  };
+  regime?: string;
+  error: boolean;
+  error_message?: string;
+}
+
+export interface BatchResponse {
+  mode: string;
+  total_analyzed: number;
+  entry_ready_count: number;
+  results: BatchResult[];
+  timestamp: string;
+}
