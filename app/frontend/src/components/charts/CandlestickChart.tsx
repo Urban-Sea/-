@@ -59,9 +59,10 @@ export default function CandlestickChart({
     canvas.style.height = height + 'px';
     ctx.scale(dpr, dpr);
 
-    // Layout: price chart top 78%, ATR sub-chart bottom 18%, gap 4%
-    const subRatio = 0.18;
-    const gapRatio = 0.04;
+    // Layout: price chart top 78%, volume bottom 18%, gap 4%
+    const hasVolume = data.some(c => c.volume && c.volume > 0);
+    const subRatio = hasVolume ? 0.18 : 0;
+    const gapRatio = hasVolume ? 0.04 : 0;
     const priceRatio = 1 - subRatio - gapRatio;
 
     const padding = { top: 36, right: 68, bottom: 44, left: 12 };
@@ -292,35 +293,8 @@ export default function CandlestickChart({
       });
     }
 
-    // ── ATR sub-chart ──
-    {
-      // Calculate ATR (14-period)
-      const atrPeriod = 14;
-      const trueRanges: number[] = [];
-      for (let i = 0; i < data.length; i++) {
-        if (i === 0) {
-          trueRanges.push(data[i].high - data[i].low);
-        } else {
-          const tr = Math.max(
-            data[i].high - data[i].low,
-            Math.abs(data[i].high - data[i - 1].close),
-            Math.abs(data[i].low - data[i - 1].close)
-          );
-          trueRanges.push(tr);
-        }
-      }
-      const atrValues: number[] = [];
-      for (let i = 0; i < data.length; i++) {
-        if (i < atrPeriod - 1) {
-          atrValues.push(0);
-        } else if (i === atrPeriod - 1) {
-          const sum = trueRanges.slice(0, atrPeriod).reduce((a, b) => a + b, 0);
-          atrValues.push(sum / atrPeriod);
-        } else {
-          atrValues.push((atrValues[i - 1] * (atrPeriod - 1) + trueRanges[i]) / atrPeriod);
-        }
-      }
-
+    // ── Volume bars ──
+    if (hasVolume) {
       // Separator line
       ctx.strokeStyle = 'rgba(255,255,255,0.06)';
       ctx.lineWidth = 0.5;
@@ -330,67 +304,34 @@ export default function CandlestickChart({
       ctx.lineTo(width - padding.right, subChartTop - 2);
       ctx.stroke();
 
-      // ATR label
-      ctx.fillStyle = '#666';
+      // Volume label
+      ctx.fillStyle = '#444';
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('ATR(14)', padding.left + 2, subChartTop + 10);
+      ctx.fillText('Vol', padding.left + 2, subChartTop + 10);
 
-      // Scale ATR values
-      const validAtr = atrValues.filter(v => v > 0);
-      if (validAtr.length > 0) {
-        const minAtr = Math.min(...validAtr) * 0.8;
-        const maxAtr = Math.max(...validAtr) * 1.1;
-        const atrRange = maxAtr - minAtr || 1;
-        const atrYScale = (v: number) => subChartTop + subChartHeight - 4 - ((v - minAtr) / atrRange) * (subChartHeight - 12);
-
-        // ATR area fill
-        ctx.beginPath();
-        let started = false;
-        let firstX = 0;
-        for (let i = 0; i < data.length; i++) {
-          if (atrValues[i] <= 0) continue;
+      const maxVol = Math.max(...data.map(c => c.volume || 0));
+      if (maxVol > 0) {
+        const volBarW = Math.max(1, candleWidth * 0.85);
+        data.forEach((c, i) => {
+          if (!c.volume) return;
           const x = xScale(i);
-          const y = atrYScale(atrValues[i]);
-          if (!started) { ctx.moveTo(x, y); firstX = x; started = true; }
-          else ctx.lineTo(x, y);
-        }
-        if (started) {
-          const lastAtrX = xScale(data.length - 1);
-          ctx.lineTo(lastAtrX, subChartTop + subChartHeight - 4);
-          ctx.lineTo(firstX, subChartTop + subChartHeight - 4);
-          ctx.closePath();
-          const atrGrad = ctx.createLinearGradient(0, subChartTop, 0, subChartTop + subChartHeight);
-          atrGrad.addColorStop(0, 'rgba(251,191,36,0.12)');
-          atrGrad.addColorStop(1, 'rgba(251,191,36,0)');
-          ctx.fillStyle = atrGrad;
-          ctx.fill();
-        }
+          const barH = (c.volume / maxVol) * (subChartHeight - 4);
+          const barY = subChartTop + subChartHeight - barH;
+          const isUp = c.close >= c.open;
+          ctx.fillStyle = isUp ? 'rgba(38,166,154,0.35)' : 'rgba(239,83,80,0.35)';
+          ctx.fillRect(x - volBarW / 2, barY, volBarW, barH);
+        });
 
-        // ATR line
-        ctx.strokeStyle = 'rgba(251,191,36,0.7)';
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        started = false;
-        for (let i = 0; i < data.length; i++) {
-          if (atrValues[i] <= 0) continue;
-          const x = xScale(i);
-          const y = atrYScale(atrValues[i]);
-          if (!started) { ctx.moveTo(x, y); started = true; }
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Current ATR value label
-        const lastAtr = atrValues[atrValues.length - 1];
-        if (lastAtr > 0) {
-          const atrLabel = lastAtr >= 100 ? lastAtr.toFixed(0) : lastAtr.toFixed(2);
-          ctx.fillStyle = '#666';
-          ctx.font = '9px -apple-system, sans-serif';
-          ctx.textAlign = 'left';
-          ctx.fillText(atrLabel, width - padding.right + 6, atrYScale(lastAtr) + 3);
-        }
+        // Volume scale label
+        const volLabel = maxVol >= 1e9 ? (maxVol / 1e9).toFixed(1) + 'B'
+          : maxVol >= 1e6 ? (maxVol / 1e6).toFixed(0) + 'M'
+          : maxVol >= 1e3 ? (maxVol / 1e3).toFixed(0) + 'K'
+          : maxVol.toString();
+        ctx.fillStyle = '#444';
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(volLabel, width - padding.right + 6, subChartTop + 10);
       }
     }
 

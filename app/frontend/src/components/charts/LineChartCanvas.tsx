@@ -43,17 +43,9 @@ export default function LineChartCanvas({
     canvas.style.height = height + 'px';
     ctx.scale(dpr, dpr);
 
-    // Layout: price chart top 78%, volume bottom 18%, gap 4%
-    const hasVolume = data.some(d => d.volume && d.volume > 0);
-    const volumeRatio = hasVolume ? 0.18 : 0;
-    const gapRatio = hasVolume ? 0.04 : 0;
-    const priceRatio = 1 - volumeRatio - gapRatio;
-
     const padding = { top: 36, right: 68, bottom: 44, left: 12 };
     const totalChartHeight = height - padding.top - padding.bottom;
-    const priceChartHeight = totalChartHeight * priceRatio;
-    const volumeChartTop = padding.top + priceChartHeight + totalChartHeight * gapRatio;
-    const volumeChartHeight = totalChartHeight * volumeRatio;
+    const priceChartHeight = totalChartHeight;
 
     // Format price
     const formatPrice = (val: number) => {
@@ -187,49 +179,6 @@ export default function LineChartCanvas({
       });
       ctx.stroke();
       ctx.setLineDash([]);
-    }
-
-    // ── Volume bars ──
-    if (hasVolume) {
-      // Separator line
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(padding.left, volumeChartTop - 2);
-      ctx.lineTo(width - padding.right, volumeChartTop - 2);
-      ctx.stroke();
-
-      // Volume label
-      ctx.fillStyle = '#444';
-      ctx.font = '9px -apple-system, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('Vol', padding.left + 2, volumeChartTop + 10);
-
-      const maxVol = Math.max(...data.map(d => d.volume || 0));
-      if (maxVol > 0) {
-        const barW = Math.max(1, pointSpacing * 0.6);
-        data.forEach((d, i) => {
-          if (!d.volume) return;
-          const x = xScale(i);
-          const barH = (d.volume / maxVol) * (volumeChartHeight - 4);
-          const barY = volumeChartTop + volumeChartHeight - barH;
-          const prevClose = i > 0 ? data[i - 1].close : d.close;
-          const isUp = d.close >= prevClose;
-          ctx.fillStyle = isUp ? 'rgba(38,166,154,0.35)' : 'rgba(239,83,80,0.35)';
-          ctx.fillRect(x - barW / 2, barY, barW, barH);
-        });
-
-        // Volume scale
-        const volLabel = maxVol >= 1e9 ? (maxVol / 1e9).toFixed(1) + 'B'
-          : maxVol >= 1e6 ? (maxVol / 1e6).toFixed(0) + 'M'
-          : maxVol >= 1e3 ? (maxVol / 1e3).toFixed(0) + 'K'
-          : maxVol.toString();
-        ctx.fillStyle = '#444';
-        ctx.font = '9px -apple-system, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(volLabel, width - padding.right + 6, volumeChartTop + 10);
-      }
     }
 
     // Date labels
