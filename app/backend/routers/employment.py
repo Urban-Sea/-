@@ -970,7 +970,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         consumer_rows = consumer_all.data or []
 
         sp500_all = supabase.table("market_indicators") \
-            .select("date,sp500_close") \
+            .select("date,sp500") \
             .order("date").limit(months * 22).execute()
         sp500_rows = sp500_all.data or []
 
@@ -1007,7 +1007,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         sp500_by_month: dict[str, float] = {}
         for row in sp500_rows:
             key = row["date"][:7]
-            val = row.get("sp500_close")
+            val = row.get("sp500")
             if val is not None:
                 sp500_by_month[key] = val
 
