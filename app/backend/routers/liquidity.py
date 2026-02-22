@@ -3,8 +3,8 @@
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
-from datetime import date, datetime
+from typing import Optional, List
+from datetime import date, datetime, timedelta
 import main
 
 from analysis.liquidity_score import (
@@ -23,6 +23,37 @@ from analysis.liquidity_score import (
 )
 
 router = APIRouter()
+
+
+# ============================================================
+# ヘルパー: FRBデータのforward-fill
+# fed_balance_sheetはRRP(日次)とSOMA/TGA/reserves(週次)が混在するため、
+# 最新行でnullのフィールドを直近の非null値で補完する
+# ============================================================
+
+def _forward_fill_fed(rows: List[dict], fields: List[str]) -> dict:
+    """rows は date DESC 順。各fieldについて最新の非null値を返す。"""
+    if not rows:
+        return {}
+    result = dict(rows[0])
+    for field in fields:
+        if result.get(field) is None:
+            for row in rows[1:]:
+                if row.get(field) is not None:
+                    result[field] = row[field]
+                    break
+    return result
+
+
+def _find_nth_nonnull(rows: List[dict], field: str, n: int):
+    """rows(date DESC)からfield!=Noneの行をn個目まで集め、値を返す。0-indexed."""
+    found = []
+    for row in rows:
+        if row.get(field) is not None:
+            found.append(row[field])
+            if len(found) > n:
+                return found[n]
+    return None
 
 
 class FedBalanceSheet(BaseModel):
@@ -175,7 +206,7 @@ async def get_plumbing_summary():
         fed_latest_q = supabase.table("fed_balance_sheet") \
             .select("*") \
             .order("date", desc=True) \
-            .limit(2) \
+            .limit(30) \
             .execute()
 
         # Market Indicators（最新）
@@ -257,15 +288,18 @@ async def get_plumbing_summary():
                 current_net_liq = historical_values[-1]
                 layer1 = calculate_layer1_stress(current_net_liq, historical_values)
 
-                # FRBデータの詳細を追加
+                # FRBデータの詳細を追加（forward-fill: 各フィールドの最新非null値）
                 if fed_latest_q.data:
-                    latest_fed = fed_latest_q.data[0]
+                    filled_fed = _forward_fill_fed(
+                        fed_latest_q.data,
+                        ['soma_assets', 'reserves', 'rrp', 'tga']
+                    )
                     layer1['fed_data'] = {
-                        'date': latest_fed.get('date'),
-                        'soma_assets': latest_fed.get('soma_assets'),
-                        'reserves': latest_fed.get('reserves'),
-                        'rrp': latest_fed.get('rrp'),
-                        'tga': latest_fed.get('tga'),
+                        'date': fed_latest_q.data[0].get('date'),
+                        'soma_assets': filled_fed.get('soma_assets'),
+                        'reserves': filled_fed.get('reserves'),
+                        'rrp': filled_fed.get('rrp'),
+                        'tga': filled_fed.get('tga'),
                     }
 
                 result["layers"]["layer1"] = layer1
@@ -276,9 +310,10 @@ async def get_plumbing_summary():
         # 準備預金変化率
         reserves_change_mom = None
         reserves_value = None
-        if fed_latest_q.data and len(fed_latest_q.data) >= 2:
-            current = fed_latest_q.data[0].get('reserves')
-            previous = fed_latest_q.data[1].get('reserves')
+        if fed_latest_q.data:
+            # forward-fill: 最新2つの非null reserves値を使用
+            current = _find_nth_nonnull(fed_latest_q.data, 'reserves', 0)
+            previous = _find_nth_nonnull(fed_latest_q.data, 'reserves', 1)
             reserves_value = current
             if current and previous and previous != 0:
                 reserves_change_mom = ((current - previous) / previous) * 100
@@ -493,10 +528,10 @@ async def get_market_events_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # fed_balance_sheet: 最新13週（~3ヶ月）
+        # fed_balance_sheet: 最新100行（日次RRP混在のため多めに取得、週次SOMA/TGAが~13週分含まれる）
         fed_q = supabase.table("fed_balance_sheet") \
             .select("date,reserves,soma_assets,rrp,tga") \
-            .order("date", desc=True).limit(13).execute()
+            .order("date", desc=True).limit(100).execute()
 
         # bank_sector: 最新45営業日（~2ヶ月）
         bank_q = supabase.table("bank_sector") \
@@ -518,31 +553,40 @@ async def get_market_events_endpoint():
         mkt = mkt_q.data or []
         sprd = spread_q.data or []
 
-        # 準備預金変化率
+        # 週次フィールドのみの行を抽出（SOMA/TGA/reservesが非null）
+        def _fed_weekly(field):
+            """指定fieldが非nullの行だけ抽出（date DESC順を維持）"""
+            return [r for r in fed if r.get(field) is not None]
+
+        fed_soma_rows = _fed_weekly('soma_assets')
+
+        # 準備預金変化率（forward-fill: 最新2つの非null値）
         reserves_change_1m = _pct_change(
-            fed[0].get('reserves') if len(fed) > 0 else None,
-            fed[3].get('reserves') if len(fed) > 3 else None
+            _find_nth_nonnull(fed, 'reserves', 0),
+            _find_nth_nonnull(fed, 'reserves', 1)
         )
-        reserves_change_1w = _pct_change(
-            fed[0].get('reserves') if len(fed) > 0 else None,
-            fed[1].get('reserves') if len(fed) > 1 else None
-        )
+        reserves_change_1w = reserves_change_1m  # reservesは週次以下なので同等
 
-        # Net Liquidity変化率
-        def net_liq(row):
-            s, r, t = row.get('soma_assets'), row.get('rrp'), row.get('tga')
-            return s - r - t if s is not None and r is not None and t is not None else None
+        # Net Liquidity変化率（SOMA/TGAが非nullの行ベースで計算）
+        def net_liq_val(rows, idx):
+            if idx < len(rows):
+                s = rows[idx].get('soma_assets')
+                r = rows[idx].get('rrp', 0) or 0  # RRPはfallback 0
+                t = rows[idx].get('tga')
+                if s is not None and t is not None:
+                    return s - r - t
+            return None
 
-        nl_now = net_liq(fed[0]) if len(fed) > 0 else None
-        nl_1m = net_liq(fed[3]) if len(fed) > 3 else None
-        nl_3m = net_liq(fed[12]) if len(fed) > 12 else None
+        nl_now = net_liq_val(fed_soma_rows, 0)
+        nl_1m = net_liq_val(fed_soma_rows, 4)   # ~4週前
+        nl_3m = net_liq_val(fed_soma_rows, 12)  # ~12週前
         net_liquidity_change_1m = _pct_change(nl_now, nl_1m)
         net_liquidity_change_3m = _pct_change(nl_now, nl_3m)
 
-        # RRP変化率
+        # RRP変化率（日次データなのでそのまま）
         rrp_change_1w = _pct_change(
             fed[0].get('rrp') if len(fed) > 0 else None,
-            fed[1].get('rrp') if len(fed) > 1 else None
+            fed[4].get('rrp') if len(fed) > 4 else None  # ~1週間前
         )
 
         # KRE変化率
@@ -611,26 +655,29 @@ async def get_policy_regime_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # FRBバランスシート: 最新26週（~6ヶ月）
+        # FRBバランスシート: 最新200行（日次RRP混在、週次SOMA/TGA ~26週分カバー）
         fed_q = supabase.table("fed_balance_sheet") \
             .select("date,soma_assets,rrp,tga") \
-            .order("date", desc=True).limit(26).execute()
+            .order("date", desc=True).limit(200).execute()
         fed = fed_q.data or []
 
-        # SOMA変化率
-        soma_now = fed[0].get('soma_assets') if len(fed) > 0 else None
-        soma_3m = fed[12].get('soma_assets') if len(fed) > 12 else None
-        soma_6m = fed[25].get('soma_assets') if len(fed) > 25 else None
+        # SOMA/TGAが非nullの行だけ抽出（週次ベース）
+        fed_soma = [r for r in fed if r.get('soma_assets') is not None]
+
+        # SOMA変化率（週次行ベースで 0=最新, 12=~3ヶ月前, 25=~6ヶ月前）
+        soma_now = fed_soma[0].get('soma_assets') if len(fed_soma) > 0 else None
+        soma_3m = fed_soma[12].get('soma_assets') if len(fed_soma) > 12 else None
+        soma_6m = fed_soma[25].get('soma_assets') if len(fed_soma) > 25 else None
         soma_change_3m = _pct_change(soma_now, soma_3m)
         soma_change_6m = _pct_change(soma_now, soma_6m)
 
-        # RRP
+        # RRP（日次データ、forward-fill不要）
         rrp_level = fed[0].get('rrp') if len(fed) > 0 else None
-        rrp_3m = fed[12].get('rrp') if len(fed) > 12 else None
+        rrp_3m = fed[60].get('rrp') if len(fed) > 60 else None  # ~60営業日 ≈ 3ヶ月
         rrp_change_3m = _pct_change(rrp_level, rrp_3m)
 
-        # TGA
-        tga_level = fed[0].get('tga') if len(fed) > 0 else None
+        # TGA（forward-fill: 最新の非null値）
+        tga_level = _find_nth_nonnull(fed, 'tga', 0)
 
         # 金利: 最新 + 6ヶ月前
         rates_q = supabase.table("interest_rates") \
