@@ -831,3 +831,259 @@ async def get_risk_score():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# 月次リスクスコア履歴 — 過去リスクスコア履歴タブ用
+# ============================================================
+
+def _simplified_nfp_score(nfp_rows: list[dict]) -> int:
+    """NFPトレンド簡易スコア (25点満点)"""
+    changes = [d["nfp_change"] for d in nfp_rows[:3] if d.get("nfp_change") is not None]
+    if not changes:
+        return 0
+    avg = statistics.mean(changes)
+    if avg > 200: return 0
+    if avg > 150: return 5
+    if avg > 100: return 10
+    if avg > 50: return 15
+    if avg > 0: return 20
+    return 25
+
+
+def _simplified_sahm_score(u3_values: list[float]) -> int:
+    """サームルール簡易スコア (15点満点)"""
+    if len(u3_values) < 3:
+        return 0
+    avgs_3m = [statistics.mean(u3_values[i-2:i+1]) for i in range(2, len(u3_values))]
+    current_3m = avgs_3m[-1]
+    low_12m = min(avgs_3m[-12:]) if len(avgs_3m) >= 12 else min(avgs_3m)
+    sahm = current_3m - low_12m
+    if sahm >= 0.5: return 15
+    if sahm >= 0.3: return 8
+    if sahm >= 0.15: return 4
+    return 0
+
+
+def _simplified_claims_score(claims_4w_avg: float | None) -> int:
+    """失業保険簡易スコア (5点満点)"""
+    if claims_4w_avg is None:
+        return 0
+    if claims_4w_avg >= 300000: return 5
+    if claims_4w_avg >= 250000: return 3
+    if claims_4w_avg >= 220000: return 1
+    return 0
+
+
+def _simplified_sentiment_score(val: float | None) -> int:
+    """消費者信頼感スコア (5点)"""
+    if val is None: return 0
+    if val >= 80: return 0
+    if val >= 70: return 1
+    if val >= 60: return 3
+    return 5
+
+
+def _simplified_delinquency_score(current: float | None, year_ago: float | None) -> int:
+    """クレカ延滞率スコア (5点)"""
+    if current is None or year_ago is None: return 0
+    change = current - year_ago
+    if change >= 1.0: return 5
+    if change >= 0.5: return 3
+    if change >= 0.2: return 1
+    return 0
+
+
+def _simplified_wage_score(wage_mom: float | None) -> int:
+    """賃金圧力スコア (5点)"""
+    if wage_mom is None: return 0
+    if wage_mom < 0: return 3
+    if wage_mom > 0.5: return 2
+    return 0
+
+
+def _simplified_income_score(current: float | None, year_ago: float | None) -> int:
+    """実質個人所得スコア (10点)"""
+    if current is None or year_ago is None or year_ago == 0: return 0
+    yoy = ((current - year_ago) / abs(year_ago)) * 100
+    if yoy >= 3.0: return 0
+    if yoy >= 1.0: return 3
+    if yoy >= 0.0: return 6
+    return 10
+
+
+def _simplified_job_ratio_score(jolts_val: float | None, unemploy_val: float | None) -> int:
+    """求人倍率スコア (15点)"""
+    if not jolts_val or not unemploy_val or unemploy_val == 0: return 0
+    ratio = jolts_val / unemploy_val
+    if ratio >= 1.2: return 0
+    if ratio >= 1.0: return 5
+    if ratio >= 0.8: return 10
+    return 15
+
+
+def _simplified_u6u3_score(u3: float | None, u6: float | None) -> int:
+    """U6-U3スプレッドスコア (5点)"""
+    if u3 is None or u6 is None: return 0
+    spread = u6 - u3
+    if spread >= 5.0: return 5
+    if spread >= 4.5: return 3
+    if spread >= 4.0: return 1
+    return 0
+
+
+def _simplified_lfpr_score(lfpr: float | None) -> int:
+    """労働参加率スコア (5点)"""
+    if lfpr is None: return 0
+    if lfpr < 62.0: return 5
+    if lfpr < 62.5: return 3
+    if lfpr < 63.0: return 1
+    return 0
+
+
+@router.get("/risk-history")
+async def get_risk_history(months: int = Query(120, description="取得月数")):
+    """
+    月次リスクスコア履歴を動的計算。
+    各月について雇用(50)+消費(25)+構造(25)=100点のスコアを算出。
+    """
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        # ===== バルクデータ取得 =====
+        nfp_all = supabase.table("economic_indicators") \
+            .select("*").eq("indicator", "NFP") \
+            .order("reference_period").limit(months + 24).execute()
+        nfp_rows = nfp_all.data or []
+
+        claims_all = supabase.table("weekly_claims") \
+            .select("week_ending,initial_claims,initial_claims_4w_avg") \
+            .order("week_ending").limit(months * 5).execute()
+        claims_rows = claims_all.data or []
+
+        consumer_all = supabase.table("economic_indicators") \
+            .select("indicator,reference_period,current_value") \
+            .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"]) \
+            .order("reference_period").limit(months * 6).execute()
+        consumer_rows = consumer_all.data or []
+
+        sp500_all = supabase.table("market_indicators") \
+            .select("date,sp500_close") \
+            .order("date").limit(months * 22).execute()
+        sp500_rows = sp500_all.data or []
+
+        # ===== データをインデックス化 =====
+        nfp_by_month: dict[str, list[dict]] = {}
+        for row in nfp_rows:
+            key = row["reference_period"][:7]
+            nfp_by_month.setdefault(key, []).append(row)
+
+        umcsent_by_month: dict[str, float] = {}
+        w875_by_month: dict[str, float] = {}
+        drc_by_month: dict[str, float] = {}
+        jolts_by_month: dict[str, float] = {}
+        unemploy_by_month: dict[str, float] = {}
+        for row in consumer_rows:
+            key = row["reference_period"][:7]
+            val = row.get("current_value")
+            if val is None:
+                continue
+            ind = row["indicator"]
+            if ind == "UMCSENT": umcsent_by_month[key] = val
+            elif ind == "W875RX1": w875_by_month[key] = val
+            elif ind == "DRCCLACBS": drc_by_month[key] = val
+            elif ind == "JOLTS": jolts_by_month[key] = val
+            elif ind == "UNEMPLOY": unemploy_by_month[key] = val
+
+        claims_by_month: dict[str, float] = {}
+        for row in claims_rows:
+            key = row["week_ending"][:7]
+            val = row.get("initial_claims_4w_avg") or row.get("initial_claims")
+            if val is not None:
+                claims_by_month[key] = val
+
+        sp500_by_month: dict[str, float] = {}
+        for row in sp500_rows:
+            key = row["date"][:7]
+            val = row.get("sp500_close")
+            if val is not None:
+                sp500_by_month[key] = val
+
+        # ===== 月次スコア計算 =====
+        all_months = sorted(nfp_by_month.keys())
+        history = []
+        all_u3_values: list[float] = []
+
+        for idx, month_key in enumerate(all_months):
+            nfp_month_rows = nfp_by_month.get(month_key, [])
+            if not nfp_month_rows:
+                continue
+            latest_nfp = nfp_month_rows[-1]
+
+            u3 = latest_nfp.get("u3_rate")
+            if u3 is not None:
+                all_u3_values.append(u3)
+
+            # Employment (50)
+            recent_months = all_months[max(0, idx - 2):idx + 1]
+            recent_nfp = []
+            for m in recent_months:
+                rows = nfp_by_month.get(m, [])
+                if rows:
+                    recent_nfp.append(rows[-1])
+            nfp_s = _simplified_nfp_score(recent_nfp[::-1])
+            sahm_s = _simplified_sahm_score(all_u3_values.copy())
+            claims_s = _simplified_claims_score(claims_by_month.get(month_key))
+            employment = min(nfp_s + sahm_s + claims_s, 50)
+
+            # Consumer (25)
+            try:
+                yr, mo = int(month_key[:4]), int(month_key[5:7])
+                prev_yr_key = f"{yr - 1}-{mo:02d}"
+            except (ValueError, IndexError):
+                prev_yr_key = ""
+            sent_s = _simplified_sentiment_score(umcsent_by_month.get(month_key))
+            income_s = _simplified_income_score(w875_by_month.get(month_key), w875_by_month.get(prev_yr_key))
+            drc_s = _simplified_delinquency_score(drc_by_month.get(month_key), drc_by_month.get(prev_yr_key))
+            wage_s = _simplified_wage_score(latest_nfp.get("wage_mom"))
+            consumer = min(sent_s + income_s + drc_s + wage_s, 25)
+
+            # Structure (25)
+            job_s = _simplified_job_ratio_score(jolts_by_month.get(month_key), unemploy_by_month.get(month_key))
+            u6u3_s = _simplified_u6u3_score(u3, latest_nfp.get("u6_rate"))
+            lfpr_s = _simplified_lfpr_score(latest_nfp.get("labor_force_participation"))
+            structure = min(job_s + u6u3_s + lfpr_s, 25)
+
+            total = employment + consumer + structure
+
+            # Sahm override
+            sahm_value = None
+            if len(all_u3_values) >= 3:
+                avgs_3m = [statistics.mean(all_u3_values[i-2:i+1]) for i in range(2, len(all_u3_values))]
+                c3m = avgs_3m[-1]
+                low_12m = min(avgs_3m[-12:]) if len(avgs_3m) >= 12 else min(avgs_3m)
+                sahm_value = round(c3m - low_12m, 2)
+                if sahm_value >= 0.5 and total < 60:
+                    total = 60
+
+            total = min(total, 100)
+            phase = _get_phase(total)
+
+            history.append({
+                "date": latest_nfp["reference_period"],
+                "total_score": total,
+                "employment_score": employment,
+                "consumer_score": consumer,
+                "structure_score": structure,
+                "phase": phase.code,
+                "sahm_value": sahm_value,
+            })
+
+        sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
+
+        return {"history": history, "sp500": sp500_list}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
