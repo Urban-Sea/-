@@ -292,6 +292,72 @@ export interface EmploymentOverview {
   alert_factors: string[];
 }
 
+// Employment Risk Score types (100-point scoring)
+export interface RiskSubScore {
+  name: string;
+  score: number;
+  max_score: number;
+  detail: string;
+  status: 'normal' | 'warning' | 'danger';
+}
+
+export interface RiskScoreCategory {
+  name: string;
+  score: number;
+  max_score: number;
+  components: RiskSubScore[];
+}
+
+export interface SahmRuleData {
+  current_u3: number | null;
+  u3_3m_avg: number | null;
+  u3_12m_low_3m_avg: number | null;
+  sahm_value: number | null;
+  triggered: boolean;
+  peak_out: boolean;
+  near_peak_out: boolean;
+}
+
+export interface PhaseInfo {
+  code: string;
+  label: string;
+  description: string;
+  action: string;
+  color: string;
+  position_limit: number;
+}
+
+export interface EmploymentRiskScore {
+  total_score: number;
+  phase: PhaseInfo;
+  categories: RiskScoreCategory[];
+  sahm_rule: SahmRuleData;
+  alert_factors: string[];
+  timestamp: string;
+  latest_nfp: EconomicIndicator | null;
+  latest_claims: WeeklyClaims | null;
+  nfp_history: Array<{
+    reference_period: string;
+    nfp_change: number | null;
+    u3_rate: number | null;
+    u6_rate: number | null;
+    labor_force_participation: number | null;
+    avg_hourly_earnings: number | null;
+    wage_mom: number | null;
+  }>;
+  claims_history: Array<{
+    week_ending: string;
+    initial_claims: number | null;
+    continued_claims: number | null;
+    initial_claims_4w_avg: number | null;
+  }>;
+  consumer_history: Array<{
+    indicator: string;
+    reference_period: string;
+    current_value: number | null;
+  }>;
+}
+
 // Stock quote types
 export interface StockQuote {
   ticker: string;
@@ -485,6 +551,22 @@ export interface BatchResponse {
   timestamp: string;
 }
 
+// Risk History types (monthly risk score timeline)
+export interface RiskHistoryPoint {
+  date: string;
+  total_score: number;
+  employment_score: number;
+  consumer_score: number;
+  structure_score: number;
+  phase: string;
+  sahm_value: number | null;
+}
+
+export interface RiskHistoryResponse {
+  history: RiskHistoryPoint[];
+  sp500: Array<{ date: string; close: number }>;
+}
+
 // History Charts types
 export interface HistoryChartsData {
   period: string;
@@ -560,11 +642,20 @@ export interface MarketEventsData {
 }
 
 // Policy Regime types
+export interface FedActionRoomItem {
+  level: string;
+  room_pct?: number | null;
+  constraint?: string | null;
+  rrp_buffer?: number | null;
+  tga_level?: number | null;
+  comment?: string | null;
+}
+
 export interface FedActionRoom {
-  rate_cut_room: number;
-  absorption_room: number;
-  fiscal_assist_potential: number;
-  overall_room: number;
+  rate_cut_room: FedActionRoomItem;
+  absorption_room: FedActionRoomItem;
+  fiscal_assist_potential: FedActionRoomItem;
+  overall_room: string;
 }
 
 export interface PolicyRegimeData {
