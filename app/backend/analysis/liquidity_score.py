@@ -759,7 +759,7 @@ def _detect_repo_stress(
                                f'SOFR-FFスプレッドが{sofr_ff_spread:.0f}bpに拡大。', sofr_ff_spread, 15)
     if rrp_change_1w is not None and rrp_change_1w <= -30:
         return MarketEvent('REPO_STRESS', d['label'], 'WARNING',
-                           f'RRP残高が1週間で{rrp_change_1w:.1f}%減少。流動性が急速に市場へ。', rrp_change_1w, -30)
+                           f'RRP残高が1週間で{rrp_change_1w:.1f}%減少。短期資金がFRBから流出し、市場の資金需要が急増している兆候。', rrp_change_1w, -30)
     return None
 
 
@@ -1007,35 +1007,62 @@ def policy_regime_to_dict(regime: PolicyRegime) -> Dict[str, Any]:
 
 
 def generate_fed_action_comment(regime: PolicyRegime) -> str:
-    """Fedの行動余地に関するコメント生成"""
-    comments = []
+    """Fedの行動余地に関するコメント生成（条件の組み合わせで具体的に）"""
     action_room = regime.fed_action_room
-    regime_comments = {
-        'PIVOT_CONFIRMED': 'FRBは緩和サイクル入り。利下げ継続中。',
-        'PIVOT_EARLY': 'FRBは利下げ開始。政策転換の初期段階。',
-        'QE_MODE': 'FRBは量的緩和を実施中。市場への資金供給が続く環境。',
-        'QT_ACTIVE': 'FRBは量的引き締めを継続中。流動性吸収が効いている。',
-        'QT_EXHAUSTED': 'FRBのQTは限界に到達。RRP枯渇で吸収余地なし。',
-        'NEUTRAL_POLICY': 'FRBの政策方向は中立。',
-    }
-    comments.append(regime_comments.get(regime.regime, ''))
-    overall = action_room.get('overall_room', 'Unknown')
-    if overall == 'Ample':
-        comments.append('Fedの政策余地は十分。緊急時の対応力あり。')
-    elif overall == 'Limited':
-        comments.append('Fedの政策余地は限定的。次の危機対応に懸念。')
-    rate_room = action_room.get('rate_cut_room', {})
-    if rate_room.get('constraint'):
-        comments.append(rate_room['constraint'])
-    elif rate_room.get('level') == 'High':
-        comments.append(f'利下げ余地は約{rate_room.get("room_pct", 0):.1f}%pt。')
-    abs_room = action_room.get('absorption_room', {})
-    if abs_room.get('level') == 'Low':
-        comments.append(abs_room.get('comment', ''))
+    rate = action_room.get('rate_cut_room', {})
+    absorb = action_room.get('absorption_room', {})
     fiscal = action_room.get('fiscal_assist_potential', {})
-    if fiscal.get('level') == 'Available':
-        comments.append('財政補助の余地あり（政治裁量）。')
-    return ' '.join(comments)
+
+    rate_level = rate.get('level', 'Unknown')
+    rate_pct = rate.get('room_pct')
+    absorb_level = absorb.get('level', 'Unknown')
+    rrp_buffer = absorb.get('rrp_buffer')
+    fiscal_level = fiscal.get('level', 'Unknown')
+    has_constraint = rate.get('constraint') is not None
+
+    lines = []
+
+    # 利下げ状況（メイン判断）
+    if rate_level == 'High' and not has_constraint:
+        lines.append(f'利下げ余地は約{rate_pct:.1f}%pt。大幅利下げが可能な水準。')
+        if absorb_level == 'Low':
+            lines.append('ただしRRP枯渇でQT継続は限界。利下げ開始の圧力が高まっている。')
+        elif absorb_level == 'Medium':
+            lines.append('保険的利下げの可能性あり。景気減速シグナルに注視。')
+    elif rate_level == 'Medium':
+        lines.append(f'FF金利{rate_pct:.1f}%。利下げカードは温存されている。')
+        if has_constraint:
+            lines.append(rate['constraint'] + '。実行にはハードルあり。')
+        elif absorb_level == 'Low':
+            lines.append('景気悪化時は保険的利下げの可能性。RRP枯渇と重なれば警戒強。')
+        else:
+            lines.append('景気・インフレ次第で利下げ着手のタイミングを探る局面。')
+    elif rate_level == 'Low':
+        if has_constraint:
+            lines.append(rate['constraint'] + '。利下げカード乏しい。')
+        else:
+            lines.append('ゼロ金利に近く、利下げ余地は極めて限定的。')
+        if absorb_level == 'Low':
+            lines.append('RRPも枯渇。Fedの弾切れリスク。次の危機対応に深刻な懸念。')
+
+    # RRP/QT状況
+    if absorb_level == 'Low' and rrp_buffer is not None:
+        lines.append(f'RRP残高{rrp_buffer:.0f}B$ — QT限界に接近。')
+    elif absorb_level == 'High':
+        lines.append('RRP残高潤沢。QT継続余地あり。')
+
+    # 財政余地
+    if fiscal_level == 'Available':
+        tga = fiscal.get('tga_level')
+        lines.append(f'TGA {tga:.0f}B$で財政補助の余地あり（政治裁量）。' if tga else '財政補助の余地あり。')
+    elif fiscal_level == 'Limited':
+        lines.append('TGA残高限定的。財政面からの支援は期待薄。')
+
+    # フォールバック
+    if not lines:
+        lines.append('明確な政策方向性なし。データ不足の可能性。')
+
+    return ' '.join(lines)
 
 
 # ============================================================
