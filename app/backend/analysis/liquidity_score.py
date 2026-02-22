@@ -10,6 +10,7 @@
 - 高いほど危険
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List
 import statistics
@@ -594,3 +595,462 @@ def generate_market_comment(
         comments.append('銀行システムは健全。')
 
     return ' '.join(comments)
+
+
+# ============================================================
+# イベント検出システム
+# 短期的な市場イベントを6種類検出
+# demo/analysis/liquidity_score.py から移植
+# ============================================================
+
+@dataclass
+class MarketEvent:
+    """検出されたイベント"""
+    event_type: str        # イベントタイプコード
+    event_label: str       # 日本語ラベル
+    severity: str          # 'WARNING' | 'ALERT' | 'CRITICAL'
+    description: str       # 説明
+    trigger_value: float   # トリガーとなった値
+    threshold: float       # 閾値
+
+
+EVENT_DEFINITIONS = {
+    'FUNDING_STRESS': {
+        'label': '資金調達ストレス',
+        'description': '準備預金が急減。銀行間市場で流動性逼迫の兆候。'
+    },
+    'LIQUIDITY_DRAIN': {
+        'label': '流動性急減',
+        'description': 'Net Liquidityが急激に減少。市場全体への資金供給が縮小。'
+    },
+    'BANK_STRESS': {
+        'label': '銀行ストレス',
+        'description': '銀行株が急落。金融システムへの懸念が浮上。'
+    },
+    'VOLATILITY_SHOCK': {
+        'label': 'ボラティリティショック',
+        'description': 'VIXが急騰。市場参加者のリスク回避が急速に進行。'
+    },
+    'CREDIT_SPIKE': {
+        'label': 'クレジットスパイク',
+        'description': '社債スプレッドが急拡大。信用リスクへの警戒が高まっている。'
+    },
+    'REPO_STRESS': {
+        'label': 'レポ市場ストレス',
+        'description': 'レポ金利が急騰または異常値。短期資金市場に問題発生。'
+    }
+}
+
+
+def _detect_funding_stress(
+    reserves_change_1m: Optional[float] = None,
+    reserves_change_1w: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['FUNDING_STRESS']
+    if reserves_change_1m is not None:
+        if reserves_change_1m <= -15:
+            return MarketEvent('FUNDING_STRESS', d['label'], 'CRITICAL', d['description'], reserves_change_1m, -15)
+        elif reserves_change_1m <= -10:
+            return MarketEvent('FUNDING_STRESS', d['label'], 'ALERT', d['description'], reserves_change_1m, -10)
+        elif reserves_change_1m <= -5:
+            return MarketEvent('FUNDING_STRESS', d['label'], 'WARNING', d['description'], reserves_change_1m, -5)
+    if reserves_change_1w is not None and reserves_change_1w <= -5:
+        return MarketEvent('FUNDING_STRESS', d['label'], 'ALERT',
+                           '準備預金が1週間で急減。短期的な流動性逼迫。', reserves_change_1w, -5)
+    return None
+
+
+def _detect_liquidity_drain(
+    net_liquidity_change_3m: Optional[float] = None,
+    net_liquidity_change_1m: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['LIQUIDITY_DRAIN']
+    if net_liquidity_change_3m is not None:
+        if net_liquidity_change_3m <= -20:
+            return MarketEvent('LIQUIDITY_DRAIN', d['label'], 'CRITICAL', d['description'], net_liquidity_change_3m, -20)
+        elif net_liquidity_change_3m <= -15:
+            return MarketEvent('LIQUIDITY_DRAIN', d['label'], 'ALERT', d['description'], net_liquidity_change_3m, -15)
+        elif net_liquidity_change_3m <= -10:
+            return MarketEvent('LIQUIDITY_DRAIN', d['label'], 'WARNING', d['description'], net_liquidity_change_3m, -10)
+    if net_liquidity_change_1m is not None and net_liquidity_change_1m <= -10:
+        return MarketEvent('LIQUIDITY_DRAIN', d['label'], 'ALERT',
+                           'Net Liquidityが1ヶ月で急減。短期的な資金供給縮小。', net_liquidity_change_1m, -10)
+    return None
+
+
+def _detect_bank_stress(
+    kre_change_2m: Optional[float] = None,
+    kre_change_1m: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['BANK_STRESS']
+    if kre_change_2m is not None:
+        if kre_change_2m <= -25:
+            return MarketEvent('BANK_STRESS', d['label'], 'CRITICAL', d['description'], kre_change_2m, -25)
+        elif kre_change_2m <= -15:
+            return MarketEvent('BANK_STRESS', d['label'], 'ALERT', d['description'], kre_change_2m, -15)
+    if kre_change_1m is not None and kre_change_1m <= -15:
+        return MarketEvent('BANK_STRESS', d['label'], 'ALERT',
+                           '銀行株が1ヶ月で急落。金融セクターへの懸念。', kre_change_1m, -15)
+    return None
+
+
+def _detect_volatility_shock(
+    vix_current: Optional[float] = None,
+    vix_1m_ago: Optional[float] = None,
+    vix_1w_ago: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['VOLATILITY_SHOCK']
+    if vix_current is not None:
+        if vix_current >= 40:
+            return MarketEvent('VOLATILITY_SHOCK', d['label'], 'CRITICAL',
+                               'VIXが40を超え、パニック水準に到達。', vix_current, 40)
+        elif vix_current >= 30:
+            return MarketEvent('VOLATILITY_SHOCK', d['label'], 'ALERT',
+                               'VIXが30を超え、高警戒水準。', vix_current, 30)
+        if vix_1w_ago is not None and vix_current - vix_1w_ago >= 15:
+            delta = vix_current - vix_1w_ago
+            return MarketEvent('VOLATILITY_SHOCK', d['label'], 'ALERT',
+                               f'VIXが1週間で{delta:.1f}ポイント急騰。', delta, 15)
+        if vix_1m_ago is not None and vix_current - vix_1m_ago >= 20:
+            delta = vix_current - vix_1m_ago
+            return MarketEvent('VOLATILITY_SHOCK', d['label'], 'WARNING',
+                               f'VIXが1ヶ月で{delta:.1f}ポイント上昇。', delta, 20)
+    return None
+
+
+def _detect_credit_spike(
+    hy_spread_current: Optional[float] = None,
+    hy_spread_1m_ago: Optional[float] = None,
+    ig_spread_current: Optional[float] = None,
+    ig_spread_1m_ago: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['CREDIT_SPIKE']
+    if hy_spread_current is not None:
+        if hy_spread_current >= 6.0:
+            return MarketEvent('CREDIT_SPIKE', d['label'], 'CRITICAL',
+                               f'HYスプレッドが{hy_spread_current:.2f}%に拡大。信用危機水準。', hy_spread_current, 6.0)
+        elif hy_spread_current >= 5.0:
+            return MarketEvent('CREDIT_SPIKE', d['label'], 'ALERT',
+                               f'HYスプレッドが{hy_spread_current:.2f}%に拡大。信用リスク警戒。', hy_spread_current, 5.0)
+        if hy_spread_1m_ago is not None:
+            change = hy_spread_current - hy_spread_1m_ago
+            if change >= 1.5:
+                return MarketEvent('CREDIT_SPIKE', d['label'], 'ALERT',
+                                   f'HYスプレッドが1ヶ月で{change:.2f}%拡大。', change, 1.5)
+    if ig_spread_current is not None and ig_spread_1m_ago is not None:
+        change = ig_spread_current - ig_spread_1m_ago
+        if change >= 0.5:
+            return MarketEvent('CREDIT_SPIKE', d['label'], 'WARNING',
+                               f'IGスプレッドが1ヶ月で{change:.2f}%拡大。', change, 0.5)
+    return None
+
+
+def _detect_repo_stress(
+    sofr_ff_spread: Optional[float] = None,
+    rrp_change_1w: Optional[float] = None
+) -> Optional[MarketEvent]:
+    d = EVENT_DEFINITIONS['REPO_STRESS']
+    if sofr_ff_spread is not None:
+        if sofr_ff_spread >= 30:
+            return MarketEvent('REPO_STRESS', d['label'], 'CRITICAL',
+                               f'SOFR-FFスプレッドが{sofr_ff_spread:.0f}bpに拡大。レポ市場危機。', sofr_ff_spread, 30)
+        elif sofr_ff_spread >= 15:
+            return MarketEvent('REPO_STRESS', d['label'], 'ALERT',
+                               f'SOFR-FFスプレッドが{sofr_ff_spread:.0f}bpに拡大。', sofr_ff_spread, 15)
+    if rrp_change_1w is not None and rrp_change_1w <= -30:
+        return MarketEvent('REPO_STRESS', d['label'], 'WARNING',
+                           f'RRP残高が1週間で{rrp_change_1w:.1f}%減少。流動性が急速に市場へ。', rrp_change_1w, -30)
+    return None
+
+
+def detect_market_events(
+    reserves_change_1m: Optional[float] = None,
+    reserves_change_1w: Optional[float] = None,
+    net_liquidity_change_3m: Optional[float] = None,
+    net_liquidity_change_1m: Optional[float] = None,
+    kre_change_2m: Optional[float] = None,
+    kre_change_1m: Optional[float] = None,
+    vix_current: Optional[float] = None,
+    vix_1m_ago: Optional[float] = None,
+    vix_1w_ago: Optional[float] = None,
+    hy_spread_current: Optional[float] = None,
+    hy_spread_1m_ago: Optional[float] = None,
+    ig_spread_current: Optional[float] = None,
+    ig_spread_1m_ago: Optional[float] = None,
+    sofr_ff_spread: Optional[float] = None,
+    rrp_change_1w: Optional[float] = None
+) -> List[MarketEvent]:
+    """市場イベントを検出（severity順ソート）"""
+    events = []
+    detectors = [
+        lambda: _detect_funding_stress(reserves_change_1m, reserves_change_1w),
+        lambda: _detect_liquidity_drain(net_liquidity_change_3m, net_liquidity_change_1m),
+        lambda: _detect_bank_stress(kre_change_2m, kre_change_1m),
+        lambda: _detect_volatility_shock(vix_current, vix_1m_ago, vix_1w_ago),
+        lambda: _detect_credit_spike(hy_spread_current, hy_spread_1m_ago, ig_spread_current, ig_spread_1m_ago),
+        lambda: _detect_repo_stress(sofr_ff_spread, rrp_change_1w),
+    ]
+    for detect in detectors:
+        evt = detect()
+        if evt:
+            events.append(evt)
+    severity_order = {'CRITICAL': 0, 'ALERT': 1, 'WARNING': 2}
+    events.sort(key=lambda e: severity_order.get(e.severity, 3))
+    return events
+
+
+def events_to_dict(events: List[MarketEvent]) -> List[Dict[str, Any]]:
+    """MarketEventリストを辞書リストに変換"""
+    return [
+        {
+            'event_type': e.event_type,
+            'event_label': e.event_label,
+            'severity': e.severity,
+            'description': e.description,
+            'trigger_value': e.trigger_value,
+            'threshold': e.threshold
+        }
+        for e in events
+    ]
+
+
+# ============================================================
+# Policy Regime（政策レジーム）検出システム
+# demo/analysis/liquidity_score.py から移植
+#
+# 6状態（優先順位順）:
+#   1. PIVOT_CONFIRMED  2. PIVOT_EARLY  3. QE_MODE
+#   4. QT_ACTIVE  5. QT_EXHAUSTED  6. NEUTRAL_POLICY
+# ============================================================
+
+@dataclass
+class PolicyRegime:
+    """政策レジーム情報"""
+    regime: str
+    regime_label: str
+    description: str
+    fed_action_room: Dict[str, Any]
+    signals: List[str]
+
+
+POLICY_REGIME_DEFINITIONS = {
+    'PIVOT_CONFIRMED': {
+        'label': '政策転換確定',
+        'description': '利下げ継続またはバランスシート増勢が確認された状態。緩和サイクル入り。'
+    },
+    'PIVOT_EARLY': {
+        'label': '政策転換初期',
+        'description': '利下げ開始。保険的利下げの可能性あり。RRP枯渇があれば警戒強。'
+    },
+    'QE_MODE': {
+        'label': '量的緩和モード',
+        'description': 'FRBがバランスシートを拡大中。市場に流動性を供給している状態。'
+    },
+    'QT_ACTIVE': {
+        'label': '量的引き締め（実効）',
+        'description': 'FRBがバランスシートを縮小中。RRP潤沢で流動性吸収が効いている状態。'
+    },
+    'QT_EXHAUSTED': {
+        'label': '量的引き締め（疲弊）',
+        'description': '形式上はQT継続だが、RRP枯渇でQTが効かなくなっている状態。'
+    },
+    'NEUTRAL_POLICY': {
+        'label': '中立',
+        'description': '明確な政策方向性なし。バランスシートは横ばい。'
+    }
+}
+
+POLICY_REGIME_THRESHOLDS = {
+    'rrp_depleted': 50,
+    'rrp_ample': 200,
+    'soma_expanding': 2.0,
+    'soma_shrinking': -0.5,
+    'soma_flat': 0.5,
+    'cuts_confirmed': 100,
+}
+
+
+def _calculate_fed_action_room(
+    ff_rate: Optional[float] = None,
+    rrp_level: Optional[float] = None,
+    tga_level: Optional[float] = None,
+    inflation_rate: Optional[float] = None,
+    yield_curve: Optional[float] = None
+) -> Dict[str, Any]:
+    """Fedの行動余地メーター（利下げ余地/吸収余地/財政余地）"""
+    result = {
+        'rate_cut_room': {'level': 'Unknown', 'room_pct': None, 'constraint': None},
+        'absorption_room': {'level': 'Unknown', 'rrp_buffer': None, 'comment': None},
+        'fiscal_assist_potential': {'level': 'Unknown', 'tga_level': None, 'comment': None},
+        'overall_room': 'Unknown'
+    }
+    fed_scores = []
+
+    # 利下げ余地
+    if ff_rate is not None:
+        room_pct = ff_rate
+        constraint = None
+        if inflation_rate is not None and inflation_rate > 3.0:
+            constraint = f'高インフレ（{inflation_rate:.1f}%）が利下げを制約'
+            level = 'Low'
+            fed_scores.append(1)
+        elif ff_rate >= 4.0:
+            level = 'High'
+            fed_scores.append(3)
+        elif ff_rate >= 2.0:
+            level = 'Medium'
+            fed_scores.append(2)
+        else:
+            level = 'Low'
+            constraint = 'ゼロ金利に近い'
+            fed_scores.append(1)
+        result['rate_cut_room'] = {'level': level, 'room_pct': round(room_pct, 2), 'constraint': constraint}
+
+    # 吸収余地（RRP）
+    if rrp_level is not None:
+        if rrp_level > 500:
+            level, comment = 'High', f'RRP残高潤沢（{rrp_level:.0f}B$）- QT継続余地あり'
+            fed_scores.append(3)
+        elif rrp_level > 200:
+            level, comment = 'Medium', f'RRP残高中程度（{rrp_level:.0f}B$）- QT慎重に継続'
+            fed_scores.append(2)
+        else:
+            level, comment = 'Low', f'RRP残高低下（{rrp_level:.0f}B$）- QT限界に接近'
+            fed_scores.append(1)
+        result['absorption_room'] = {'level': level, 'rrp_buffer': rrp_level, 'comment': comment}
+
+    # 財政補助余地（TGA - 政治裁量枠）
+    if tga_level is not None:
+        if tga_level > 500:
+            level, comment = 'Available', f'TGA残高あり（{tga_level:.0f}B$）- 財政余力あり（政治裁量）'
+        else:
+            level, comment = 'Limited', f'TGA残高限定的（{tga_level:.0f}B$）'
+        result['fiscal_assist_potential'] = {'level': level, 'tga_level': tga_level, 'comment': comment}
+
+    # 総合判定（Fed単独 = rate_cut + absorption、TGA含めない）
+    if fed_scores:
+        avg = sum(fed_scores) / len(fed_scores)
+        result['overall_room'] = 'Ample' if avg >= 2.5 else 'Moderate' if avg >= 1.5 else 'Limited'
+
+    return result
+
+
+def detect_policy_regime(
+    soma_change_3m: Optional[float] = None,
+    soma_change_6m: Optional[float] = None,
+    rrp_level: Optional[float] = None,
+    rrp_change_3m: Optional[float] = None,
+    tga_level: Optional[float] = None,
+    ff_rate: Optional[float] = None,
+    ff_rate_change_6m: Optional[float] = None,
+    yield_curve: Optional[float] = None,
+    inflation_rate: Optional[float] = None
+) -> PolicyRegime:
+    """政策レジームを検出（優先順位: PIVOT > QE > QT > NEUTRAL）"""
+    T = POLICY_REGIME_THRESHOLDS
+    signals = []
+    regime = 'NEUTRAL_POLICY'
+
+    cuts_cum_bp_6m = -ff_rate_change_6m * 100 if ff_rate_change_6m is not None else 0
+    soma_flat = abs(soma_change_3m) < T['soma_flat'] if soma_change_3m is not None else False
+    rrp_depleted = rrp_level is not None and rrp_level < T['rrp_depleted']
+    rrp_ample = rrp_level is not None and rrp_level > T['rrp_ample']
+    soma_expanding = soma_change_3m is not None and soma_change_3m > T['soma_expanding']
+    soma_shrinking = soma_change_3m is not None and soma_change_3m < T['soma_shrinking']
+
+    if cuts_cum_bp_6m >= T['cuts_confirmed']:
+        regime = 'PIVOT_CONFIRMED'
+        signals.append(f'利下げ累計 {cuts_cum_bp_6m:.0f}bp（6M）- 緩和サイクル確定')
+    elif cuts_cum_bp_6m > 0:
+        regime = 'PIVOT_EARLY'
+        signals.append(f'利下げ開始（累計 {cuts_cum_bp_6m:.0f}bp / 6M）')
+        if rrp_depleted:
+            signals.append(f'RRP枯渇（{rrp_level:.1f}B$）- 警戒強')
+    elif soma_expanding:
+        regime = 'QE_MODE'
+        signals.append(f'SOMA拡大中（3M: +{soma_change_3m:.1f}%）')
+    elif soma_shrinking and rrp_ample:
+        regime = 'QT_ACTIVE'
+        signals.append(f'SOMA縮小中（3M: {soma_change_3m:.1f}%）')
+        signals.append(f'RRP潤沢（{rrp_level:.0f}B$）- QT実効中')
+    elif rrp_depleted and cuts_cum_bp_6m <= 0 and (soma_shrinking or soma_flat):
+        regime = 'QT_EXHAUSTED'
+        signals.append(f'SOMA {"縮小" if soma_shrinking else "横ばい"}中（3M: {soma_change_3m:.1f}%）')
+        signals.append(f'RRP枯渇（{rrp_level:.1f}B$）- QT限界到達')
+    else:
+        if soma_change_3m is not None:
+            signals.append(f'SOMA変化（3M: {soma_change_3m:+.1f}%）')
+        if rrp_level is not None:
+            signals.append(f'RRP残高: {rrp_level:.0f}B$')
+
+    regime_def = POLICY_REGIME_DEFINITIONS.get(regime, POLICY_REGIME_DEFINITIONS['NEUTRAL_POLICY'])
+    fed_action_room = _calculate_fed_action_room(
+        ff_rate=ff_rate, rrp_level=rrp_level, tga_level=tga_level,
+        inflation_rate=inflation_rate, yield_curve=yield_curve
+    )
+    return PolicyRegime(
+        regime=regime, regime_label=regime_def['label'],
+        description=regime_def['description'],
+        fed_action_room=fed_action_room, signals=signals
+    )
+
+
+def policy_regime_to_dict(regime: PolicyRegime) -> Dict[str, Any]:
+    """PolicyRegimeを辞書に変換"""
+    return {
+        'regime': regime.regime,
+        'regime_label': regime.regime_label,
+        'description': regime.description,
+        'fed_action_room': regime.fed_action_room,
+        'signals': regime.signals
+    }
+
+
+def generate_fed_action_comment(regime: PolicyRegime) -> str:
+    """Fedの行動余地に関するコメント生成"""
+    comments = []
+    action_room = regime.fed_action_room
+    regime_comments = {
+        'PIVOT_CONFIRMED': 'FRBは緩和サイクル入り。利下げ継続中。',
+        'PIVOT_EARLY': 'FRBは利下げ開始。政策転換の初期段階。',
+        'QE_MODE': 'FRBは量的緩和を実施中。市場への資金供給が続く環境。',
+        'QT_ACTIVE': 'FRBは量的引き締めを継続中。流動性吸収が効いている。',
+        'QT_EXHAUSTED': 'FRBのQTは限界に到達。RRP枯渇で吸収余地なし。',
+        'NEUTRAL_POLICY': 'FRBの政策方向は中立。',
+    }
+    comments.append(regime_comments.get(regime.regime, ''))
+    overall = action_room.get('overall_room', 'Unknown')
+    if overall == 'Ample':
+        comments.append('Fedの政策余地は十分。緊急時の対応力あり。')
+    elif overall == 'Limited':
+        comments.append('Fedの政策余地は限定的。次の危機対応に懸念。')
+    rate_room = action_room.get('rate_cut_room', {})
+    if rate_room.get('constraint'):
+        comments.append(rate_room['constraint'])
+    elif rate_room.get('level') == 'High':
+        comments.append(f'利下げ余地は約{rate_room.get("room_pct", 0):.1f}%pt。')
+    abs_room = action_room.get('absorption_room', {})
+    if abs_room.get('level') == 'Low':
+        comments.append(abs_room.get('comment', ''))
+    fiscal = action_room.get('fiscal_assist_potential', {})
+    if fiscal.get('level') == 'Available':
+        comments.append('財政補助の余地あり（政治裁量）。')
+    return ' '.join(comments)
+
+
+# ============================================================
+# ローリングZ-score（乖離分析用）
+# ============================================================
+
+def rolling_zscore(values: List[float], window: int = 24) -> List[Optional[float]]:
+    """ローリングウィンドウでz-scoreを計算"""
+    result = []
+    for i in range(len(values)):
+        w = values[max(0, i - window + 1):i + 1]
+        if len(w) < 3:
+            result.append(None)
+            continue
+        mean = statistics.mean(w)
+        std = statistics.stdev(w)
+        result.append(round((values[i] - mean) / std, 3) if std > 0 else 0.0)
+    return result
