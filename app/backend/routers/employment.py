@@ -969,8 +969,11 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             .order("reference_period").limit(months * 6).execute()
         consumer_rows = consumer_all.data or []
 
+        # NFPの日付範囲に合わせてSP500を取得（古い順）
+        nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
         sp500_all = supabase.table("market_indicators") \
             .select("date,sp500") \
+            .gte("date", nfp_start_date) \
             .order("date").limit(months * 22).execute()
         sp500_rows = sp500_all.data or []
 
