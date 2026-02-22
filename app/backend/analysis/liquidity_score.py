@@ -759,7 +759,7 @@ def _detect_repo_stress(
                                f'SOFR-FFスプレッドが{sofr_ff_spread:.0f}bpに拡大。', sofr_ff_spread, 15)
     if rrp_change_1w is not None and rrp_change_1w <= -30:
         return MarketEvent('REPO_STRESS', d['label'], 'WARNING',
-                           f'RRP残高が1週間で{rrp_change_1w:.1f}%減少。短期資金がFRBから流出し、市場の資金需要が急増している兆候。', rrp_change_1w, -30)
+                           f'RRP残高が1週間で{rrp_change_1w:.1f}%減少。QTの緩衝材が枯渇に向かっており、これ以上のQT継続は市場から直接資金を吸収し始めるリスク。', rrp_change_1w, -30)
     return None
 
 
@@ -1026,7 +1026,7 @@ def generate_fed_action_comment(regime: PolicyRegime) -> str:
     if rate_level == 'High' and not has_constraint:
         lines.append(f'利下げ余地は約{rate_pct:.1f}%pt。大幅利下げが可能な水準。')
         if absorb_level == 'Low':
-            lines.append('ただしRRP枯渇でQT継続は限界。利下げ開始の圧力が高まっている。')
+            lines.append('ただしRRP緩衝材が枯渇。QTを続ければ市場から直接資金吸収が始まるため、利下げ・QT停止圧力が高まっている。')
         elif absorb_level == 'Medium':
             lines.append('保険的利下げの可能性あり。景気減速シグナルに注視。')
     elif rate_level == 'Medium':
@@ -1034,7 +1034,7 @@ def generate_fed_action_comment(regime: PolicyRegime) -> str:
         if has_constraint:
             lines.append(rate['constraint'] + '。実行にはハードルあり。')
         elif absorb_level == 'Low':
-            lines.append('景気悪化時は保険的利下げの可能性。RRP枯渇と重なれば警戒強。')
+            lines.append('景気悪化時は保険的利下げの可能性。RRP緩衝材の枯渇でQTが市場を直接圧迫するリスクあり。')
         else:
             lines.append('景気・インフレ次第で利下げ着手のタイミングを探る局面。')
     elif rate_level == 'Low':
@@ -1043,13 +1043,13 @@ def generate_fed_action_comment(regime: PolicyRegime) -> str:
         else:
             lines.append('ゼロ金利に近く、利下げ余地は極めて限定的。')
         if absorb_level == 'Low':
-            lines.append('RRPも枯渇。Fedの弾切れリスク。次の危機対応に深刻な懸念。')
+            lines.append('RRP緩衝材も枯渇。QTは市場から直接吸収する段階。Fedの弾切れリスク。')
 
     # RRP/QT状況
     if absorb_level == 'Low' and rrp_buffer is not None:
-        lines.append(f'RRP残高{rrp_buffer:.0f}B$ — QT限界に接近。')
+        lines.append(f'RRP残高{rrp_buffer:.0f}B$ — QTの緩衝材がほぼ消失。これ以上のQTは銀行準備預金を直接削る。')
     elif absorb_level == 'High':
-        lines.append('RRP残高潤沢。QT継続余地あり。')
+        lines.append('RRP残高潤沢。QTの影響はRRPが吸収しており、市場への直接的圧迫なし。')
 
     # 財政余地
     if fiscal_level == 'Available':
