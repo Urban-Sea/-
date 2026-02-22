@@ -679,28 +679,26 @@ async def get_policy_regime_endpoint():
         # TGA（forward-fill: 最新の非null値）
         tga_level = _find_nth_nonnull(fed, 'tga', 0)
 
-        # 金利: 最新 + 6ヶ月前
+        # 金利: forward-fill（fed_fundsは月次、treasury_spreadは日次）
         rates_q = supabase.table("interest_rates") \
             .select("date,fed_funds,treasury_spread") \
-            .order("date", desc=True).limit(1).execute()
-        ff_rate = None
-        yield_curve = None
-        ff_date = None
-        if rates_q.data:
-            ff_rate = rates_q.data[0].get('fed_funds')
-            yield_curve = rates_q.data[0].get('treasury_spread')
-            ff_date = rates_q.data[0].get('date')
+            .order("date", desc=True).limit(60).execute()
+        rates_rows = rates_q.data or []
+        ff_rate = _find_nth_nonnull(rates_rows, 'fed_funds', 0)
+        yield_curve = _find_nth_nonnull(rates_rows, 'treasury_spread', 0)
+        ff_date = rates_rows[0].get('date') if rates_rows else None
 
         # 6ヶ月前のFFレート
         ff_rate_change_6m = None
-        if ff_date and ff_rate is not None:
+        if ff_rate is not None:
             six_months_ago = (datetime.now() - timedelta(days=182)).strftime('%Y-%m-%d')
             rates_6m_q = supabase.table("interest_rates") \
                 .select("fed_funds") \
                 .lte("date", six_months_ago) \
-                .order("date", desc=True).limit(1).execute()
-            if rates_6m_q.data and rates_6m_q.data[0].get('fed_funds') is not None:
-                ff_rate_change_6m = ff_rate - rates_6m_q.data[0]['fed_funds']
+                .order("date", desc=True).limit(30).execute()
+            ff_rate_6m = _find_nth_nonnull(rates_6m_q.data or [], 'fed_funds', 0)
+            if ff_rate_6m is not None:
+                ff_rate_change_6m = ff_rate - ff_rate_6m
 
         # CPI（オプション）
         inflation_rate = None
