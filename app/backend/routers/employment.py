@@ -293,6 +293,9 @@ async def upsert_indicator(data: IndicatorInput):
                 "direction": direction if value_changed else None,
             }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ============================================================
 # リスクスコア計算（100点満点・5フェーズ）
