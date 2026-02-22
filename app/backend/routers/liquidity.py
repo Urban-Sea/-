@@ -445,6 +445,61 @@ async def get_plumbing_summary():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class MarginDebtInput(BaseModel):
+    """信用取引残高データ入力"""
+    date: str  # "2026-01-01"
+    debit_balance: float  # FINRA値（百万ドル単位）例: 1279042
+    free_credit: Optional[float] = None
+
+
+@router.post("/margin-debt")
+async def upsert_margin_debt(data: MarginDebtInput):
+    """
+    信用取引残高をupsert。FINRA公表値（百万ドル単位）を受け取り、
+    2年前データからchange_2yを自動計算して保存する。
+    """
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        # 実データはドル単位で保存（FINRA百万ドル × 1,000,000）
+        debit_dollars = data.debit_balance * 1_000_000
+
+        # 2年前のデータを取得してchange_2y計算
+        two_years_ago = data.date[:4]
+        two_years_ago = str(int(two_years_ago) - 2) + data.date[4:]
+        prev_q = supabase.table("margin_debt") \
+            .select("debit_balance") \
+            .lte("date", two_years_ago) \
+            .order("date", desc=True).limit(1).execute()
+
+        change_2y = None
+        if prev_q.data and prev_q.data[0].get('debit_balance'):
+            prev_val = prev_q.data[0]['debit_balance']
+            change_2y = ((debit_dollars - prev_val) / prev_val) * 100
+
+        row = {
+            'date': data.date,
+            'debit_balance': debit_dollars,
+            'change_2y': change_2y,
+            'updated_at': datetime.now().isoformat(),
+        }
+        if data.free_credit is not None:
+            row['free_credit'] = data.free_credit * 1_000_000
+
+        supabase.table("margin_debt").upsert(row, on_conflict="date").execute()
+
+        return {
+            "status": "ok",
+            "date": data.date,
+            "debit_balance": debit_dollars,
+            "change_2y": round(change_2y, 2) if change_2y else None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/fed-balance-sheet")
 async def get_fed_balance_sheet(
     limit: int = Query(30, description="取得件数"),
