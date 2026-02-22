@@ -403,18 +403,50 @@ async def get_signal_history(
         )
         df['ATR'] = tr.rolling(window=14).mean()
 
-        # RS計算（SPYとの相対強度）
+        # EMA distance (ATR-normalized) — V10準拠
+        df['EMA_distance_atr'] = abs(df['EMA_8'] - df['EMA_21']) / df['ATR']
+
+        # SPYデータ取得（RS計算 + V10 Regime判定の両方で使用）
+        spy_regime_map = {}  # date -> regime string
         try:
-            spy = yf.Ticker("SPY")
-            spy_df = spy.history(period="2y" if period == "1y" else period)
-            if not spy_df.empty and len(spy_df) >= 20:
-                spy_df['RS'] = spy_df['Close'].pct_change(20) * 100
-                spy_df = spy_df.reset_index()
-                spy_df['Date'] = spy_df['Date'].dt.strftime('%Y-%m-%d')
-                df = df.merge(spy_df[['Date', 'RS']].rename(columns={'RS': 'SPY_RS'}), on='Date', how='left')
-                df['RS'] = df['Close'].pct_change(20) * 100
-                df['RS_diff'] = df['RS'] - df['SPY_RS'].fillna(0)
+            spy_raw = yf.Ticker("SPY").history(period="2y" if period == "1y" else period)
+            if not spy_raw.empty:
+                spy_raw = spy_raw.reset_index()
+                spy_raw['Date_str'] = spy_raw['Date'].dt.strftime('%Y-%m-%d')
+
+                # RS計算用
+                if len(spy_raw) >= 20:
+                    spy_raw['RS'] = spy_raw['Close'].pct_change(20) * 100
+                    df = df.merge(
+                        spy_raw[['Date_str', 'RS']].rename(columns={'Date_str': 'Date', 'RS': 'SPY_RS'}),
+                        on='Date', how='left'
+                    )
+                    df['RS'] = df['Close'].pct_change(20) * 100
+                    df['RS_diff'] = df['RS'] - df['SPY_RS'].fillna(0)
+
+                # V10: Regime判定用（SPY EMA_21 vs EMA_200 + slope）
+                spy_raw['EMA_21'] = spy_raw['Close'].ewm(span=21, adjust=False).mean()
+                spy_raw['EMA_200'] = spy_raw['Close'].ewm(span=200, adjust=False).mean()
+                spy_raw['EMA_21_slope'] = spy_raw['EMA_21'].diff(5)
+                for si in range(max(0, len(spy_raw) - 300), len(spy_raw)):
+                    c = float(spy_raw['Close'].iloc[si])
+                    ema200 = float(spy_raw['EMA_200'].iloc[si])
+                    slope = float(spy_raw['EMA_21_slope'].iloc[si]) if not pd.isna(spy_raw['EMA_21_slope'].iloc[si]) else 0
+                    above = c > ema200
+                    up = slope > 0
+                    if above and up:
+                        r = "BULL"
+                    elif above and not up:
+                        r = "WEAKENING"
+                    elif not above and up:
+                        r = "RECOVERY"
+                    else:
+                        r = "BEAR"
+                    spy_regime_map[spy_raw['Date_str'].iloc[si]] = r
         except Exception:
+            pass
+
+        if 'RS_diff' not in df.columns:
             df['RS_diff'] = 0
 
         highs = df['High'].tolist()
@@ -426,7 +458,13 @@ async def get_signal_history(
         bos_signals = bos_detector.detect_bos(highs, lows)
         choch_signals = bos_detector.detect_choch(highs, lows)
 
-        # CHoCHをインデックスでマップ
+        # V10準拠: CHoCHをリスト形式で保持（直近N個を検索するため）
+        choch_list = []  # [(index, type_str), ...]
+        for choch in choch_signals:
+            choch_list.append((choch.index, choch.choch_type.value))
+        choch_list.sort(key=lambda x: x[0])
+
+        # 後方互換用にインデックスセットも保持
         bearish_choch_indices = set()
         bullish_choch_indices = set()
         for choch in choch_signals:
@@ -446,7 +484,17 @@ async def get_signal_history(
 
         # 閾値
         RSI_HIGH_THRESHOLD = 80
-        EMA_CONV_THRESHOLD = 1.5
+        CHOCH_SEARCH_COUNT = CombinedEntryDetector.CHOCH_SEARCH_COUNT  # 10
+
+        # V10: 株価カテゴリ別RS閾値（CombinedEntryDetectorと同一ロジック）
+        def _get_rs_threshold(price: float) -> float:
+            cat = CombinedEntryDetector.categorize_price(price)
+            return CombinedEntryDetector.V10_RS_DOWN_THRESHOLD.get(cat, -5.0)
+
+        # V10: Regime別EMA閾値（CombinedEntryDetectorと同一ロジック）
+        def _get_ema_threshold(date_str: str) -> float:
+            regime = spy_regime_map.get(date_str, "BULL")
+            return CombinedEntryDetector.V9_EMA_THRESHOLD.get(regime, 1.5)
 
         def _flush_entry():
             nonlocal entry_streak
@@ -460,7 +508,7 @@ async def get_signal_history(
                 "type": "ENTRY",
                 "price": round(s["start_price"], 2),
                 "end_price": round(s["end_price"], 2),
-                "detail": f"買いシグナル（RS: {s['rs_trend']}）EMA収束 {s.get('ema_conv', 0):.1f}%",
+                "detail": f"買いシグナル（RS: {s['rs_trend']}）EMA収束 {s.get('ema_conv', 0):.2f}ATR",
                 "rs_trend": s["rs_trend"],
                 "size_pct": s["size_pct"],
             })
@@ -515,26 +563,46 @@ async def get_signal_history(
             ema_21 = float(df['EMA_21'].iloc[i])
             rsi = float(df['RSI'].iloc[i]) if not pd.isna(df['RSI'].iloc[i]) else 50.0
 
-            # ===== ENTRY シグナル判定 =====
-            # Bearish CHoCH → Bullish CHoCHのシーケンスを確認
-            recent_bearish = None
-            recent_bullish = None
-            for idx in range(max(0, i - 30), i):
-                if idx in bearish_choch_indices:
-                    recent_bearish = idx
-                if idx in bullish_choch_indices and recent_bearish is not None and idx > recent_bearish:
-                    recent_bullish = idx
+            # ===== ENTRY シグナル判定（V10準拠） =====
+            # V10: 直近CHOCH_SEARCH_COUNT個のCHoCHから Bearish → Bullish シーケンスを確認
+            recent_chochs = [c for c in choch_list if c[0] <= i]
+            recent_chochs = recent_chochs[-CHOCH_SEARCH_COUNT:]
 
-            ema_conv = abs(ema_8 - ema_21) / close * 100
+            # 最新のBullish CHoCHを探す
+            latest_bullish_idx = None
+            for c_idx, c_type in reversed(recent_chochs):
+                if c_type == "BULLISH":
+                    latest_bullish_idx = c_idx
+                    break
+
+            # そのBullishより前のBearish CHoCHを探す（V10: 途中に別Bullishがあれば停止）
+            bearish_found = False
+            if latest_bullish_idx is not None:
+                for c_idx, c_type in reversed(recent_chochs):
+                    if c_idx >= latest_bullish_idx:
+                        continue
+                    if c_type == "BULLISH":
+                        break  # 別のBullishが先 → Bearish先行条件不成立
+                    if c_type == "BEARISH":
+                        bearish_found = True
+                        break
+
+            # V10: EMA収束 = |EMA8-EMA21| / ATR（ATR正規化）
+            atr_val = float(df['ATR'].iloc[i]) if not pd.isna(df['ATR'].iloc[i]) else 0
+            ema_conv = abs(ema_8 - ema_21) / atr_val if atr_val > 0 else float('inf')
+            ema_threshold = _get_ema_threshold(date_str)
+
             rs_diff = float(df['RS_diff'].iloc[i]) if 'RS_diff' in df.columns and not pd.isna(df['RS_diff'].iloc[i]) else 0
 
             entry_allowed = False
-            if recent_bearish is not None and recent_bullish is not None:
-                if i - recent_bullish <= 5 and ema_conv <= EMA_CONV_THRESHOLD:
-                    if mode != "balanced" or rs_diff >= -5:
+            if bearish_found and latest_bullish_idx is not None:
+                if ema_conv <= ema_threshold:
+                    rs_threshold = _get_rs_threshold(close)
+                    if mode != "balanced" or rs_diff >= rs_threshold:
                         entry_allowed = True
 
-            rs_trend = "UP" if rs_diff >= 0 else ("FLAT" if rs_diff >= -5 else "DOWN")
+            rs_threshold_for_trend = _get_rs_threshold(close)
+            rs_trend = "UP" if rs_diff >= 0 else ("FLAT" if rs_diff >= rs_threshold_for_trend else "DOWN")
             size_pct = 100 if rs_trend != "DOWN" else (50 if mode == "conservative" else 0)
 
             if entry_allowed:
