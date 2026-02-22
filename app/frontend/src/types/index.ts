@@ -527,7 +527,68 @@ export interface HistoryChartsData {
       treasury_10y: number | null;
       treasury_spread: number | null;
     }>;
+    layer_scores?: Array<{
+      date: string;
+      layer1: number | null;
+      layer2a: number | null;
+      layer2b: number | null;
+    }>;
+    layer_divergence?: Array<{
+      date: string;
+      divergence: number | null;
+      z_l2b?: number | null;
+      z_sp500?: number | null;
+    }>;
   };
+}
+
+// Event Detection types
+export interface MarketEvent {
+  event_type: string;
+  event_label: string;
+  severity: 'CRITICAL' | 'ALERT' | 'WARNING';
+  description: string;
+  trigger_value: number;
+  threshold: number;
+}
+
+export interface MarketEventsData {
+  events: MarketEvent[];
+  event_count: number;
+  highest_severity: string | null;
+  timestamp: string;
+}
+
+// Policy Regime types
+export interface FedActionRoom {
+  rate_cut_room: number;
+  absorption_room: number;
+  fiscal_assist_potential: number;
+  overall_room: number;
+}
+
+export interface PolicyRegimeData {
+  regime: string;
+  regime_label: string;
+  description: string;
+  fed_action_room: FedActionRoom;
+  signals: string[];
+  fed_comment: string;
+}
+
+// Crisis Event types (for backtest timeline)
+export interface CrisisEvent {
+  event: string;
+  description: string;
+  event_date: string;
+  state_code: string;
+  state_label: string;
+  color: string;
+  layer1_stress: number;
+  layer2a_stress: number;
+  layer2b_stress: number;
+  sp500: number | null;
+  return_6m: number | null;
 }
 
 // Backtest types
@@ -567,4 +628,5 @@ export interface BacktestData {
   state_definitions: StateDefinition[];
   state_stats: Record<string, StateStats>;
   total_months: number;
+  event_timeline?: CrisisEvent[];
 }

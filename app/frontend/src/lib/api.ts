@@ -25,6 +25,8 @@ import type {
   BatchResponse,
   HistoryChartsData,
   BacktestData,
+  MarketEventsData,
+  PolicyRegimeData,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
@@ -288,6 +290,16 @@ export async function getHistoryCharts(
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
   return fetchAPI(`/api/liquidity/history-charts?${params.toString()}`);
+}
+
+// Market Events API
+export async function getMarketEvents(): Promise<MarketEventsData> {
+  return fetchAPI('/api/liquidity/events');
+}
+
+// Policy Regime API
+export async function getPolicyRegime(): Promise<PolicyRegimeData> {
+  return fetchAPI('/api/liquidity/policy-regime');
 }
 
 // Backtest States API
