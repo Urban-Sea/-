@@ -980,6 +980,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             key = row["reference_period"][:7]
             nfp_by_month.setdefault(key, []).append(row)
 
+        # Carry-forward辞書: 指標が月次でない場合、直近の値を引き継ぐ
         umcsent_by_month: dict[str, float] = {}
         w875_by_month: dict[str, float] = {}
         drc_by_month: dict[str, float] = {}
@@ -1010,6 +1011,25 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             val = row.get("sp500")
             if val is not None:
                 sp500_by_month[key] = val
+
+        # Carry-forward: 各辞書を全月にわたって直近値で埋める
+        def carry_forward(d: dict[str, float], all_keys: list[str]) -> dict[str, float]:
+            filled: dict[str, float] = {}
+            last_val = None
+            for k in all_keys:
+                if k in d:
+                    last_val = d[k]
+                if last_val is not None:
+                    filled[k] = last_val
+            return filled
+
+        all_month_keys = sorted(nfp_by_month.keys())
+        umcsent_by_month = carry_forward(umcsent_by_month, all_month_keys)
+        w875_by_month = carry_forward(w875_by_month, all_month_keys)
+        drc_by_month = carry_forward(drc_by_month, all_month_keys)
+        jolts_by_month = carry_forward(jolts_by_month, all_month_keys)
+        unemploy_by_month = carry_forward(unemploy_by_month, all_month_keys)
+        claims_by_month = carry_forward(claims_by_month, all_month_keys)
 
         # ===== 月次スコア計算 =====
         all_months = sorted(nfp_by_month.keys())
