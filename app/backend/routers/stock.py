@@ -8,6 +8,8 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import time
 
 router = APIRouter()
@@ -15,6 +17,7 @@ router = APIRouter()
 # シンプルなインメモリキャッシュ
 _cache: Dict[str, dict] = {}
 CACHE_TTL = 300  # 5分
+_executor = ThreadPoolExecutor(max_workers=10)
 
 
 class StockQuote(BaseModel):
@@ -293,52 +296,51 @@ async def get_stock_ema(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _fetch_single_quote(ticker: str) -> dict:
+    """1銘柄の株価を取得（同期、スレッドプール用）"""
+    ticker = ticker.upper()
+    cache_key = f"quote:{ticker}"
+    cached = get_cached(cache_key)
+    if cached:
+        return cached
+
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        current_price = info.get("regularMarketPrice") or info.get("currentPrice")
+        prev_close = info.get("previousClose")
+
+        if current_price:
+            change = current_price - prev_close if prev_close else 0
+            change_pct = (change / prev_close * 100) if prev_close else 0
+            quote = {
+                "ticker": ticker,
+                "price": round(current_price, 2),
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2),
+                "volume": info.get("volume") or 0,
+            }
+            set_cache(cache_key, quote)
+            return quote
+        return {"ticker": ticker, "error": "No price data"}
+    except Exception:
+        return {"ticker": ticker, "error": "Failed to fetch"}
+
+
 @router.post("/batch")
 async def get_batch_quotes(
     tickers: List[str],
 ):
     """
-    複数銘柄の株価を一括取得
+    複数銘柄の株価を一括取得（並列実行）
     """
-    results = []
-
-    for ticker in tickers[:20]:  # 最大20銘柄
-        try:
-            cache_key = f"quote:{ticker.upper()}"
-            cached = get_cached(cache_key)
-
-            if cached:
-                results.append(cached)
-                continue
-
-            stock = yf.Ticker(ticker.upper())
-            info = stock.info
-
-            current_price = info.get("regularMarketPrice") or info.get("currentPrice")
-            prev_close = info.get("previousClose")
-
-            if current_price:
-                change = current_price - prev_close if prev_close else 0
-                change_pct = (change / prev_close * 100) if prev_close else 0
-
-                quote = {
-                    "ticker": ticker.upper(),
-                    "price": round(current_price, 2),
-                    "change": round(change, 2),
-                    "change_pct": round(change_pct, 2),
-                    "volume": info.get("volume") or 0,
-                }
-                results.append(quote)
-                set_cache(cache_key, quote)
-
-        except Exception:
-            results.append({
-                "ticker": ticker.upper(),
-                "error": "Failed to fetch"
-            })
+    target = tickers[:20]  # 最大20銘柄
+    loop = asyncio.get_event_loop()
+    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
+    results = await asyncio.gather(*tasks)
 
     return {
-        "quotes": results,
+        "quotes": list(results),
         "count": len(results),
         "updated_at": datetime.now().isoformat(),
     }

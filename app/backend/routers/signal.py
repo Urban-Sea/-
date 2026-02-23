@@ -9,7 +9,8 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
 
 # 本格ロジックをインポート
 from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
@@ -17,6 +18,13 @@ from analysis.bos_detector import BOSDetector
 from analysis.regime_detector import RegimeDetector
 
 router = APIRouter()
+
+# インメモリキャッシュ（5分TTL）
+_signal_cache: dict = {}  # key: "ticker:mode" → {"data": ..., "expires": ...}
+_history_cache: dict = {}  # key: "ticker:period:mode" → {"data": ..., "expires": ...}
+_markers_cache: dict = {}  # key: "ticker:period" → {"data": ..., "expires": ...}
+_regime_cache: dict = {}   # key: "ticker" → {"data": ..., "expires": ...}
+_SIGNAL_TTL = timedelta(minutes=5)
 
 
 class CHoCHCondition(BaseModel):
@@ -113,6 +121,12 @@ async def get_signal(
     ticker = ticker.upper()
     entry_mode = entry_mode_from_str(mode)
 
+    # キャッシュチェック
+    cache_key = f"{ticker}:{mode}"
+    now = datetime.now()
+    if cache_key in _signal_cache and _signal_cache[cache_key]["expires"] > now:
+        return _signal_cache[cache_key]["data"]
+
     try:
         # CombinedEntryDetector V10を使用
         detector = CombinedEntryDetector(
@@ -155,7 +169,7 @@ async def get_signal(
             for k, v in result.other_modes.items()
         }
 
-        return SignalResponse(
+        response = SignalResponse(
             ticker=result.ticker,
             timestamp=datetime.now().isoformat(),
             price=result.price,
@@ -171,6 +185,9 @@ async def get_signal(
             mode_note=result.mode_note,
             other_modes=other_modes,
         )
+
+        _signal_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -362,6 +379,12 @@ async def get_signal_history(
         stats: 統計情報
     """
     ticker = ticker.upper()
+
+    # キャッシュチェック
+    cache_key = f"{ticker}:{period}:{mode}"
+    now = datetime.now()
+    if cache_key in _history_cache and _history_cache[cache_key]["expires"] > now:
+        return _history_cache[cache_key]["data"]
 
     try:
         import yfinance as yf
@@ -758,7 +781,7 @@ async def get_signal_history(
                 stats["avg_pnl_20d"] = round(float(np.mean(pnl_20d_list)), 2)
                 stats["win_rate_20d"] = round(len([p for p in pnl_20d_list if p > 0]) / len(pnl_20d_list) * 100, 1)
 
-        return {
+        result = {
             "ticker": ticker,
             "period": period,
             "mode": mode,
@@ -768,6 +791,9 @@ async def get_signal_history(
             "total_signals": len(timeline),
             "stats": stats,
         }
+
+        _history_cache[cache_key] = {"data": result, "expires": now + _SIGNAL_TTL}
+        return result
 
     except HTTPException:
         raise
@@ -787,11 +813,16 @@ async def get_regime_for_ticker(ticker: str):
     """
     ticker = ticker.upper()
 
+    # キャッシュチェック
+    now = datetime.now()
+    if ticker in _regime_cache and _regime_cache[ticker]["expires"] > now:
+        return _regime_cache[ticker]["data"]
+
     try:
         detector = RegimeDetector(use_4regime=True)
         result = detector.detect()
 
-        return {
+        response = {
             "ticker": ticker,
             "timestamp": datetime.now().isoformat(),
             "regime": result.regime,
@@ -808,6 +839,9 @@ async def get_regime_for_ticker(ticker: str):
             },
             "effect": result.effect_description,
         }
+
+        _regime_cache[ticker] = {"data": response, "expires": now + _SIGNAL_TTL}
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -830,6 +864,12 @@ async def get_chart_markers(
         BOS/CHoCH/FVGマーカー（日付付き）
     """
     ticker = ticker.upper()
+
+    # キャッシュチェック
+    cache_key = f"{ticker}:{period}"
+    now = datetime.now()
+    if cache_key in _markers_cache and _markers_cache[cache_key]["expires"] > now:
+        return _markers_cache[cache_key]["data"]
 
     try:
         import yfinance as yf
@@ -934,7 +974,7 @@ async def get_chart_markers(
                     "previous_price": round(float(c.previous_price), 2),
                 })
 
-        return {
+        response = {
             "ticker": ticker,
             "period": period,
             "timestamp": datetime.now().isoformat(),
@@ -943,6 +983,9 @@ async def get_chart_markers(
             "fvg": fvg_list,
             "data_points": len(df),
         }
+
+        _markers_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
+        return response
 
     except HTTPException:
         raise

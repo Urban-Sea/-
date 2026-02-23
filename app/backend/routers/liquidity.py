@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import main
 
 from analysis.liquidity_score import (
@@ -23,6 +25,15 @@ from analysis.liquidity_score import (
 )
 
 router = APIRouter()
+
+# ============================================================
+# 並列実行 + インメモリキャッシュ
+# ============================================================
+_executor = ThreadPoolExecutor(max_workers=8)
+_plumbing_cache: dict = {"data": None, "expires": None}
+_backtest_cache: dict = {}  # key: limit → {"data": ..., "expires": ...}
+_events_cache: dict = {"data": None, "expires": None}
+_policy_cache: dict = {"data": None, "expires": None}
 
 
 # ============================================================
@@ -113,11 +124,15 @@ async def get_liquidity_overview():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # 各テーブルの最新データを取得
-        fed = supabase.table("fed_balance_sheet").select("*").order("date", desc=True).limit(1).execute()
-        rates = supabase.table("interest_rates").select("*").order("date", desc=True).limit(1).execute()
-        spreads = supabase.table("credit_spreads").select("*").order("date", desc=True).limit(1).execute()
-        indicators = supabase.table("market_indicators").select("*").order("date", desc=True).limit(1).execute()
+        loop = asyncio.get_event_loop()
+
+        # 4クエリ並列実行
+        fed, rates, spreads, indicators = await asyncio.gather(
+            loop.run_in_executor(_executor, lambda: supabase.table("fed_balance_sheet").select("*").order("date", desc=True).limit(1).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("interest_rates").select("*").order("date", desc=True).limit(1).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("credit_spreads").select("*").order("date", desc=True).limit(1).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("market_indicators").select("*").order("date", desc=True).limit(1).execute()),
+        )
 
         fed_data = FedBalanceSheet(**fed.data[0]) if fed.data else None
         rates_data = InterestRates(**rates.data[0]) if rates.data else None
@@ -180,7 +195,14 @@ async def get_plumbing_summary():
     Layer 2B: リスク許容度（信用取引残高2年変化率、MMF）
     Credit Pressure: 信用圧力センサー（HY、IG、イールドカーブ、DXY）
     Market State: 統合市場状態判定
+
+    最適化: 11クエリ並列実行 + 30分キャッシュ
     """
+    # キャッシュチェック
+    now = datetime.now()
+    if _plumbing_cache["data"] and _plumbing_cache["expires"] and _plumbing_cache["expires"] > now:
+        return _plumbing_cache["data"]
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -194,82 +216,74 @@ async def get_plumbing_summary():
             "market_indicators": None,
         }
 
-        # ============================================================
-        # データ取得
-        # ============================================================
+        loop = asyncio.get_event_loop()
 
-        # FRB Balance Sheet（Net Liquidity計算用 - 履歴含む）
-        fed_all = supabase.table("fed_balance_sheet") \
-            .select("date,reserves,rrp,tga,soma_assets") \
-            .order("date", desc=False) \
-            .execute()
-        fed_latest_q = supabase.table("fed_balance_sheet") \
-            .select("*") \
-            .order("date", desc=True) \
-            .limit(30) \
-            .execute()
+        # ============================================================
+        # データ取得（11クエリ並列実行）
+        # ============================================================
+        def q_fed_all():
+            return supabase.table("fed_balance_sheet") \
+                .select("date,reserves,rrp,tga,soma_assets") \
+                .order("date", desc=False).execute()
 
-        # Market Indicators（最新）
-        indicators_q = supabase.table("market_indicators") \
-            .select("*") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
+        def q_fed_latest():
+            return supabase.table("fed_balance_sheet") \
+                .select("*").order("date", desc=True).limit(30).execute()
+
+        def q_indicators():
+            return supabase.table("market_indicators") \
+                .select("*").order("date", desc=True).limit(1).execute()
+
+        def q_kre():
+            return supabase.table("bank_sector") \
+                .select("date,kre_52w_change").order("date", desc=True).limit(1).execute()
+
+        def q_srf():
+            return supabase.table("srf_usage") \
+                .select("date,amount").order("date", desc=True).limit(90).execute()
+
+        def q_spreads():
+            return supabase.table("credit_spreads") \
+                .select("*").order("date", desc=True).limit(1).execute()
+
+        def q_rates():
+            return supabase.table("interest_rates") \
+                .select("*").order("date", desc=True).limit(1).execute()
+
+        def q_margin():
+            return supabase.table("margin_debt") \
+                .select("date,debit_balance,change_2y").order("date", desc=True).limit(2).execute()
+
+        def q_mmf():
+            return supabase.table("mmf_assets") \
+                .select("date,total_assets,change_3m").order("date", desc=True).limit(1).execute()
+
+        (fed_all, fed_latest_q, indicators_q, kre_q, srf_q,
+         spreads_q, rates_q, margin_q, mmf_q) = await asyncio.gather(
+            loop.run_in_executor(_executor, q_fed_all),
+            loop.run_in_executor(_executor, q_fed_latest),
+            loop.run_in_executor(_executor, q_indicators),
+            loop.run_in_executor(_executor, q_kre),
+            loop.run_in_executor(_executor, q_srf),
+            loop.run_in_executor(_executor, q_spreads),
+            loop.run_in_executor(_executor, q_rates),
+            loop.run_in_executor(_executor, q_margin),
+            loop.run_in_executor(_executor, q_mmf),
+        )
+
         if indicators_q.data:
             result["market_indicators"] = indicators_q.data[0]
 
-        # Bank Sector（KRE）
-        kre_q = supabase.table("bank_sector") \
-            .select("date,kre_52w_change") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
-
-        # SRF Usage（過去90日）
-        srf_q = supabase.table("srf_usage") \
-            .select("date,amount") \
-            .order("date", desc=True) \
-            .limit(90) \
-            .execute()
-
-        # Credit Spreads（最新）
-        spreads_q = supabase.table("credit_spreads") \
-            .select("*") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
-
-        # Interest Rates（最新）
-        rates_q = supabase.table("interest_rates") \
-            .select("*") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
-
-        # Margin Debt
-        margin_q = supabase.table("margin_debt") \
-            .select("date,debit_balance,change_2y") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
-
-        # Margin Debt 1年前（1年変化率計算用）
+        # Margin Debt 1年前（margin_qから2行取得済み、または日付ベースで取得）
         margin_1y_q = None
         if margin_q.data:
             latest_margin_date = margin_q.data[0]['date']
-            margin_1y_q = supabase.table("margin_debt") \
-                .select("debit_balance") \
-                .lte("date", latest_margin_date.replace(latest_margin_date[:4], str(int(latest_margin_date[:4]) - 1)) if isinstance(latest_margin_date, str) else latest_margin_date) \
-                .order("date", desc=True) \
-                .limit(1) \
-                .execute()
-
-        # MMF Assets
-        mmf_q = supabase.table("mmf_assets") \
-            .select("date,total_assets,change_3m") \
-            .order("date", desc=True) \
-            .limit(1) \
-            .execute()
+            def q_margin_1y():
+                return supabase.table("margin_debt") \
+                    .select("debit_balance") \
+                    .lte("date", latest_margin_date.replace(latest_margin_date[:4], str(int(latest_margin_date[:4]) - 1)) if isinstance(latest_margin_date, str) else latest_margin_date) \
+                    .order("date", desc=True).limit(1).execute()
+            margin_1y_q = await loop.run_in_executor(_executor, q_margin_1y)
 
         # ============================================================
         # Layer 1: 政策流動性（Net Liquidity Z-score）
@@ -439,6 +453,10 @@ async def get_plumbing_summary():
         if spreads_q.data:
             result["credit_spreads"] = spreads_q.data[0]
 
+        # キャッシュ保存 (30分TTL)
+        _plumbing_cache["data"] = result
+        _plumbing_cache["expires"] = now + timedelta(minutes=30)
+
         return result
 
     except Exception as e:
@@ -583,25 +601,28 @@ async def get_market_events_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # fed_balance_sheet: 最新100行（日次RRP混在のため多めに取得、週次SOMA/TGAが~13週分含まれる）
-        fed_q = supabase.table("fed_balance_sheet") \
-            .select("date,reserves,soma_assets,rrp,tga") \
-            .order("date", desc=True).limit(100).execute()
+        # キャッシュチェック (30分)
+        now = datetime.now()
+        if _events_cache["data"] and _events_cache["expires"] and _events_cache["expires"] > now:
+            return _events_cache["data"]
 
-        # bank_sector: 最新45営業日（~2ヶ月）
-        bank_q = supabase.table("bank_sector") \
-            .select("date,kre_close") \
-            .order("date", desc=True).limit(45).execute()
+        loop = asyncio.get_event_loop()
 
-        # market_indicators: 最新23営業日（~1ヶ月）
-        mkt_q = supabase.table("market_indicators") \
-            .select("date,vix") \
-            .order("date", desc=True).limit(23).execute()
-
-        # credit_spreads: 最新23営業日
-        spread_q = supabase.table("credit_spreads") \
-            .select("date,hy_spread,ig_spread") \
-            .order("date", desc=True).limit(23).execute()
+        # 4クエリ並列実行
+        fed_q, bank_q, mkt_q, spread_q = await asyncio.gather(
+            loop.run_in_executor(_executor, lambda: supabase.table("fed_balance_sheet")
+                .select("date,reserves,soma_assets,rrp,tga")
+                .order("date", desc=True).limit(100).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("bank_sector")
+                .select("date,kre_close")
+                .order("date", desc=True).limit(45).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("market_indicators")
+                .select("date,vix")
+                .order("date", desc=True).limit(23).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("credit_spreads")
+                .select("date,hy_spread,ig_spread")
+                .order("date", desc=True).limit(23).execute()),
+        )
 
         fed = fed_q.data or []
         bank = bank_q.data or []
@@ -688,12 +709,17 @@ async def get_market_events_endpoint():
         if events:
             highest = min(events, key=lambda e: severity_order.get(e.severity, 3)).severity
 
-        return {
+        event_result = {
             "events": events_to_dict(events),
             "event_count": len(events),
             "highest_severity": highest,
             "timestamp": datetime.now().isoformat(),
         }
+
+        _events_cache["data"] = event_result
+        _events_cache["expires"] = now + timedelta(minutes=30)
+
+        return event_result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -710,62 +736,70 @@ async def get_policy_regime_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # FRBバランスシート: 最新200行（日次RRP混在、週次SOMA/TGA ~26週分カバー）
-        fed_q = supabase.table("fed_balance_sheet") \
-            .select("date,soma_assets,rrp,tga") \
-            .order("date", desc=True).limit(200).execute()
+        # キャッシュチェック (30分)
+        now = datetime.now()
+        if _policy_cache["data"] and _policy_cache["expires"] and _policy_cache["expires"] > now:
+            return _policy_cache["data"]
+
+        loop = asyncio.get_event_loop()
+        six_months_ago = (now - timedelta(days=182)).strftime('%Y-%m-%d')
+
+        # 4クエリ並列実行
+        def q_fed():
+            return supabase.table("fed_balance_sheet") \
+                .select("date,soma_assets,rrp,tga") \
+                .order("date", desc=True).limit(200).execute()
+
+        def q_rates():
+            return supabase.table("interest_rates") \
+                .select("date,fed_funds,treasury_spread") \
+                .order("date", desc=True).limit(200).execute()
+
+        def q_cpi():
+            return supabase.table("economic_indicators") \
+                .select("current_value") \
+                .eq("indicator", "CPI_YOY") \
+                .order("reference_period", desc=True).limit(1).execute()
+
+        fed_q, rates_q, cpi_q = await asyncio.gather(
+            loop.run_in_executor(_executor, q_fed),
+            loop.run_in_executor(_executor, q_rates),
+            loop.run_in_executor(_executor, q_cpi),
+        )
+
         fed = fed_q.data or []
 
         # SOMA/TGAが非nullの行だけ抽出（週次ベース）
         fed_soma = [r for r in fed if r.get('soma_assets') is not None]
 
-        # SOMA変化率（週次行ベースで 0=最新, 12=~3ヶ月前, 25=~6ヶ月前）
         soma_now = fed_soma[0].get('soma_assets') if len(fed_soma) > 0 else None
         soma_3m = fed_soma[12].get('soma_assets') if len(fed_soma) > 12 else None
         soma_6m = fed_soma[25].get('soma_assets') if len(fed_soma) > 25 else None
         soma_change_3m = _pct_change(soma_now, soma_3m)
         soma_change_6m = _pct_change(soma_now, soma_6m)
 
-        # RRP（日次データ、forward-fill不要）
         rrp_level = fed[0].get('rrp') if len(fed) > 0 else None
-        rrp_3m = fed[60].get('rrp') if len(fed) > 60 else None  # ~60営業日 ≈ 3ヶ月
+        rrp_3m = fed[60].get('rrp') if len(fed) > 60 else None
         rrp_change_3m = _pct_change(rrp_level, rrp_3m)
 
-        # TGA（forward-fill: 最新の非null値）
         tga_level = _find_nth_nonnull(fed, 'tga', 0)
 
-        # 金利: forward-fill（fed_fundsは月次、treasury_spreadは日次）
-        rates_q = supabase.table("interest_rates") \
-            .select("date,fed_funds,treasury_spread") \
-            .order("date", desc=True).limit(60).execute()
+        # 金利: 200行取得済みから6ヶ月前も抽出（追加クエリ不要）
         rates_rows = rates_q.data or []
         ff_rate = _find_nth_nonnull(rates_rows, 'fed_funds', 0)
         yield_curve = _find_nth_nonnull(rates_rows, 'treasury_spread', 0)
         ff_date = rates_rows[0].get('date') if rates_rows else None
 
-        # 6ヶ月前のFFレート
         ff_rate_change_6m = None
         if ff_rate is not None:
-            six_months_ago = (datetime.now() - timedelta(days=182)).strftime('%Y-%m-%d')
-            rates_6m_q = supabase.table("interest_rates") \
-                .select("fed_funds") \
-                .lte("date", six_months_ago) \
-                .order("date", desc=True).limit(30).execute()
-            ff_rate_6m = _find_nth_nonnull(rates_6m_q.data or [], 'fed_funds', 0)
+            rates_6m_rows = [r for r in rates_rows if r.get('date', '') <= six_months_ago]
+            ff_rate_6m = _find_nth_nonnull(rates_6m_rows, 'fed_funds', 0)
             if ff_rate_6m is not None:
                 ff_rate_change_6m = ff_rate - ff_rate_6m
 
-        # CPI（オプション）
         inflation_rate = None
-        try:
-            cpi_q = supabase.table("economic_indicators") \
-                .select("current_value") \
-                .eq("indicator", "CPI_YOY") \
-                .order("reference_period", desc=True).limit(1).execute()
-            if cpi_q.data and cpi_q.data[0].get('current_value') is not None:
-                inflation_rate = cpi_q.data[0]['current_value']
-        except Exception:
-            pass
+        if cpi_q.data and cpi_q.data[0].get('current_value') is not None:
+            inflation_rate = cpi_q.data[0]['current_value']
 
         regime = detect_policy_regime(
             soma_change_3m=soma_change_3m,
@@ -779,10 +813,14 @@ async def get_policy_regime_endpoint():
             inflation_rate=inflation_rate,
         )
 
-        result = policy_regime_to_dict(regime)
-        result['fed_comment'] = generate_fed_action_comment(regime)
-        result['timestamp'] = datetime.now().isoformat()
-        return result
+        policy_result = policy_regime_to_dict(regime)
+        policy_result['fed_comment'] = generate_fed_action_comment(regime)
+        policy_result['timestamp'] = datetime.now().isoformat()
+
+        _policy_cache["data"] = policy_result
+        _policy_cache["expires"] = now + timedelta(minutes=30)
+
+        return policy_result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -815,42 +853,38 @@ async def get_history_charts(
             ed = datetime.now().strftime('%Y-%m-%d')
             sd = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
-        # 各テーブルクエリ（日付昇順）
-        fed_q = supabase.table("fed_balance_sheet") \
-            .select("date,soma_assets,rrp,tga") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(2000).execute()
-
-        margin_q = supabase.table("margin_debt") \
-            .select("date,debit_balance,change_2y") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(500).execute()
-
-        bank_q = supabase.table("bank_sector") \
-            .select("date,kre_close,kre_52w_change") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(2000).execute()
-
-        spreads_q = supabase.table("credit_spreads") \
-            .select("date,hy_spread,ig_spread") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(2000).execute()
-
-        indicators_q = supabase.table("market_indicators") \
-            .select("date,vix,sp500,nasdaq,dxy") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(2000).execute()
-
-        rates_q = supabase.table("interest_rates") \
-            .select("date,fed_funds,treasury_2y,treasury_10y,treasury_spread") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(2000).execute()
+        # 各テーブルクエリ（日付昇順）— 7クエリ並列実行
+        loop = asyncio.get_event_loop()
+        fed_q, margin_q, bank_q, spreads_q, indicators_q, rates_q, layer_stress_q = await asyncio.gather(
+            loop.run_in_executor(_executor, lambda: supabase.table("fed_balance_sheet")
+                .select("date,soma_assets,rrp,tga")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(2000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("margin_debt")
+                .select("date,debit_balance,change_2y")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(500).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("bank_sector")
+                .select("date,kre_close,kre_52w_change")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(2000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("credit_spreads")
+                .select("date,hy_spread,ig_spread")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(2000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("market_indicators")
+                .select("date,vix,sp500,nasdaq,dxy")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(2000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("interest_rates")
+                .select("date,fed_funds,treasury_2y,treasury_10y,treasury_spread")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(2000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("layer_stress_history")
+                .select("date,layer,stress_score")
+                .gte("date", sd).lte("date", ed)
+                .order("date", desc=False).limit(3000).execute()),
+        )
 
         # Net Liquidity計算
         net_liq_data = []
@@ -870,14 +904,8 @@ async def get_history_charts(
             })
 
         # ============================================================
-        # Layer Stress History（Layerスコア履歴チャート用）
+        # Layer Stress History（並列で取得済み）
         # ============================================================
-        layer_stress_q = supabase.table("layer_stress_history") \
-            .select("date,layer,stress_score") \
-            .gte("date", sd).lte("date", ed) \
-            .order("date", desc=False) \
-            .limit(3000).execute()
-
         from collections import defaultdict
         layer_by_date = defaultdict(dict)
         for row in (layer_stress_q.data or []):
@@ -976,47 +1004,37 @@ async def get_backtest_states(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # 全FRBデータ（Net Liquidity Z-score計算用）
-        fed_all = supabase.table("fed_balance_sheet") \
-            .select("date,soma_assets,rrp,tga,reserves") \
-            .order("date", desc=False) \
-            .limit(5000).execute()
+        # キャッシュチェック（1時間TTL）
+        now = datetime.now()
+        cache_key = str(limit)
+        if cache_key in _backtest_cache and _backtest_cache[cache_key]["expires"] > now:
+            return _backtest_cache[cache_key]["data"]
 
-        # SP500月次（リターン計算用）
-        sp500_q = supabase.table("market_indicators") \
-            .select("date,sp500,vix") \
-            .order("date", desc=False) \
-            .limit(5000).execute()
-
-        # Margin Debt月次
-        margin_q = supabase.table("margin_debt") \
-            .select("date,debit_balance,change_2y") \
-            .order("date", desc=False) \
-            .limit(500).execute()
-
-        # Bank Sector月次
-        bank_q = supabase.table("bank_sector") \
-            .select("date,kre_52w_change") \
-            .order("date", desc=False) \
-            .limit(500).execute()
-
-        # Credit Spreads
-        spreads_q = supabase.table("credit_spreads") \
-            .select("date,ig_spread,hy_spread") \
-            .order("date", desc=False) \
-            .limit(5000).execute()
-
-        # SRF Usage
-        srf_q = supabase.table("srf_usage") \
-            .select("date,amount") \
-            .order("date", desc=False) \
-            .limit(5000).execute()
-
-        # MMF
-        mmf_q = supabase.table("mmf_assets") \
-            .select("date,change_3m") \
-            .order("date", desc=False) \
-            .limit(500).execute()
+        # 7クエリ並列実行
+        loop = asyncio.get_event_loop()
+        fed_all, sp500_q, margin_q, bank_q, spreads_q, srf_q, mmf_q = await asyncio.gather(
+            loop.run_in_executor(_executor, lambda: supabase.table("fed_balance_sheet")
+                .select("date,soma_assets,rrp,tga,reserves")
+                .order("date", desc=False).limit(5000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("market_indicators")
+                .select("date,sp500,vix")
+                .order("date", desc=False).limit(5000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("margin_debt")
+                .select("date,debit_balance,change_2y")
+                .order("date", desc=False).limit(500).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("bank_sector")
+                .select("date,kre_52w_change")
+                .order("date", desc=False).limit(500).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("credit_spreads")
+                .select("date,ig_spread,hy_spread")
+                .order("date", desc=False).limit(5000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("srf_usage")
+                .select("date,amount")
+                .order("date", desc=False).limit(5000).execute()),
+            loop.run_in_executor(_executor, lambda: supabase.table("mmf_assets")
+                .select("date,change_3m")
+                .order("date", desc=False).limit(500).execute()),
+        )
 
         # ============================================================
         # 月末データをマップ化
@@ -1245,13 +1263,16 @@ async def get_backtest_states(
                 'color': d['color'],
             })
 
-        return {
+        result = {
             "states": states,
             "state_definitions": state_defs,
             "state_stats": state_stats,
             "total_months": len(states),
             "event_timeline": event_timeline,
         }
+
+        _backtest_cache[cache_key] = {"data": result, "expires": now + timedelta(hours=1)}
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

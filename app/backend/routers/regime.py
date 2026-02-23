@@ -7,13 +7,16 @@
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 本格ロジックをインポート
 from analysis.regime_detector import RegimeDetector, RegimeResult
 from analysis.asset_class import AssetClass
 
 router = APIRouter()
+
+# インメモリキャッシュ（5分TTL）
+_regime_cache: dict = {"data": None, "expires": None}
 
 
 class RegimeResponse(BaseModel):
@@ -58,11 +61,16 @@ async def get_regime():
     - BEAR: ベンチマーク < 長期EMA & 短期EMA下降
     """
     try:
+        # キャッシュチェック（5分TTL）
+        now = datetime.now()
+        if _regime_cache["data"] and _regime_cache["expires"] > now:
+            return _regime_cache["data"]
+
         # RegimeDetector V8（4Regime対応）を使用
         detector = RegimeDetector(use_4regime=True)
         result: RegimeResult = detector.detect(asset_class=AssetClass.US_STOCK)
 
-        return RegimeResponse(
+        response = RegimeResponse(
             regime=result.regime,
             timestamp=datetime.now().isoformat(),
             benchmark_ticker=result.benchmark_ticker,
@@ -75,6 +83,10 @@ async def get_regime():
             entry_recommendation=get_entry_recommendation(result.regime),
             asset_class=result.asset_class,
         )
+
+        _regime_cache["data"] = response
+        _regime_cache["expires"] = now + timedelta(minutes=5)
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
