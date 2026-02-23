@@ -478,57 +478,44 @@ def _calc_sahm_rule(nfp_data: list[dict]) -> tuple[RiskSubScore, SahmRuleData]:
 
 
 def _calc_claims_level(claims_data: list[dict]) -> RiskSubScore:
-    """失業保険水準 (5点): 4W平均の絶対水準 OR モメンタム（Demo準拠）"""
+    """失業保険水準 (2点): 週次ショック検知専用 — 4W平均の絶対水準のみ"""
     avgs = [d.get("initial_claims_4w_avg") or d.get("initial_claims")
-            for d in claims_data[:8]]
+            for d in claims_data[:4]]
     avgs = [v for v in avgs if v is not None]
 
     if not avgs:
-        return RiskSubScore(name="失業保険", score=0, max_score=5, detail="データ不足", status="normal")
+        return RiskSubScore(name="失業保険", score=0, max_score=2, detail="データ不足", status="normal")
 
     level = avgs[0]  # 最新の4W avg
 
-    # 変化率: 直近4W avg vs 前月4W avg
-    change_pct = 0.0
-    if len(avgs) >= 8:
-        current_avg = statistics.mean(avgs[:4])
-        prev_avg = statistics.mean(avgs[4:8])
-        if prev_avg > 0:
-            change_pct = ((current_avg - prev_avg) / prev_avg) * 100
-
-    # Demo準拠: 水準 OR 変化率のどちらか高い方でスコア
-    if level >= 300000 or change_pct >= 20:
-        score = 5
-    elif level >= 250000 or change_pct >= 10:
-        score = 3
-    elif level >= 220000 or change_pct >= 5:
+    if level >= 300000:
+        score = 2
+    elif level >= 250000:
         score = 1
     else:
         score = 0
 
     detail = f"4W平均: {level/1000:.0f}K"
-    if change_pct >= 5:
-        detail += f" (前月比: {change_pct:+.1f}%)"
-
-    status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
+    status = "danger" if score >= 2 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
-        name="失業保険", score=score, max_score=5,
+        name="失業保険", score=score, max_score=2,
         detail=detail,
         status=status,
     )
 
 
 def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: list[dict]) -> RiskSubScore:
-    """雇用乖離 (5点): Demo準拠 — ADP/Challenger/ICSA vs 公式NFP の乖離をシグモイド変換"""
+    """雇用乖離 (8点): ADP/Challenger/ICSA vs 公式NFP の乖離をシグモイド変換
+    Challenger適応閾値（3M平均×1.3）、ADP重み0.6、Challenger重み0.8(trend時1.0)"""
     # NFP 3ヶ月平均
     changes = [d["nfp_change"] for d in nfp_data[:3] if d.get("nfp_change") is not None]
     if not changes:
-        return RiskSubScore(name="雇用乖離", score=0, max_score=5, detail="NFPデータなし", status="normal")
+        return RiskSubScore(name="雇用乖離", score=0, max_score=8, detail="NFPデータなし", status="normal")
     nfp_3m_avg = statistics.mean(changes)
 
     gaps: list[tuple[str, float, float]] = []  # (name, gap, weight)
 
-    # ADP（manual_inputsテーブルから取得）
+    # ADP（manual_inputsテーブルから取得）— 重み0.6
     try:
         adp_result = supabase.table("manual_inputs") \
             .select("value").eq("metric", "ADP_CHANGE") \
@@ -537,24 +524,47 @@ def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: li
             adp_values = [r["value"] for r in adp_result.data[:3]]
             adp_3m_avg = statistics.mean(adp_values)
             gap_adp = nfp_3m_avg - adp_3m_avg
-            gaps.append(("ADP", gap_adp, 1.0))
-    except Exception:
-        pass  # テーブルなし = スキップ
-
-    # Challenger（manual_inputsから）
-    try:
-        challenger_result = supabase.table("manual_inputs") \
-            .select("value").eq("metric", "CHALLENGER_CUTS") \
-            .order("reference_date", desc=True).limit(1).execute()
-        if challenger_result.data:
-            challenger_val = challenger_result.data[0]["value"]
-            if challenger_val > 50000 and nfp_3m_avg > 0:
-                gap_ch = min(50, (challenger_val - 50000) / 1000)
-                gaps.append(("Challenger", gap_ch, 0.5))
+            gaps.append(("ADP", gap_adp, 0.6))
     except Exception:
         pass
 
-    # ICSA逆指標（自動: weekly_claimsから）
+    # Challenger（適応閾値: 3M平均×1.3）— 重み0.8、trend時1.0
+    try:
+        challenger_result = supabase.table("manual_inputs") \
+            .select("reference_date,value").eq("metric", "CHALLENGER_CUTS") \
+            .order("reference_date", desc=True).limit(15).execute()
+        if challenger_result.data and len(challenger_result.data) >= 1:
+            ch_current = challenger_result.data[0]["value"]
+
+            # 3ヶ月平均（直近を除く過去3ヶ月）
+            ch_history = [r["value"] for r in challenger_result.data[1:4]] if len(challenger_result.data) >= 4 else []
+            ch_3m_avg = statistics.mean(ch_history) if len(ch_history) >= 3 else 80000  # フォールバック
+
+            # 適応閾値: 3M平均 × 1.3
+            adaptive_threshold = ch_3m_avg * 1.3
+            trend_flag = ch_current > adaptive_threshold
+
+            # YoY 3ヶ月平均（12ヶ月前の3ヶ月）
+            ch_yoy_flag = False
+            if len(challenger_result.data) >= 13:
+                recent_3 = [r["value"] for r in challenger_result.data[:3]]
+                year_ago_3 = [r["value"] for r in challenger_result.data[12:15]] if len(challenger_result.data) >= 15 else []
+                if recent_3 and year_ago_3:
+                    recent_avg = statistics.mean(recent_3)
+                    year_ago_avg = statistics.mean(year_ago_3)
+                    if year_ago_avg > 0:
+                        ch_yoy = ((recent_avg - year_ago_avg) / year_ago_avg) * 100
+                        ch_yoy_flag = ch_yoy > 50  # YoY +50%超でフラグ
+
+            # 乖離発動条件: 適応閾値超え AND NFP正
+            if (trend_flag or ch_yoy_flag) and nfp_3m_avg > 0:
+                gap_ch = min(50, (ch_current - ch_3m_avg) / 1000)
+                weight = 1.0 if trend_flag else 0.8
+                gaps.append(("Challenger", max(0, gap_ch), weight))
+    except Exception:
+        pass
+
+    # ICSA逆指標（自動: weekly_claimsから）— 重み0.3
     icsa_avgs = [d.get("initial_claims_4w_avg") or d.get("initial_claims")
                  for d in claims_data[:1]]
     icsa_avgs = [v for v in icsa_avgs if v is not None]
@@ -565,25 +575,27 @@ def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: li
             gaps.append(("ICSA", gap_icsa, 0.3))
 
     if not gaps:
-        return RiskSubScore(name="雇用乖離", score=0, max_score=5, detail="代替データ不足", status="normal")
+        return RiskSubScore(name="雇用乖離", score=0, max_score=8, detail="代替データ不足", status="normal")
 
     # 加重平均 → シグモイド変換(0-100)
     total_weight = sum(w for _, _, w in gaps)
     weighted_gap = sum(g * w for _, g, w in gaps) / total_weight
     disc_score = 100 / (1 + math.exp(-weighted_gap / 30))
 
-    # 5点変換（Demo準拠）
+    # 8点変換
     if disc_score >= 70:
+        score = 8
+    elif disc_score >= 60:
         score = 5
     elif disc_score >= 50:
-        score = 2
+        score = 3
     else:
         score = 0
 
     sources = ", ".join(n for n, _, _ in gaps)
-    status = "danger" if score >= 5 else "warning" if score >= 2 else "normal"
+    status = "danger" if score >= 8 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
-        name="雇用乖離", score=score, max_score=5,
+        name="雇用乖離", score=score, max_score=8,
         detail=f"乖離: {disc_score:.0f}/100 ({sources})",
         status=status,
     )
@@ -630,7 +642,7 @@ def _calc_real_income(indicator_data: list[dict]) -> RiskSubScore:
 
 
 def _calc_consumer_sentiment(indicator_data: list[dict]) -> RiskSubScore:
-    """消費者信頼感 (5点): UMCSENT"""
+    """消費者信頼感 (5点): UMCSENT YoY方向性 — 政治バイアス排除のため水準ではなく変化率で判定"""
     umcsent_data = sorted(
         [d for d in indicator_data if d.get("indicator") == "UMCSENT" and d.get("current_value") is not None],
         key=lambda x: x.get("reference_period", ""), reverse=True,
@@ -639,21 +651,31 @@ def _calc_consumer_sentiment(indicator_data: list[dict]) -> RiskSubScore:
     if not umcsent_data:
         return RiskSubScore(name="消費者信頼感", score=0, max_score=5, detail="データなし", status="normal")
 
-    val = umcsent_data[0]["current_value"]
+    current_val = umcsent_data[0]["current_value"]
 
-    if val >= 80:
-        score = 0
-    elif val >= 70:
-        score = 1
-    elif val >= 60:
-        score = 3
-    else:
+    if len(umcsent_data) < 13:
+        return RiskSubScore(name="消費者信頼感", score=0, max_score=5,
+                            detail=f"UMCSENT: {current_val:.1f} (YoY算出不可)", status="normal")
+
+    year_ago_val = umcsent_data[12]["current_value"]
+    if year_ago_val == 0:
+        return RiskSubScore(name="消費者信頼感", score=0, max_score=5, detail="ゼロ除算回避", status="normal")
+
+    yoy = ((current_val - year_ago_val) / abs(year_ago_val)) * 100
+
+    if yoy <= -15:
         score = 5
+    elif yoy <= -10:
+        score = 3
+    elif yoy <= -5:
+        score = 1
+    else:
+        score = 0
 
     status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="消費者信頼感", score=score, max_score=5,
-        detail=f"UMCSENT: {val:.1f}",
+        detail=f"UMCSENT: {current_val:.1f} (YoY: {yoy:+.1f}%)",
         status=status,
     )
 
@@ -753,88 +775,102 @@ def _calc_inflation_discrepancy(supabase, indicator_data: list[dict]) -> RiskSub
 # ----- 構造カテゴリ (25点) -----
 
 def _calc_job_openings_ratio(jolts_data: list[dict], unemploy_data: list[dict]) -> RiskSubScore:
-    """求人倍率 (15点): JTSJOL / UNEMPLOY"""
+    """求人倍率 (10点): JTSJOL / UNEMPLOY — 2ヶ月遅延リスク軽減のため15→10点に減配"""
     if not jolts_data or not unemploy_data:
-        return RiskSubScore(name="求人倍率", score=0, max_score=15, detail="データなし", status="normal")
+        return RiskSubScore(name="求人倍率", score=0, max_score=10, detail="データなし", status="normal")
 
     jolts_val = jolts_data[0].get("current_value")
     unemploy_val = unemploy_data[0].get("current_value")
 
     if not jolts_val or not unemploy_val or unemploy_val == 0:
-        return RiskSubScore(name="求人倍率", score=0, max_score=15, detail="データ不足", status="normal")
+        return RiskSubScore(name="求人倍率", score=0, max_score=10, detail="データ不足", status="normal")
 
     ratio = jolts_val / unemploy_val
 
     if ratio >= 1.2:
         score = 0
     elif ratio >= 1.0:
-        score = 5
+        score = 3
     elif ratio >= 0.8:
-        score = 10
+        score = 7
     else:
-        score = 15
+        score = 10
 
-    status = "danger" if score >= 15 else "warning" if score >= 5 else "normal"
+    status = "danger" if score >= 10 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
-        name="求人倍率", score=score, max_score=15,
+        name="求人倍率", score=score, max_score=10,
         detail=f"JOLTS/失業者: {ratio:.2f}倍",
         status=status,
     )
 
 
 def _calc_u6_u3_spread(nfp_data: list[dict]) -> RiskSubScore:
-    """U6-U3スプレッド (5点)"""
+    """U6-U3スプレッド (7点)"""
     latest = nfp_data[0] if nfp_data else {}
     u3 = latest.get("u3_rate")
     u6 = latest.get("u6_rate")
 
     if u3 is None or u6 is None:
-        return RiskSubScore(name="U6-U3スプレッド", score=0, max_score=5, detail="データなし", status="normal")
+        return RiskSubScore(name="U6-U3スプレッド", score=0, max_score=7, detail="データなし", status="normal")
 
     spread = u6 - u3
 
     if spread >= 5.0:
-        score = 5
+        score = 7
     elif spread >= 4.5:
-        score = 3
+        score = 4
     elif spread >= 4.0:
-        score = 1
+        score = 2
     else:
         score = 0
 
-    status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
+    status = "danger" if score >= 7 else "warning" if score >= 2 else "normal"
     return RiskSubScore(
-        name="U6-U3スプレッド", score=score, max_score=5,
+        name="U6-U3スプレッド", score=score, max_score=7,
         detail=f"スプレッド: {spread:.1f}% (U6={u6:.1f}% − U3={u3:.1f}%)",
         status=status,
     )
 
 
 def _calc_labor_participation(nfp_data: list[dict]) -> RiskSubScore:
-    """労働参加率 (3点): Demo準拠 — 構造カテゴリ内で3点配分"""
-    latest = nfp_data[0] if nfp_data else {}
-    lfpr = latest.get("labor_force_participation")
+    """労働参加率 (5点): YoY方向性 — 構造シフト耐性のため絶対水準ではなく変化で判定"""
+    # nfp_dataは新しい順（limit=24で取得済み）
+    lfpr_values = [(d.get("reference_period", ""), d.get("labor_force_participation"))
+                   for d in nfp_data if d.get("labor_force_participation") is not None]
 
-    if lfpr is None:
-        return RiskSubScore(name="労働参加率", score=0, max_score=3, detail="データなし", status="normal")
+    if not lfpr_values:
+        return RiskSubScore(name="労働参加率", score=0, max_score=5, detail="データなし", status="normal")
 
-    if lfpr < 62.0:
+    current_lfpr = lfpr_values[0][1]
+
+    if len(lfpr_values) < 13:
+        return RiskSubScore(name="労働参加率", score=0, max_score=5,
+                            detail=f"LFPR: {current_lfpr:.1f}% (YoY算出不可)", status="normal")
+
+    year_ago_lfpr = lfpr_values[12][1]
+    yoy_change = current_lfpr - year_ago_lfpr  # pp（ポイント）
+
+    if yoy_change <= -0.5:
+        score = 5
+    elif yoy_change <= -0.3:
         score = 3
-    elif lfpr < 62.5:
-        score = 2
-    elif lfpr < 63.0:
+    elif yoy_change <= -0.1:
         score = 1
     else:
         score = 0
 
-    status = "danger" if score >= 3 else "warning" if score >= 1 else "normal"
-    return RiskSubScore(name="労働参加率", score=score, max_score=3, detail=f"{lfpr:.1f}%", status=status)
+    status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
+    return RiskSubScore(
+        name="労働参加率", score=score, max_score=5,
+        detail=f"LFPR: {current_lfpr:.1f}% (YoY: {yoy_change:+.1f}pp)",
+        status=status,
+    )
 
 
 def _calc_k_shape_proxy() -> RiskSubScore:
-    """K字型Proxy (2点): プレースホルダー — 将来実装予定"""
+    """K字型Proxy (3点): プレースホルダー — 将来実装予定"""
     return RiskSubScore(
-        name="K字型Proxy", score=0, max_score=2,
+        name="K字型Proxy", score=0, max_score=3,
         detail="未実装（将来テコ入れ予定）",
         status="normal",
     )
@@ -916,13 +952,21 @@ async def get_risk_score():
             components=[job_ratio, u6u3, lfpr, k_shape],
         )
 
-        # ===== 総合スコア =====
-        total_score = employment_score + consumer_score + structure_score
+        # ===== 総合スコア（除外按分で100点正規化） =====
+        raw_total = employment_score + consumer_score + structure_score
 
-        # サームルール強制ルール廃止（Demo準拠）
-        # 理由: 2009-2010年の回復初動を殺してしまうため
-        # サームルールはフラグ（triggered, peak_out）として情報提供のみ
-        total_score = min(total_score, 100)
+        # 未実装/未入力の項目を検出し、active_maxを計算
+        inactive_max = 0
+        for cat in [employment_cat, consumer_cat, structure_cat]:
+            for comp in cat.components:
+                if comp.score == 0 and ("未実装" in comp.detail or "代替データなし" in comp.detail):
+                    inactive_max += comp.max_score
+        active_max = 100 - inactive_max
+
+        if active_max > 0 and active_max < 100:
+            total_score = min(round(raw_total / active_max * 100), 100)
+        else:
+            total_score = min(raw_total, 100)
 
         # ===== アラート生成 =====
         alert_factors = []
@@ -985,22 +1029,22 @@ def _simplified_sahm_score(u3_values: list[float]) -> int:
 
 
 def _simplified_claims_score(claims_4w_avg: float | None) -> int:
-    """失業保険簡易スコア (5点満点)"""
+    """失業保険簡易スコア (2点満点): 週次ショック検知専用"""
     if claims_4w_avg is None:
         return 0
-    if claims_4w_avg >= 300000: return 5
-    if claims_4w_avg >= 250000: return 3
-    if claims_4w_avg >= 220000: return 1
+    if claims_4w_avg >= 300000: return 2
+    if claims_4w_avg >= 250000: return 1
     return 0
 
 
-def _simplified_sentiment_score(val: float | None) -> int:
-    """消費者信頼感スコア (5点)"""
-    if val is None: return 0
-    if val >= 80: return 0
-    if val >= 70: return 1
-    if val >= 60: return 3
-    return 5
+def _simplified_sentiment_score(current: float | None, year_ago: float | None) -> int:
+    """消費者信頼感スコア (5点): YoY方向性"""
+    if current is None or year_ago is None or year_ago == 0: return 0
+    yoy = ((current - year_ago) / abs(year_ago)) * 100
+    if yoy <= -15: return 5
+    if yoy <= -10: return 3
+    if yoy <= -5: return 1
+    return 0
 
 
 def _simplified_delinquency_score(current: float | None, year_ago: float | None) -> int:
@@ -1029,31 +1073,32 @@ def _simplified_income_score(current: float | None, year_ago: float | None) -> i
 
 
 def _simplified_job_ratio_score(jolts_val: float | None, unemploy_val: float | None) -> int:
-    """求人倍率スコア (15点)"""
+    """求人倍率スコア (10点)"""
     if not jolts_val or not unemploy_val or unemploy_val == 0: return 0
     ratio = jolts_val / unemploy_val
     if ratio >= 1.2: return 0
-    if ratio >= 1.0: return 5
-    if ratio >= 0.8: return 10
-    return 15
+    if ratio >= 1.0: return 3
+    if ratio >= 0.8: return 7
+    return 10
 
 
 def _simplified_u6u3_score(u3: float | None, u6: float | None) -> int:
-    """U6-U3スプレッドスコア (5点)"""
+    """U6-U3スプレッドスコア (7点)"""
     if u3 is None or u6 is None: return 0
     spread = u6 - u3
-    if spread >= 5.0: return 5
-    if spread >= 4.5: return 3
-    if spread >= 4.0: return 1
+    if spread >= 5.0: return 7
+    if spread >= 4.5: return 4
+    if spread >= 4.0: return 2
     return 0
 
 
-def _simplified_lfpr_score(lfpr: float | None) -> int:
-    """労働参加率スコア (3点): Demo準拠"""
-    if lfpr is None: return 0
-    if lfpr < 62.0: return 3
-    if lfpr < 62.5: return 2
-    if lfpr < 63.0: return 1
+def _simplified_lfpr_score(current_lfpr: float | None, year_ago_lfpr: float | None) -> int:
+    """労働参加率スコア (5点): YoY方向性"""
+    if current_lfpr is None or year_ago_lfpr is None: return 0
+    yoy_change = current_lfpr - year_ago_lfpr  # pp
+    if yoy_change <= -0.5: return 5
+    if yoy_change <= -0.3: return 3
+    if yoy_change <= -0.1: return 1
     return 0
 
 
@@ -1062,6 +1107,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
     """
     月次リスクスコア履歴を動的計算。
     各月について雇用(50)+消費(25)+構造(25)=100点のスコアを算出。
+    未実装項目(K字型3点, インフレ乖離5点)は除外按分で100点正規化。
     """
     supabase = main.get_supabase()
     if not supabase:
@@ -1183,23 +1229,34 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 prev_yr_key = f"{yr - 1}-{mo:02d}"
             except (ValueError, IndexError):
                 prev_yr_key = ""
-            sent_s = _simplified_sentiment_score(umcsent_by_month.get(month_key))
+            sent_s = _simplified_sentiment_score(umcsent_by_month.get(month_key), umcsent_by_month.get(prev_yr_key))
             income_s = _simplified_income_score(w875_by_month.get(month_key), w875_by_month.get(prev_yr_key))
             drc_s = _simplified_delinquency_score(drc_by_month.get(month_key), drc_by_month.get(prev_yr_key))
             infl_disc_s = _simplified_inflation_disc_score()
             consumer = min(sent_s + income_s + drc_s + infl_disc_s, 25)
 
-            # Structure (25): 求人倍率(15) + U6-U3(5) + 労働参加率(3) + K字型(2)
+            # Structure (25): 求人倍率(10) + U6-U3(7) + 労働参加率(5) + K字型(3)
             job_s = _simplified_job_ratio_score(jolts_by_month.get(month_key), unemploy_by_month.get(month_key))
             u6u3_s = _simplified_u6u3_score(u3, latest_nfp.get("u6_rate"))
-            lfpr_s = _simplified_lfpr_score(latest_nfp.get("labor_force_participation"))
+            # LFPR YoY: 12ヶ月前のLFPRを取得
+            current_lfpr = latest_nfp.get("labor_force_participation")
+            year_ago_lfpr = None
+            if idx >= 12:
+                prev_yr_month = all_months[idx - 12]
+                prev_yr_nfp = nfp_by_month.get(prev_yr_month, [])
+                if prev_yr_nfp:
+                    year_ago_lfpr = prev_yr_nfp[-1].get("labor_force_participation")
+            lfpr_s = _simplified_lfpr_score(current_lfpr, year_ago_lfpr)
             k_shape_s = 0  # K字型Proxy: 将来実装予定
             structure = min(job_s + u6u3_s + lfpr_s + k_shape_s, 25)
 
-            total = employment + consumer + structure
+            raw_total = employment + consumer + structure
 
-            # サームルール強制オーバーライド廃止（Demo準拠）
-            # 理由: 2009-2010年の回復初動を殺してしまうため
+            # 除外按分: K字型Proxy(3点)は常に未実装 → active_max = 97
+            # インフレ乖離(5点)も履歴計算では0固定 → active_max = 92
+            active_max = 100 - 3 - 5  # K字型(3) + インフレ乖離(5)
+            total = min(round(raw_total / active_max * 100), 100) if active_max > 0 else raw_total
+
             sahm_value = None
             if len(all_u3_values) >= 3:
                 avgs_3m = [statistics.mean(all_u3_values[i-2:i+1]) for i in range(2, len(all_u3_values))]
