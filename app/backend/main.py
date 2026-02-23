@@ -49,7 +49,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
-        "https://kabu-ai.pages.dev",  # Cloudflare Pages
+        "https://open-regime.pages.dev",  # Cloudflare Pages
     ],
     allow_credentials=True,
     allow_methods=["*"],
