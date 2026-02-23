@@ -100,7 +100,7 @@ YAHOO_TICKERS = {
 NYFED_SRF_URL = "https://markets.newyorkfed.org/api/rp/results/search.json"
 
 # ===== フェッチ期間 =====
-DEFAULT_LOOKBACK_YEARS = 15         # フル実行時
+DEFAULT_LOOKBACK_YEARS = 20         # フル実行時（2006年〜、GFC含む）
 INCREMENTAL_LOOKBACK_DAYS = 1095    # 通常実行時（3年分 = 修正検知用）
 DAILY_LOOKBACK_DAYS = 14            # daily の Yahoo 用（株価は修正されない）
 DAILY_FRED_LOOKBACK_DAYS = 1095     # daily の FRED/NY Fed 用（3年分 = 修正検知）
