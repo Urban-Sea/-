@@ -91,6 +91,7 @@ YAHOO_TICKERS = {
     "dxy": "DX-Y.NYB",            # ドルインデックス 確認: https://finance.yahoo.com/quote/DX-Y.NYB/
     "sp500": "^GSPC",             # S&P500           確認: https://finance.yahoo.com/quote/%5EGSPC/
     "nasdaq": "^IXIC",            # NASDAQ           確認: https://finance.yahoo.com/quote/%5EIXIC/
+    "russell2000": "^RUT",        # Russell 2000     確認: https://finance.yahoo.com/quote/%5ERUT/
     "kre": "KRE",                 # 地方銀行ETF      確認: https://finance.yahoo.com/quote/KRE/
 }
 

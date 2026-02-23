@@ -867,12 +867,56 @@ def _calc_labor_participation(nfp_data: list[dict]) -> RiskSubScore:
     )
 
 
-def _calc_k_shape_proxy() -> RiskSubScore:
-    """K字型Proxy (3点): プレースホルダー — 将来実装予定"""
+def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
+    """K字型Proxy (3点): Russell 2000 / S&P 500 比率のYoY変化で格差拡大を検出"""
+    if not market_data:
+        return RiskSubScore(
+            name="K字型Proxy", score=0, max_score=3,
+            detail="市場データなし",
+            status="normal",
+        )
+
+    # 直近と約1年前のRUT/SPX比率を計算
+    # market_dataは日付降順（直近が先）
+    recent_ratio = None
+    year_ago_ratio = None
+
+    for row in market_data:
+        sp = row.get("sp500")
+        rut = row.get("russell2000")
+        if sp and rut and sp > 0:
+            if recent_ratio is None:
+                recent_ratio = rut / sp
+                recent_date = row["date"]
+            else:
+                # 約252営業日（1年）前のデータを探す
+                year_ago_ratio = rut / sp
+                year_ago_date = row["date"]
+
+    if recent_ratio is None or year_ago_ratio is None:
+        return RiskSubScore(
+            name="K字型Proxy", score=0, max_score=3,
+            detail="RUT/SPX比率データ不足",
+            status="normal",
+        )
+
+    yoy_change = ((recent_ratio - year_ago_ratio) / year_ago_ratio) * 100
+
+    # YoY変化がマイナス = Small Capが相対的に弱い = K字型拡大
+    if yoy_change <= -15:
+        score = 3
+    elif yoy_change <= -10:
+        score = 2
+    elif yoy_change <= -5:
+        score = 1
+    else:
+        score = 0
+
+    status = "danger" if score >= 3 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
-        name="K字型Proxy", score=0, max_score=3,
-        detail="未実装（将来テコ入れ予定）",
-        status="normal",
+        name="K字型Proxy", score=score, max_score=3,
+        detail=f"RUT/SPX比率 YoY: {yoy_change:+.1f}% (現在{recent_ratio:.4f})",
+        status=status,
     )
 
 
@@ -916,6 +960,12 @@ async def get_risk_score():
             .order("reference_period", desc=True).limit(3).execute()
         unemploy_data = unemploy_result.data or []
 
+        # K字型Proxy用: RUT/SPX比率（直近と1年前）
+        market_result = supabase.table("market_indicators") \
+            .select("date,sp500,russell2000") \
+            .order("date", desc=True).limit(300).execute()
+        market_data = market_result.data or []
+
         # ===== 雇用カテゴリ (50点) =====
         nfp_trend = _calc_nfp_trend(nfp_data)
         sahm_sub, sahm_data = _calc_sahm_rule(nfp_data)
@@ -944,7 +994,7 @@ async def get_risk_score():
         job_ratio = _calc_job_openings_ratio(jolts_data, unemploy_data)
         u6u3 = _calc_u6_u3_spread(nfp_data)
         lfpr = _calc_labor_participation(nfp_data)
-        k_shape = _calc_k_shape_proxy()
+        k_shape = _calc_k_shape_proxy(market_data)
 
         structure_score = job_ratio.score + u6u3.score + lfpr.score + k_shape.score
         structure_cat = RiskScoreCategory(
@@ -1102,6 +1152,17 @@ def _simplified_lfpr_score(current_lfpr: float | None, year_ago_lfpr: float | No
     return 0
 
 
+def _simplified_k_shape_score(current_ratio: float | None, year_ago_ratio: float | None) -> int:
+    """K字型Proxyスコア (3点): RUT/SPX比率のYoY変化"""
+    if current_ratio is None or year_ago_ratio is None or year_ago_ratio == 0:
+        return 0
+    yoy = ((current_ratio - year_ago_ratio) / year_ago_ratio) * 100
+    if yoy <= -15: return 3
+    if yoy <= -10: return 2
+    if yoy <= -5: return 1
+    return 0
+
+
 @router.get("/risk-history")
 async def get_risk_history(months: int = Query(120, description="取得月数")):
     """
@@ -1131,10 +1192,10 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             .order("reference_period").limit(months * 6).execute()
         consumer_rows = consumer_all.data or []
 
-        # NFPの日付範囲に合わせてSP500を取得（古い順）
+        # NFPの日付範囲に合わせてSP500/RUT取得（古い順）
         nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
         sp500_all = supabase.table("market_indicators") \
-            .select("date,sp500") \
+            .select("date,sp500,russell2000") \
             .gte("date", nfp_start_date) \
             .order("date").limit(months * 22).execute()
         sp500_rows = sp500_all.data or []
@@ -1171,11 +1232,15 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 claims_by_month[key] = val
 
         sp500_by_month: dict[str, float] = {}
+        rut_spx_ratio_by_month: dict[str, float] = {}
         for row in sp500_rows:
             key = row["date"][:7]
             val = row.get("sp500")
             if val is not None:
                 sp500_by_month[key] = val
+            rut = row.get("russell2000")
+            if val and rut and val > 0:
+                rut_spx_ratio_by_month[key] = rut / val
 
         # Carry-forward: 各辞書を全月にわたって直近値で埋める
         def carry_forward(d: dict[str, float], all_keys: list[str]) -> dict[str, float]:
@@ -1247,14 +1312,18 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 if prev_yr_nfp:
                     year_ago_lfpr = prev_yr_nfp[-1].get("labor_force_participation")
             lfpr_s = _simplified_lfpr_score(current_lfpr, year_ago_lfpr)
-            k_shape_s = 0  # K字型Proxy: 将来実装予定
+            # K字型Proxy: RUT/SPX比率のYoY
+            current_ratio = rut_spx_ratio_by_month.get(month_key)
+            year_ago_ratio = rut_spx_ratio_by_month.get(prev_yr_key) if prev_yr_key else None
+            k_shape_s = _simplified_k_shape_score(current_ratio, year_ago_ratio)
             structure = min(job_s + u6u3_s + lfpr_s + k_shape_s, 25)
 
             raw_total = employment + consumer + structure
 
-            # 除外按分: K字型Proxy(3点)は常に未実装 → active_max = 97
-            # インフレ乖離(5点)も履歴計算では0固定 → active_max = 92
-            active_max = 100 - 3 - 5  # K字型(3) + インフレ乖離(5)
+            # 除外按分: インフレ乖離(5点)は履歴計算では0固定
+            # K字型はRUT/SPXデータがある月は有効
+            k_inactive = 3 if current_ratio is None or year_ago_ratio is None else 0
+            active_max = 100 - k_inactive - 5  # K字型(条件付き) + インフレ乖離(5)
             total = min(round(raw_total / active_max * 100), 100) if active_max > 0 else raw_total
 
             sahm_value = None
