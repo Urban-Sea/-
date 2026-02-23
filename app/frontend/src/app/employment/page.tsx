@@ -11,7 +11,7 @@ import {
   GlassCard, ScoreRing, GaugeBar, StatusChip, ScoreLegend, DocSection, DocTable,
 } from '@/components/shared/glass';
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
-import type { ChartSeries, ChartReferenceLine, ChartBackgroundZone } from '@/components/charts/EconChartCanvas';
+import type { ChartSeries, ChartReferenceLine, ChartBackgroundZone, ChartEventMarker } from '@/components/charts/EconChartCanvas';
 import type { EmploymentRiskScore, RiskScoreCategory, RiskHistoryResponse } from '@/types';
 
 // ============================================================
@@ -105,7 +105,9 @@ function EconomicPhaseHero({ data }: { data: EmploymentRiskScore }) {
         </div>
         {sahm_rule.triggered && (
           <div className="mt-5 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-600 dark:text-red-300 leading-relaxed plumb-shimmer-bg">
-            サームルール発動中: Sahm値 {sahm_rule.sahm_value?.toFixed(2)} ≥ 0.50 — 景気後退シグナル。スコアは最低60点に引き上げ済み。
+            サームルール発動中: Sahm値 {sahm_rule.sahm_value?.toFixed(2)} ≥ 0.50 — 景気後退シグナル
+            {sahm_rule.peak_out && ' (ピークアウト検知: 前月より改善)'}
+            {sahm_rule.near_peak_out && !sahm_rule.peak_out && ' (ピークアウト接近: 改善の兆し)'}
           </div>
         )}
       </div>
@@ -213,6 +215,12 @@ function SahmRulePanel({ sahm }: { sahm: EmploymentRiskScore['sahm_rule'] }) {
           {sahm.triggered && (
             <Badge variant="outline" className="text-[10px] text-red-600 dark:text-red-400 border-red-500/20 font-mono ml-auto">発動中</Badge>
           )}
+          {sahm.triggered && sahm.peak_out && (
+            <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-mono">ピークアウト</Badge>
+          )}
+          {sahm.triggered && sahm.near_peak_out && !sahm.peak_out && (
+            <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/20 font-mono">ピークアウト接近</Badge>
+          )}
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -298,11 +306,28 @@ function DashboardTab({ data }: { data: EmploymentRiskScore }) {
 // TAB 2: Risk History (NEW)
 // ============================================================
 
-const QUICK_RANGES = [
-  { name: '全期間', start: '', end: '' },
-  { name: '直近1年', months: 12 },
-  { name: '直近2年', months: 24 },
-  { name: 'Sahm発動圏', start: '2024-06-01', end: '2024-12-31' },
+const QUICK_RANGES: Array<{ name: string; months?: number; start?: string; end?: string }> = [
+  { name: 'ALL' },
+  { name: '10Y', months: 120 },
+  { name: '5Y', months: 60 },
+  { name: '3Y', months: 36 },
+  { name: '1Y', months: 12 },
+  { name: 'GFC', start: '2007-06-01', end: '2010-06-01' },
+  { name: 'COVID', start: '2019-12-01', end: '2021-06-01' },
+];
+
+const ECONOMIC_EVENTS: ChartEventMarker[] = [
+  { date: '2007-12', label: 'GFCリセッション開始', color: 'rgba(239,68,68,0.4)' },
+  { date: '2009-06', label: 'GFCリセッション終了', color: 'rgba(16,185,129,0.4)' },
+  { date: '2011-08', label: '米国債格下げ', color: 'rgba(234,179,8,0.4)' },
+  { date: '2015-08', label: '人民元切下げ', color: 'rgba(234,179,8,0.4)' },
+  { date: '2016-06', label: 'Brexit', color: 'rgba(234,179,8,0.4)' },
+  { date: '2018-12', label: 'FRB利上げ売り', color: 'rgba(234,179,8,0.4)' },
+  { date: '2019-08', label: '逆イールド', color: 'rgba(234,179,8,0.4)' },
+  { date: '2020-03', label: 'COVID', color: 'rgba(239,68,68,0.6)' },
+  { date: '2022-01', label: 'FRB利上げ開始', color: 'rgba(234,179,8,0.4)' },
+  { date: '2024-08', label: 'Sahmトリガー', color: 'rgba(249,115,22,0.4)' },
+  { date: '2025-01', label: 'トランプ関税', color: 'rgba(234,179,8,0.4)' },
 ];
 
 const RISK_BG_ZONES: ChartBackgroundZone[] = [
@@ -324,7 +349,7 @@ function RiskHistoryTab() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getRiskHistory(120);
+      const data = await getRiskHistory(240);
       setHistData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'データ取得失敗');
@@ -385,6 +410,7 @@ function RiskHistoryTab() {
             series={series}
             referenceLines={refLines}
             backgroundZones={RISK_BG_ZONES}
+            eventMarkers={ECONOMIC_EVENTS}
             yAxisFormat={(v) => `${Math.round(v)}`}
             yAxisRightFormat={(v) => v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`}
             height={420}
@@ -392,27 +418,27 @@ function RiskHistoryTab() {
         </div>
       </GlassCard>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {QUICK_RANGES.map((qr) => (
-          <Button key={qr.name} variant="outline" size="sm" className="text-[11px] font-mono h-7"
+          <Button key={qr.name} variant="outline" size="sm" className="text-[11px] font-mono h-7 px-3"
             onClick={() => {
               const container = chartRef.current;
               if (!container) return;
-              if (!qr.start && !('months' in qr)) {
-                handleReset();
+              if (!qr.months && !qr.start) {
+                // ALL: reset to full view
+                const resetBtn = container.querySelector('[data-chart-reset]') as HTMLButtonElement | null;
+                resetBtn?.click();
                 return;
               }
-              if ('months' in qr && qr.months) {
+              if (qr.months) {
                 const h = histData?.history;
                 if (!h || h.length === 0) return;
                 const endIdx = h.length;
                 const startIdx = Math.max(0, endIdx - qr.months);
-                const startDate = h[startIdx].date;
-                const endDate = h[endIdx - 1].date;
                 const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
                 if (btn) {
-                  btn.setAttribute('data-start', startDate);
-                  btn.setAttribute('data-end', endDate);
+                  btn.setAttribute('data-start', h[startIdx].date);
+                  btn.setAttribute('data-end', h[endIdx - 1].date);
                   btn.click();
                 }
                 return;
@@ -717,7 +743,7 @@ function SystemDocsTab() {
           この値が <strong>0.5%以上</strong> になった場合、景気後退入りと判定（過去の景気後退を100%的中）。
         </p>
         <p className="mt-2">
-          発動時はスコアを最低60点（警戒期）に引き上げ、強制的にリスク管理モードに移行します。
+          発動時は警告フラグとして表示。ピークアウト検知（前月比でSahm値が低下）により回復の兆しも判定。
         </p>
       </DocSection>
 

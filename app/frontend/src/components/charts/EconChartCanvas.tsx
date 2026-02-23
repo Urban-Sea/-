@@ -25,10 +25,17 @@ export interface ChartBackgroundZone {
   color: string;
 }
 
+export interface ChartEventMarker {
+  date: string;      // "2020-03" or "2020-03-15"
+  label: string;
+  color?: string;    // default: rgba(255,255,255,0.3)
+}
+
 interface EconChartCanvasProps {
   series: ChartSeries[];
   referenceLines?: ChartReferenceLine[];
   backgroundZones?: ChartBackgroundZone[];
+  eventMarkers?: ChartEventMarker[];
   yAxisFormat?: (v: number) => string;
   yAxisRightFormat?: (v: number) => string;
   xAxisFormat?: (d: string) => string;
@@ -42,6 +49,7 @@ export default function EconChartCanvas({
   series,
   referenceLines,
   backgroundZones,
+  eventMarkers,
   yAxisFormat = (v) => v.toLocaleString(),
   yAxisRightFormat,
   xAxisFormat = (d) => d.length >= 7 ? `${d.substring(0, 4)}/${d.substring(5, 7)}` : d,
@@ -269,6 +277,42 @@ export default function EconChartCanvas({
       }
     }
 
+    // Event markers (vertical lines with labels)
+    if (eventMarkers && eventMarkers.length > 0) {
+      const primaryData = series[0]?.data;
+      if (primaryData) {
+        const slicedData = primaryData.slice(start, end);
+        for (const marker of eventMarkers) {
+          // Find matching index in visible range
+          const idx = slicedData.findIndex((d) => d.x.startsWith(marker.date) || marker.date.startsWith(d.x));
+          if (idx < 0) continue;
+
+          const mx = xScale(idx);
+          const markerColor = marker.color || (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)');
+
+          // Vertical dashed line
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(mx, padding.top);
+          ctx.lineTo(mx, padding.top + chartHeight);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Rotated label at top
+          ctx.save();
+          ctx.translate(mx + 3, padding.top + 4);
+          ctx.rotate(-Math.PI / 4);
+          ctx.font = '9px -apple-system, sans-serif';
+          ctx.fillStyle = markerColor.replace(/[\d.]+\)$/, '0.7)');
+          ctx.textAlign = 'left';
+          ctx.fillText(marker.label, 0, 0);
+          ctx.restore();
+        }
+      }
+    }
+
     // Date labels (use first left-axis series for x labels)
     const primarySeries = series[0];
     if (primarySeries) {
@@ -369,7 +413,7 @@ export default function EconChartCanvas({
       roundRect(ctx, padding.left + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [series, totalLen, isDark, height, referenceLines, backgroundZones, yAxisFormat, yAxisRightFormat, xAxisFormat]);
+  }, [series, totalLen, isDark, height, referenceLines, backgroundZones, eventMarkers, yAxisFormat, yAxisRightFormat, xAxisFormat]);
 
   useEffect(() => { draw(); }, [draw]);
 
