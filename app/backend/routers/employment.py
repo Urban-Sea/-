@@ -1176,29 +1176,30 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
 
     try:
         # ===== バルクデータ取得 =====
+        # 降順で取得し反転: months+24ヶ月分を最新から取得して昇順に
         nfp_all = supabase.table("economic_indicators") \
             .select("*").eq("indicator", "NFP") \
-            .order("reference_period").limit(months + 24).execute()
-        nfp_rows = nfp_all.data or []
+            .order("reference_period", desc=True).limit(months + 24).execute()
+        nfp_rows = list(reversed(nfp_all.data or []))
 
         claims_all = supabase.table("weekly_claims") \
             .select("week_ending,initial_claims,initial_claims_4w_avg") \
-            .order("week_ending").limit(months * 5).execute()
-        claims_rows = claims_all.data or []
+            .order("week_ending", desc=True).limit(months * 5).execute()
+        claims_rows = list(reversed(claims_all.data or []))
 
         consumer_all = supabase.table("economic_indicators") \
             .select("indicator,reference_period,current_value") \
             .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"]) \
-            .order("reference_period").limit(months * 6).execute()
-        consumer_rows = consumer_all.data or []
+            .order("reference_period", desc=True).limit(months * 6).execute()
+        consumer_rows = list(reversed(consumer_all.data or []))
 
         # NFPの日付範囲に合わせてSP500/RUT取得（古い順）
         nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
         sp500_all = supabase.table("market_indicators") \
             .select("date,sp500,russell2000") \
             .gte("date", nfp_start_date) \
-            .order("date").limit(months * 22).execute()
-        sp500_rows = sp500_all.data or []
+            .order("date", desc=True).limit(months * 22).execute()
+        sp500_rows = list(reversed(sp500_all.data or []))
 
         # ===== データをインデックス化 =====
         nfp_by_month: dict[str, list[dict]] = {}
