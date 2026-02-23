@@ -337,12 +337,12 @@ interface YearAnalysis {
 }
 
 const YEAR_ANALYSIS: YearAnalysis[] = [
-  { year: '2001', avgScore: 46, range: '16-59', phase: 'EXPANSION→CAUTION', scores: 'E=31 C=0 S=13',
+  { year: '2001', avgScore: 61, range: '29-75', phase: 'SLOWDOWN→CONTRACTION', scores: 'E=35 C=9 S=13',
     situation: 'ITバブル崩壊。NASDAQ -78%。9/11テロ。3月にNBERがリセッション認定。',
-    verdict: 'H1のEXPANSIONからCAUTION(59pt)へ急速悪化。C=0は前年データ不足(2000年未取得)による制約' },
-  { year: '2002', avgScore: 62, range: '47-73', phase: 'CAUTION→CONTRACTION', scores: 'E=39 C=7 S=13',
+    verdict: 'CONTRACTION(75pt)到達。雇用(E=35)+消費(C=9)+構造(S=13)の全カテゴリ悪化を検出' },
+  { year: '2002', avgScore: 64, range: '47-73', phase: 'CONTRACTION→CAUTION', scores: 'E=39 C=9 S=13',
     situation: 'エンロン・ワールドコム破綻。企業会計スキャンダル。ダブルディップ懸念。',
-    verdict: 'CONTRACTION(73pt)到達。雇用悪化(E=39)と消費悪化(C=7)の同時検出。実際の景気後退期' },
+    verdict: 'CONTRACTION(73pt)が継続。雇用悪化(E=39)と消費悪化(C=9)の同時検出。実際の景気後退期' },
   { year: '2003', avgScore: 51, range: '32-66', phase: 'CONTRACTION→CAUTION→SLOWDOWN', scores: 'E=28 C=5 S=15',
     situation: 'イラク戦争開始(3月)。景気回復開始。FRBが1%まで利下げ。',
     verdict: 'H1はCONTRACTION、H2にSLOWDOWNへ。回復の過程を正確に反映' },
@@ -493,7 +493,7 @@ function RiskHistoryTab() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getRiskHistory(300);
+      const data = await getRiskHistory(350);
       setHistData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'データ取得失敗');
