@@ -4,12 +4,24 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import main
 import math
 import statistics
 
 router = APIRouter()
+
+# ============================================================
+# Phase 3: ThreadPoolExecutor (DB並列実行用)
+# Phase 4: インメモリTTLキャッシュ
+# ============================================================
+
+_executor = ThreadPoolExecutor(max_workers=5)
+
+_risk_score_cache: dict = {"data": None, "expires": None}
+_risk_history_cache: dict = {}  # key: months → {"data": ..., "expires": ...}
 
 
 class EconomicIndicator(BaseModel):
@@ -613,6 +625,84 @@ def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: li
     )
 
 
+def _calc_employment_discrepancy_v2(nfp_data: list[dict], claims_data: list[dict], manual_by_metric: dict[str, list[dict]]) -> RiskSubScore:
+    """雇用乖離 (8点) — Phase1最適化版: manual_inputs を事前取得済みデータから参照"""
+    changes = [d["nfp_change"] for d in nfp_data[:3] if d.get("nfp_change") is not None]
+    if not changes:
+        return RiskSubScore(name="雇用乖離", score=0, max_score=8, detail="NFPデータなし", status="normal")
+    nfp_3m_avg = statistics.mean(changes)
+
+    gaps: list[tuple[str, float, float]] = []
+
+    # ADP — 重み0.6
+    adp_rows = manual_by_metric.get("ADP_CHANGE", [])
+    if len(adp_rows) >= 3:
+        adp_values = [r["value"] for r in adp_rows[:3]]
+        adp_3m_avg = statistics.mean(adp_values)
+        gap_adp = nfp_3m_avg - adp_3m_avg
+        gaps.append(("ADP", gap_adp, 0.6))
+
+    # Challenger — 重み0.8、trend時1.0
+    ch_rows = manual_by_metric.get("CHALLENGER_CUTS", [])
+    if ch_rows:
+        ch_current = ch_rows[0]["value"]
+        ch_history = [r["value"] for r in ch_rows[1:4]] if len(ch_rows) >= 4 else []
+        ch_3m_avg = statistics.mean(ch_history) if len(ch_history) >= 3 else 80000
+
+        adaptive_threshold = ch_3m_avg * 1.3
+        trend_flag = ch_current > adaptive_threshold
+
+        ch_yoy_flag = False
+        if len(ch_rows) >= 13:
+            recent_3 = [r["value"] for r in ch_rows[:3]]
+            year_ago_3 = [r["value"] for r in ch_rows[12:15]] if len(ch_rows) >= 15 else []
+            if recent_3 and year_ago_3:
+                recent_avg = statistics.mean(recent_3)
+                year_ago_avg = statistics.mean(year_ago_3)
+                if year_ago_avg > 0:
+                    ch_yoy = ((recent_avg - year_ago_avg) / year_ago_avg) * 100
+                    ch_yoy_flag = ch_yoy > 50
+
+        if (trend_flag or ch_yoy_flag) and nfp_3m_avg > 0:
+            gap_ch = min(50, (ch_current - ch_3m_avg) / 1000)
+            weight = 1.0 if trend_flag else 0.8
+            gaps.append(("Challenger", max(0, gap_ch), weight))
+
+    # ICSA逆指標 — 重み0.3
+    icsa_avgs = [d.get("initial_claims_4w_avg") or d.get("initial_claims") for d in claims_data[:1]]
+    icsa_avgs = [v for v in icsa_avgs if v is not None]
+    if icsa_avgs:
+        icsa_val = icsa_avgs[0]
+        if icsa_val > 250000 and nfp_3m_avg > 50:
+            gap_icsa = min(30, (icsa_val - 220000) / 5000)
+            gaps.append(("ICSA", gap_icsa, 0.3))
+
+    if not gaps:
+        return RiskSubScore(name="雇用乖離", score=0, max_score=8, detail="代替データなし", status="normal")
+
+    total_weight = sum(w for _, _, w in gaps)
+    weighted_gap = sum(g * w for _, g, w in gaps) / total_weight
+    disc_score = 100 / (1 + math.exp(-weighted_gap / 30))
+
+    if disc_score >= 70:
+        has_confirming = any(n != "ADP" for n, _, _ in gaps)
+        score = 8 if has_confirming else 5
+    elif disc_score >= 60:
+        score = 5
+    elif disc_score >= 50:
+        score = 3
+    else:
+        score = 0
+
+    sources = ", ".join(n for n, _, _ in gaps)
+    status = "danger" if score >= 8 else "warning" if score >= 3 else "normal"
+    return RiskSubScore(
+        name="雇用乖離", score=score, max_score=8,
+        detail=f"ADP等とNFPの乖離度 {disc_score:.0f}%（70%超で警戒、参照: {sources}）",
+        status=status,
+    )
+
+
 # ----- 消費カテゴリ (25点) -----
 
 def _calc_real_income(indicator_data: list[dict]) -> RiskSubScore:
@@ -784,6 +874,52 @@ def _calc_inflation_discrepancy(supabase, indicator_data: list[dict]) -> RiskSub
     )
 
 
+def _calc_inflation_discrepancy_v2(indicator_data: list[dict], manual_by_metric: dict[str, list[dict]]) -> RiskSubScore:
+    """インフレ乖離 (5点) — Phase1最適化版: manual_inputs を事前取得済みデータから参照"""
+    cpi_data = sorted(
+        [d for d in indicator_data if d.get("indicator") == "CPILFESL" and d.get("current_value") is not None],
+        key=lambda x: x.get("reference_period", ""), reverse=True,
+    )
+
+    if len(cpi_data) < 13:
+        return RiskSubScore(name="インフレ乖離", score=0, max_score=5, detail="CPIデータ不足", status="normal")
+
+    current_cpi = cpi_data[0]["current_value"]
+    year_ago_cpi = cpi_data[12]["current_value"]
+    if year_ago_cpi == 0:
+        return RiskSubScore(name="インフレ乖離", score=0, max_score=5, detail="ゼロ除算回避", status="normal")
+
+    cpi_yoy = ((current_cpi - year_ago_cpi) / abs(year_ago_cpi)) * 100
+
+    truflation_rows = manual_by_metric.get("TRUFLATION", [])
+    truflation_value = truflation_rows[0]["value"] if truflation_rows else None
+
+    if truflation_value is None:
+        return RiskSubScore(
+            name="インフレ乖離", score=0, max_score=5,
+            detail=f"コアCPI YoY: {cpi_yoy:.1f}% (代替データなし)",
+            status="normal",
+        )
+
+    gap = truflation_value - cpi_yoy
+    disc_score = 50 + (gap / 2.0) * 25
+    disc_score = max(0, min(100, disc_score))
+
+    if disc_score >= 70:
+        score = 5
+    elif disc_score >= 50:
+        score = 2
+    else:
+        score = 0
+
+    status = "danger" if score >= 5 else "warning" if score >= 2 else "normal"
+    return RiskSubScore(
+        name="インフレ乖離", score=score, max_score=5,
+        detail=f"CPI {cpi_yoy:.1f}% vs Truflation {truflation_value:.1f}%（差 {gap:+.1f}%、+1%超で隠れインフレ）",
+        status=status,
+    )
+
+
 # ----- 構造カテゴリ (25点) -----
 
 def _calc_job_openings_ratio(jolts_data: list[dict], unemploy_data: list[dict]) -> RiskSubScore:
@@ -933,50 +1069,89 @@ async def get_risk_score():
     """
     景気警戒タブ：100点満点のリセッションリスクスコア
     雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
+
+    最適化: Phase1(クエリ統合9→5) + Phase3(並列実行) + Phase4(1hキャッシュ)
     """
+    # Phase 4: キャッシュチェック
+    now = datetime.now()
+    if _risk_score_cache["data"] and _risk_score_cache["expires"] and _risk_score_cache["expires"] > now:
+        return _risk_score_cache["data"]
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # ===== データ取得 =====
-        nfp_result = supabase.table("economic_indicators") \
-            .select("*").eq("indicator", "NFP") \
-            .order("reference_period", desc=True).limit(24).execute()
+        loop = asyncio.get_event_loop()
+
+        # Phase 1: クエリ統合 (9→5)
+        # 1. NFP (変更なし)
+        # 2. weekly_claims (変更なし)
+        # 3. JOLTS+UNEMPLOY を consumer クエリに統合
+        # 4. manual_inputs を1回のバッチクエリに統合
+        # 5. market_indicators limit 300→2
+
+        def fetch_nfp():
+            return supabase.table("economic_indicators") \
+                .select("*").eq("indicator", "NFP") \
+                .order("reference_period", desc=True).limit(24).execute()
+
+        def fetch_claims():
+            return supabase.table("weekly_claims") \
+                .select("*").order("week_ending", desc=True).limit(52).execute()
+
+        def fetch_all_indicators():
+            """Phase 1-2: JOLTS+UNEMPLOY を consumer系と統合 (3クエリ→1)"""
+            all_indicators = ["W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL", "JOLTS", "UNEMPLOY"]
+            return supabase.table("economic_indicators") \
+                .select("*").in_("indicator", all_indicators) \
+                .order("reference_period", desc=True).limit(150).execute()
+
+        def fetch_market():
+            """Phase 1-1: limit 300→2 (K字型は最新1行で十分)"""
+            return supabase.table("market_indicators") \
+                .select("date,sp500,russell2000") \
+                .order("date", desc=True).limit(2).execute()
+
+        def fetch_manual_inputs():
+            """Phase 1-3: ADP+Challenger+Truflation を1回で取得"""
+            return supabase.table("manual_inputs") \
+                .select("metric,reference_date,value") \
+                .in_("metric", ["ADP_CHANGE", "CHALLENGER_CUTS", "TRUFLATION"]) \
+                .order("reference_date", desc=True).limit(30).execute()
+
+        # Phase 3: 5クエリを並列実行
+        nfp_fut = loop.run_in_executor(_executor, fetch_nfp)
+        claims_fut = loop.run_in_executor(_executor, fetch_claims)
+        indicators_fut = loop.run_in_executor(_executor, fetch_all_indicators)
+        market_fut = loop.run_in_executor(_executor, fetch_market)
+        manual_fut = loop.run_in_executor(_executor, fetch_manual_inputs)
+
+        nfp_result, claims_result, indicators_result, market_result, manual_result = await asyncio.gather(
+            nfp_fut, claims_fut, indicators_fut, market_fut, manual_fut
+        )
+
         nfp_data = nfp_result.data or []
-
-        claims_result = supabase.table("weekly_claims") \
-            .select("*").order("week_ending", desc=True).limit(52).execute()
         claims_data = claims_result.data or []
-
-        # 消費者・構造系列を一括取得（CPILFESL追加: インフレ乖離計算用）
-        consumer_indicators = ["W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL"]
-        consumer_result = supabase.table("economic_indicators") \
-            .select("*").in_("indicator", consumer_indicators) \
-            .order("reference_period", desc=True).limit(120).execute()
-        consumer_data = consumer_result.data or []
-
-        jolts_result = supabase.table("economic_indicators") \
-            .select("*").eq("indicator", "JOLTS") \
-            .order("reference_period", desc=True).limit(3).execute()
-        jolts_data = jolts_result.data or []
-
-        unemploy_result = supabase.table("economic_indicators") \
-            .select("*").eq("indicator", "UNEMPLOY") \
-            .order("reference_period", desc=True).limit(3).execute()
-        unemploy_data = unemploy_result.data or []
-
-        # K字型Proxy用: RUT/SPX比率（直近と1年前）
-        market_result = supabase.table("market_indicators") \
-            .select("date,sp500,russell2000") \
-            .order("date", desc=True).limit(300).execute()
         market_data = market_result.data or []
+
+        # Phase 1-2: 統合結果をPython側で振り分け
+        all_indicators_data = indicators_result.data or []
+        consumer_data = [d for d in all_indicators_data if d.get("indicator") in ("W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL")]
+        jolts_data = [d for d in all_indicators_data if d.get("indicator") == "JOLTS"]
+        unemploy_data = [d for d in all_indicators_data if d.get("indicator") == "UNEMPLOY"]
+
+        # Phase 1-3: manual_inputs振り分け
+        all_manual = manual_result.data or []
+        manual_by_metric: dict[str, list[dict]] = {}
+        for row in all_manual:
+            manual_by_metric.setdefault(row["metric"], []).append(row)
 
         # ===== 雇用カテゴリ (50点) =====
         nfp_trend = _calc_nfp_trend(nfp_data)
         sahm_sub, sahm_data = _calc_sahm_rule(nfp_data)
         claims = _calc_claims_level(claims_data)
-        discrepancy = _calc_employment_discrepancy(supabase, nfp_data, claims_data)
+        discrepancy = _calc_employment_discrepancy_v2(nfp_data, claims_data, manual_by_metric)
 
         employment_score = nfp_trend.score + sahm_sub.score + claims.score + discrepancy.score
         employment_cat = RiskScoreCategory(
@@ -988,7 +1163,7 @@ async def get_risk_score():
         real_income = _calc_real_income(consumer_data)
         sentiment = _calc_consumer_sentiment(consumer_data)
         delinquency = _calc_credit_delinquency(consumer_data)
-        inflation_disc = _calc_inflation_discrepancy(supabase, consumer_data)
+        inflation_disc = _calc_inflation_discrepancy_v2(consumer_data, manual_by_metric)
 
         consumer_score = real_income.score + sentiment.score + delinquency.score + inflation_disc.score
         consumer_cat = RiskScoreCategory(
@@ -1011,7 +1186,6 @@ async def get_risk_score():
         # ===== 総合スコア（除外按分で100点正規化） =====
         raw_total = employment_score + consumer_score + structure_score
 
-        # 未実装/未入力の項目を検出し、active_maxを計算
         inactive_max = 0
         for cat in [employment_cat, consumer_cat, structure_cat]:
             for comp in cat.components:
@@ -1034,7 +1208,7 @@ async def get_risk_score():
                     alert_factors.append(f"{comp.name}: {comp.detail}")
 
         # ===== レスポンス =====
-        return EmploymentRiskScore(
+        result = EmploymentRiskScore(
             total_score=total_score,
             phase=_get_phase(total_score),
             categories=[employment_cat, consumer_cat, structure_cat],
@@ -1047,6 +1221,12 @@ async def get_risk_score():
             claims_history=claims_data,
             consumer_history=consumer_data,
         )
+
+        # Phase 4: キャッシュ保存 (1時間TTL)
+        _risk_score_cache["data"] = result
+        _risk_score_cache["expires"] = now + timedelta(hours=1)
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1181,57 +1361,66 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
     月次リスクスコア履歴を動的計算。
     各月について雇用(50)+消費(25)+構造(25)=100点のスコアを算出。
     未実装項目(K字型3点, インフレ乖離5点)は除外按分で100点正規化。
+
+    最適化: Phase2(ページネ除去) + Phase3(並列実行) + Phase4(1hキャッシュ)
     """
+    # Phase 4: キャッシュチェック
+    now = datetime.now()
+    cached = _risk_history_cache.get(months)
+    if cached and cached.get("expires") and cached["expires"] > now:
+        return cached["data"]
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # ===== バルクデータ取得 =====
-        # 降順で取得し反転: months+24ヶ月分を最新から取得して昇順に
-        nfp_all = supabase.table("economic_indicators") \
-            .select("*").eq("indicator", "NFP") \
-            .order("reference_period", desc=True).limit(months + 24).execute()
-        nfp_rows = list(reversed(nfp_all.data or []))
+        loop = asyncio.get_event_loop()
 
-        _page_size = 1000
+        # Phase 2: 日付フィルタで取得行数を削減 (ページネーション除去)
+        start_date = (now - timedelta(days=months * 31 + 365)).strftime("%Y-%m-%d")
 
-        claims_rows: list[dict] = []
-        _cl_offset = 0
-        while True:
-            _cl_chunk = supabase.table("weekly_claims") \
+        def fetch_nfp():
+            return supabase.table("economic_indicators") \
+                .select("*").eq("indicator", "NFP") \
+                .order("reference_period", desc=True).limit(months + 24).execute()
+
+        def fetch_claims():
+            """Phase 2-1: 日付フィルタで1回取得 (ページネーション除去)"""
+            return supabase.table("weekly_claims") \
                 .select("week_ending,initial_claims,initial_claims_4w_avg") \
-                .order("week_ending", desc=False).limit(_page_size).offset(_cl_offset).execute()
-            claims_rows.extend(_cl_chunk.data or [])
-            if not _cl_chunk.data or len(_cl_chunk.data) < _page_size:
-                break
-            _cl_offset += _page_size
+                .gte("week_ending", start_date) \
+                .order("week_ending", desc=False).limit(1000).execute()
 
-        consumer_rows: list[dict] = []
-        _con_offset = 0
-        while True:
-            _con_chunk = supabase.table("economic_indicators") \
+        def fetch_consumer():
+            """Phase 2-2: 日付フィルタで1回取得 (ページネーション除去)"""
+            return supabase.table("economic_indicators") \
                 .select("indicator,reference_period,current_value") \
                 .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"]) \
-                .order("reference_period", desc=False).limit(_page_size).offset(_con_offset).execute()
-            consumer_rows.extend(_con_chunk.data or [])
-            if not _con_chunk.data or len(_con_chunk.data) < _page_size:
-                break
-            _con_offset += _page_size
+                .gte("reference_period", start_date) \
+                .order("reference_period", desc=False).limit(1000).execute()
 
-        # NFPの日付範囲に合わせてSP500/RUT取得（ページネーションで全件取得）
-        nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
-        sp500_rows: list[dict] = []
-        _offset = 0
-        while True:
-            _chunk = supabase.table("market_indicators") \
+        def fetch_market():
+            """Phase 2-3: 日付フィルタで1回取得 (ページネーション除去)"""
+            return supabase.table("market_indicators") \
                 .select("date,sp500,russell2000") \
-                .gte("date", nfp_start_date) \
-                .order("date", desc=False).limit(_page_size).offset(_offset).execute()
-            sp500_rows.extend(_chunk.data or [])
-            if not _chunk.data or len(_chunk.data) < _page_size:
-                break
-            _offset += _page_size
+                .gte("date", start_date) \
+                .order("date", desc=False).limit(1000).execute()
+
+        # Phase 3: 4クエリを並列実行
+        nfp_fut = loop.run_in_executor(_executor, fetch_nfp)
+        claims_fut = loop.run_in_executor(_executor, fetch_claims)
+        consumer_fut = loop.run_in_executor(_executor, fetch_consumer)
+        market_fut = loop.run_in_executor(_executor, fetch_market)
+
+        nfp_result, claims_result, consumer_result, market_result = await asyncio.gather(
+            nfp_fut, claims_fut, consumer_fut, market_fut
+        )
+
+        nfp_rows = list(reversed(nfp_result.data or []))
+        claims_rows = claims_result.data or []
+        consumer_rows = consumer_result.data or []
+        sp500_rows = market_result.data or []
 
         # ===== データをインデックス化 =====
         nfp_by_month: dict[str, list[dict]] = {}
@@ -1239,7 +1428,6 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             key = row["reference_period"][:7]
             nfp_by_month.setdefault(key, []).append(row)
 
-        # Carry-forward辞書: 指標が月次でない場合、直近の値を引き継ぐ
         umcsent_by_month: dict[str, float] = {}
         w875_by_month: dict[str, float] = {}
         drc_by_month: dict[str, float] = {}
@@ -1275,7 +1463,6 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             if val and rut and val > 0:
                 rut_spx_ratio_by_month[key] = rut / val
 
-        # Carry-forward: 各辞書を全月にわたって直近値で埋める
         def carry_forward(d: dict[str, float], all_keys: list[str]) -> dict[str, float]:
             filled: dict[str, float] = {}
             last_val = None
@@ -1333,10 +1520,9 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             infl_disc_s = _simplified_inflation_disc_score()
             consumer = min(sent_s + income_s + drc_s + infl_disc_s, 25)
 
-            # Structure (25): 求人倍率(10) + U6-U3(7) + 労働参加率(5) + K字型(3)
+            # Structure (25)
             job_s = _simplified_job_ratio_score(jolts_by_month.get(month_key), unemploy_by_month.get(month_key))
             u6u3_s = _simplified_u6u3_score(u3, latest_nfp.get("u6_rate"))
-            # LFPR YoY: 12ヶ月前のLFPRを取得
             current_lfpr = latest_nfp.get("labor_force_participation")
             year_ago_lfpr = None
             if idx >= 12:
@@ -1345,17 +1531,14 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 if prev_yr_nfp:
                     year_ago_lfpr = prev_yr_nfp[-1].get("labor_force_participation")
             lfpr_s = _simplified_lfpr_score(current_lfpr, year_ago_lfpr)
-            # K字型Proxy: RUT/SPX比率の絶対水準
             current_ratio = rut_spx_ratio_by_month.get(month_key)
             k_shape_s = _simplified_k_shape_score(current_ratio)
             structure = min(job_s + u6u3_s + lfpr_s + k_shape_s, 25)
 
             raw_total = employment + consumer + structure
 
-            # 除外按分: インフレ乖離(5点)は履歴計算では0固定
-            # K字型はRUT/SPXデータがある月は有効
             k_inactive = 3 if current_ratio is None else 0
-            active_max = 100 - k_inactive - 5  # K字型(条件付き) + インフレ乖離(5)
+            active_max = 100 - k_inactive - 5
             total = min(round(raw_total / active_max * 100), 100) if active_max > 0 else raw_total
 
             sahm_value = None
@@ -1380,7 +1563,12 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
 
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
-        return {"history": history, "sp500": sp500_list}
+        result = {"history": history, "sp500": sp500_list}
+
+        # Phase 4: キャッシュ保存 (1時間TTL)
+        _risk_history_cache[months] = {"data": result, "expires": now + timedelta(hours=1)}
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
