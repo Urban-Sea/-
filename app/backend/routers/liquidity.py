@@ -342,13 +342,12 @@ async def get_plumbing_summary():
         srf_days_30d = 0
         srf_days_90d = 0
         if srf_q.data:
-            from datetime import timedelta
-            now = datetime.now().date()
+            today = datetime.now().date()
             for row in srf_q.data:
                 amount = row.get('amount', 0) or 0
                 try:
                     row_date = datetime.strptime(row['date'], '%Y-%m-%d').date() if isinstance(row['date'], str) else row['date']
-                    if (now - row_date).days <= 30:
+                    if (today - row_date).days <= 30:
                         srf_usage_30d += amount
                         if amount > 0:
                             srf_days_30d += 1
