@@ -430,9 +430,20 @@ def _calc_sahm_rule(nfp_data: list[dict]) -> tuple[RiskSubScore, SahmRuleData]:
     sahm_value = round(current_3m_avg - low_12m_3m_avg, 2)
     triggered = sahm_value >= 0.5
 
-    # Demo準拠閾値
-    if sahm_value >= 0.5:
-        score = 15
+    # 前月Sahm値を計算（2ヶ月連続条件用）
+    prev_sahm = None
+    if len(avgs_3m) >= 2:
+        prev_low_for_prev = min(avgs_3m[-13:-1]) if len(avgs_3m) >= 13 else min(avgs_3m[:-1])
+        prev_sahm = round(avgs_3m[-2] - prev_low_for_prev, 2)
+
+    # 閾値（2ヶ月連続条件付き）
+    if sahm_value >= 1.0:
+        score = 15  # 極端値は即MAX
+    elif sahm_value >= 0.5:
+        if prev_sahm is not None and prev_sahm >= 0.5:
+            score = 15  # 2ヶ月連続で確認済み
+        else:
+            score = 10  # 単月、未確認
     elif sahm_value >= 0.3:
         score = 8
     elif sahm_value >= 0.15:
@@ -582,9 +593,10 @@ def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: li
     weighted_gap = sum(g * w for _, g, w in gaps) / total_weight
     disc_score = 100 / (1 + math.exp(-weighted_gap / 30))
 
-    # 8点変換
+    # 8点変換（ADP単独MAX制限: 確認ソースなしなら5pt上限）
     if disc_score >= 70:
-        score = 8
+        has_confirming = any(n != "ADP" for n, _, _ in gaps)
+        score = 8 if has_confirming else 5
     elif disc_score >= 60:
         score = 5
     elif disc_score >= 50:
@@ -854,7 +866,7 @@ def _calc_labor_participation(nfp_data: list[dict]) -> RiskSubScore:
         score = 5
     elif yoy_change <= -0.3:
         score = 3
-    elif yoy_change <= -0.1:
+    elif yoy_change <= -0.2:
         score = 1
     else:
         score = 0
@@ -1059,14 +1071,21 @@ def _simplified_nfp_score(nfp_rows: list[dict]) -> int:
 
 
 def _simplified_sahm_score(u3_values: list[float]) -> int:
-    """サームルール簡易スコア (15点満点)"""
+    """サームルール簡易スコア (15点満点、2ヶ月連続条件付き)"""
     if len(u3_values) < 3:
         return 0
     avgs_3m = [statistics.mean(u3_values[i-2:i+1]) for i in range(2, len(u3_values))]
     current_3m = avgs_3m[-1]
     low_12m = min(avgs_3m[-12:]) if len(avgs_3m) >= 12 else min(avgs_3m)
     sahm = current_3m - low_12m
-    if sahm >= 0.5: return 15
+    # 前月Sahm計算（2ヶ月連続条件用）
+    prev_sahm = None
+    if len(avgs_3m) >= 2:
+        prev_low = min(avgs_3m[-13:-1]) if len(avgs_3m) >= 13 else min(avgs_3m[:-1])
+        prev_sahm = avgs_3m[-2] - prev_low
+    if sahm >= 1.0: return 15
+    if sahm >= 0.5:
+        return 15 if (prev_sahm is not None and prev_sahm >= 0.5) else 10
     if sahm >= 0.3: return 8
     if sahm >= 0.15: return 4
     return 0
@@ -1142,7 +1161,7 @@ def _simplified_lfpr_score(current_lfpr: float | None, year_ago_lfpr: float | No
     yoy_change = current_lfpr - year_ago_lfpr  # pp
     if yoy_change <= -0.5: return 5
     if yoy_change <= -0.3: return 3
-    if yoy_change <= -0.1: return 1
+    if yoy_change <= -0.2: return 1
     return 0
 
 
