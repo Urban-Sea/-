@@ -969,7 +969,7 @@ async def get_risk_score():
         employment_score = nfp_trend.score + sahm_sub.score + claims.score + discrepancy.score
         employment_cat = RiskScoreCategory(
             name="雇用", score=employment_score, max_score=50,
-            components=[nfp_trend, sahm_sub, claims, discrepancy],
+            components=[nfp_trend, sahm_sub, discrepancy, claims],
         )
 
         # ===== 消費カテゴリ (25点) =====
