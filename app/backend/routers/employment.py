@@ -407,7 +407,7 @@ def _calc_nfp_trend(nfp_data: list[dict]) -> RiskSubScore:
     status = "normal" if score <= 10 else "warning" if score <= 20 else "danger"
     return RiskSubScore(
         name="NFPトレンド", score=score, max_score=25,
-        detail=f"3ヶ月平均: {avg:+.0f}K" if changes else "データなし",
+        detail=f"3M平均 {avg:+.0f}K（150K超で健全、50K以下で警戒）" if changes else "データなし",
         status=status,
     )
 
@@ -453,12 +453,12 @@ def _calc_sahm_rule(nfp_data: list[dict]) -> tuple[RiskSubScore, SahmRuleData]:
         elif rise_diff >= 0:
             near_peak_out = True
 
-    detail = f"Sahm値: {sahm_value:.2f}"
+    detail = f"Sahm値: {sahm_value:.2f}（0.50で不況シグナル発動）"
     if triggered:
         if peak_out:
-            detail += " (ピークアウト)"
+            detail = f"Sahm値: {sahm_value:.2f}（発動中・ピークアウト兆候）"
         else:
-            detail += " (発動)"
+            detail = f"Sahm値: {sahm_value:.2f}（⚠️ 不況シグナル発動中）"
 
     status = "danger" if triggered else "warning" if score >= 4 else "normal"
     return (
@@ -495,7 +495,7 @@ def _calc_claims_level(claims_data: list[dict]) -> RiskSubScore:
     else:
         score = 0
 
-    detail = f"4W平均: {level/1000:.0f}K"
+    detail = f"4W平均 {level/1000:.0f}K（250K未満で健全、300K超で危険）"
     status = "danger" if score >= 2 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="失業保険", score=score, max_score=2,
@@ -596,7 +596,7 @@ def _calc_employment_discrepancy(supabase, nfp_data: list[dict], claims_data: li
     status = "danger" if score >= 8 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
         name="雇用乖離", score=score, max_score=8,
-        detail=f"乖離: {disc_score:.0f}/100 ({sources})",
+        detail=f"ADP等とNFPの乖離度 {disc_score:.0f}%（70%超で警戒、参照: {sources}）",
         status=status,
     )
 
@@ -636,7 +636,7 @@ def _calc_real_income(indicator_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 10 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
         name="実質個人所得", score=score, max_score=10,
-        detail=f"YoY: {yoy:+.1f}%",
+        detail=f"実質所得 YoY {yoy:+.1f}%（3%超で健全、マイナスで危険）",
         status=status,
     )
 
@@ -675,7 +675,7 @@ def _calc_consumer_sentiment(indicator_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="消費者信頼感", score=score, max_score=5,
-        detail=f"UMCSENT: {current_val:.1f} (YoY: {yoy:+.1f}%)",
+        detail=f"消費者信頼感 {current_val:.1f}（YoY {yoy:+.1f}%、-15%超低下で警戒）",
         status=status,
     )
 
@@ -707,7 +707,7 @@ def _calc_credit_delinquency(indicator_data: list[dict]) -> RiskSubScore:
             score = 0
 
         status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
-        detail = f"{current:.2f}% (YoY変化: {yoy_change:+.2f}pp)"
+        detail = f"延滞率 {current:.2f}%（YoY {yoy_change:+.2f}pp、+0.5pp超で警戒）"
     else:
         score = 0
         status = "normal"
@@ -767,7 +767,7 @@ def _calc_inflation_discrepancy(supabase, indicator_data: list[dict]) -> RiskSub
     status = "danger" if score >= 5 else "warning" if score >= 2 else "normal"
     return RiskSubScore(
         name="インフレ乖離", score=score, max_score=5,
-        detail=f"CPI: {cpi_yoy:.1f}% vs Tru: {truflation_value:.1f}% (Gap: {gap:+.1f}%)",
+        detail=f"CPI {cpi_yoy:.1f}% vs Truflation {truflation_value:.1f}%（差 {gap:+.1f}%、+1%超で隠れインフレ）",
         status=status,
     )
 
@@ -799,7 +799,7 @@ def _calc_job_openings_ratio(jolts_data: list[dict], unemploy_data: list[dict]) 
     status = "danger" if score >= 10 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
         name="求人倍率", score=score, max_score=10,
-        detail=f"JOLTS/失業者: {ratio:.2f}倍",
+        detail=f"求人/失業者 {ratio:.2f}倍（1.0倍超で労働者有利、0.8倍未満で深刻）",
         status=status,
     )
 
@@ -827,7 +827,7 @@ def _calc_u6_u3_spread(nfp_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 7 else "warning" if score >= 2 else "normal"
     return RiskSubScore(
         name="U6-U3スプレッド", score=score, max_score=7,
-        detail=f"スプレッド: {spread:.1f}% (U6={u6:.1f}% − U3={u3:.1f}%)",
+        detail=f"U6-U3 {spread:.1f}%（4.0%未満で健全、5.0%超で隠れ失業拡大）",
         status=status,
     )
 
@@ -862,7 +862,7 @@ def _calc_labor_participation(nfp_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 5 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="労働参加率", score=score, max_score=5,
-        detail=f"LFPR: {current_lfpr:.1f}% (YoY: {yoy_change:+.1f}pp)",
+        detail=f"参加率 {current_lfpr:.1f}%（YoY {yoy_change:+.1f}pp、-0.3pp超低下で警戒）",
         status=status,
     )
 
@@ -909,7 +909,7 @@ def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 3 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="K字型Proxy", score=score, max_score=3,
-        detail=f"RUT/SPX比率: {ratio:.3f}",
+        detail=f"RUT/SPX {ratio:.3f}（0.50超で健全、0.40未満で格差極大）",
         status=status,
     )
 
