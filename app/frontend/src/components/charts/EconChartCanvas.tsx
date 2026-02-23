@@ -300,15 +300,7 @@ export default function EconChartCanvas({
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Rotated label at top
-          ctx.save();
-          ctx.translate(mx + 3, padding.top + 4);
-          ctx.rotate(-Math.PI / 4);
-          ctx.font = '9px -apple-system, sans-serif';
-          ctx.fillStyle = markerColor.replace(/[\d.]+\)$/, '0.7)');
-          ctx.textAlign = 'left';
-          ctx.fillText(marker.label, 0, 0);
-          ctx.restore();
+          // Label removed — shown in year-by-year analysis below chart
         }
       }
     }

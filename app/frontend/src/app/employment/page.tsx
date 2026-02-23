@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -436,26 +436,48 @@ const PHASE_STYLE: Record<string, { bg: string; text: string }> = {
 function YearByYearAnalysis() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Map year → event labels from chart markers
+  const eventByYear = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const ev of ECONOMIC_EVENTS) {
+      const y = ev.date.slice(0, 4);
+      if (!map[y]) map[y] = [];
+      map[y].push(ev.label);
+    }
+    return map;
+  }, []);
+
   return (
     <GlassCard>
       <div className="p-5 space-y-2">
         <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">年別バックテスト解説</h3>
         <div className="space-y-1">
           {YEAR_ANALYSIS.map((ya) => {
-            // For transition phases like "EXPANSION→CRISIS→CAUTION", use the last phase for color
-            const phases = ya.phase.split('→');
-            const lastPhase = phases[phases.length - 1].trim();
-            const ps = PHASE_STYLE[lastPhase] || PHASE_STYLE.EXPANSION;
+            const phases = ya.phase.split('→').map(p => p.trim());
             const isOpen = expanded === ya.year;
+            const events = eventByYear[ya.year];
             return (
               <div key={ya.year}>
                 <button
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
                   onClick={() => setExpanded(isOpen ? null : ya.year)}
                 >
-                  <span className="text-sm font-bold font-mono w-10 shrink-0">{ya.year}</span>
-                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold font-mono ${ps.bg} ${ps.text}`}>
-                    {ya.phase}
+                  <span className="shrink-0 w-10 text-center">
+                    <span className="text-sm font-bold font-mono block">{ya.year}</span>
+                    {events && events.map((e: string, i: number) => (
+                      <span key={i} className="text-[8px] text-red-500 dark:text-red-400 font-bold block leading-tight">{e}</span>
+                    ))}
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    {phases.map((p, i) => {
+                      const s = PHASE_STYLE[p] || PHASE_STYLE.EXPANSION;
+                      return (
+                        <span key={i} className="flex items-center">
+                          {i > 0 && <span className="text-[9px] text-muted-foreground mx-0.5">→</span>}
+                          <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold font-mono ${s.bg} ${s.text}`}>{p}</span>
+                        </span>
+                      );
+                    })}
                   </span>
                   <span className="text-xs font-mono text-muted-foreground">{ya.avgScore}pt</span>
                   <span className="text-[10px] text-muted-foreground font-mono">[{ya.range}]</span>

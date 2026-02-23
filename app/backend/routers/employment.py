@@ -1194,21 +1194,34 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             .order("reference_period", desc=True).limit(months + 24).execute()
         nfp_rows = list(reversed(nfp_all.data or []))
 
-        claims_all = supabase.table("weekly_claims") \
-            .select("week_ending,initial_claims,initial_claims_4w_avg") \
-            .order("week_ending", desc=True).limit(months * 5).execute()
-        claims_rows = list(reversed(claims_all.data or []))
+        _page_size = 1000
 
-        consumer_all = supabase.table("economic_indicators") \
-            .select("indicator,reference_period,current_value") \
-            .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"]) \
-            .order("reference_period", desc=True).limit(months * 6).execute()
-        consumer_rows = list(reversed(consumer_all.data or []))
+        claims_rows: list[dict] = []
+        _cl_offset = 0
+        while True:
+            _cl_chunk = supabase.table("weekly_claims") \
+                .select("week_ending,initial_claims,initial_claims_4w_avg") \
+                .order("week_ending", desc=False).limit(_page_size).offset(_cl_offset).execute()
+            claims_rows.extend(_cl_chunk.data or [])
+            if not _cl_chunk.data or len(_cl_chunk.data) < _page_size:
+                break
+            _cl_offset += _page_size
+
+        consumer_rows: list[dict] = []
+        _con_offset = 0
+        while True:
+            _con_chunk = supabase.table("economic_indicators") \
+                .select("indicator,reference_period,current_value") \
+                .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"]) \
+                .order("reference_period", desc=False).limit(_page_size).offset(_con_offset).execute()
+            consumer_rows.extend(_con_chunk.data or [])
+            if not _con_chunk.data or len(_con_chunk.data) < _page_size:
+                break
+            _con_offset += _page_size
 
         # NFPの日付範囲に合わせてSP500/RUT取得（ページネーションで全件取得）
         nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
         sp500_rows: list[dict] = []
-        _page_size = 1000
         _offset = 0
         while True:
             _chunk = supabase.table("market_indicators") \
