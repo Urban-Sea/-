@@ -96,7 +96,8 @@ export default function EconChartCanvas({
     if (visibleCount <= 0) return;
 
     const hasRightAxis = series.some((s) => s.yAxisSide === 'right');
-    const padding = { top: 32, right: hasRightAxis ? 68 : 16, bottom: 44, left: 68 };
+    const hasEvents = eventMarkers && eventMarkers.length > 0;
+    const padding = { top: 32, right: hasRightAxis ? 68 : 16, bottom: hasEvents ? 58 : 44, left: 68 };
     const scrollbarH = 6;
     const chartHeight = h - padding.top - padding.bottom - scrollbarH - 4;
     const chartWidth = width - padding.left - padding.right;
@@ -300,13 +301,13 @@ export default function EconChartCanvas({
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Label removed — shown in year-by-year analysis below chart
         }
       }
     }
 
     // Date labels (use first left-axis series for x labels)
     const primarySeries = series[0];
+    const dateY = h - padding.bottom - scrollbarH + 10;
     if (primarySeries) {
       const sliced = primarySeries.data.slice(start, end);
       ctx.fillStyle = textColor;
@@ -315,7 +316,21 @@ export default function EconChartCanvas({
       const labelStep = Math.max(1, Math.ceil(sliced.length / 10));
       for (let i = 0; i < sliced.length; i++) {
         if (i % labelStep === 0) {
-          ctx.fillText(xAxisFormat(sliced[i].x), xScale(i), h - padding.bottom - scrollbarH + 10);
+          ctx.fillText(xAxisFormat(sliced[i].x), xScale(i), dateY);
+        }
+      }
+
+      // Event labels below date labels
+      if (eventMarkers && eventMarkers.length > 0) {
+        const eventY = dateY + 12;
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        for (const marker of eventMarkers) {
+          const idx = sliced.findIndex((d) => d.x.startsWith(marker.date) || marker.date.startsWith(d.x));
+          if (idx < 0) continue;
+          const mx = xScale(idx);
+          ctx.fillStyle = marker.color || (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)');
+          ctx.fillText(marker.label, mx, eventY);
         }
       }
     }

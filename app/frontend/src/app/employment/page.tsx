@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -436,17 +436,6 @@ const PHASE_STYLE: Record<string, { bg: string; text: string }> = {
 function YearByYearAnalysis() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Map year → event labels from chart markers
-  const eventByYear = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    for (const ev of ECONOMIC_EVENTS) {
-      const y = ev.date.slice(0, 4);
-      if (!map[y]) map[y] = [];
-      map[y].push(ev.label);
-    }
-    return map;
-  }, []);
-
   return (
     <GlassCard>
       <div className="p-5 space-y-2">
@@ -455,19 +444,13 @@ function YearByYearAnalysis() {
           {YEAR_ANALYSIS.map((ya) => {
             const phases = ya.phase.split('→').map(p => p.trim());
             const isOpen = expanded === ya.year;
-            const events = eventByYear[ya.year];
             return (
               <div key={ya.year}>
                 <button
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
                   onClick={() => setExpanded(isOpen ? null : ya.year)}
                 >
-                  <span className="shrink-0 w-10 text-center">
-                    <span className="text-sm font-bold font-mono block">{ya.year}</span>
-                    {events && events.map((e: string, i: number) => (
-                      <span key={i} className="text-[8px] text-red-500 dark:text-red-400 font-bold block leading-tight">{e}</span>
-                    ))}
-                  </span>
+                  <span className="text-sm font-bold font-mono w-10 shrink-0">{ya.year}</span>
                   <span className="flex items-center gap-0.5">
                     {phases.map((p, i) => {
                       const s = PHASE_STYLE[p] || PHASE_STYLE.EXPANSION;
