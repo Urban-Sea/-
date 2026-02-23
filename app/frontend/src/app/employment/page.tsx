@@ -317,17 +317,84 @@ const QUICK_RANGES: Array<{ name: string; months?: number; start?: string; end?:
 ];
 
 const ECONOMIC_EVENTS: ChartEventMarker[] = [
-  { date: '2007-12', label: 'GFCリセッション開始', color: 'rgba(239,68,68,0.4)' },
-  { date: '2009-06', label: 'GFCリセッション終了', color: 'rgba(16,185,129,0.4)' },
+  { date: '2008-09', label: 'リーマンショック', color: 'rgba(239,68,68,0.5)' },
   { date: '2011-08', label: '米国債格下げ', color: 'rgba(234,179,8,0.4)' },
-  { date: '2015-08', label: '人民元切下げ', color: 'rgba(234,179,8,0.4)' },
-  { date: '2016-06', label: 'Brexit', color: 'rgba(234,179,8,0.4)' },
-  { date: '2018-12', label: 'FRB利上げ売り', color: 'rgba(234,179,8,0.4)' },
-  { date: '2019-08', label: '逆イールド', color: 'rgba(234,179,8,0.4)' },
-  { date: '2020-03', label: 'COVID', color: 'rgba(239,68,68,0.6)' },
-  { date: '2022-01', label: 'FRB利上げ開始', color: 'rgba(234,179,8,0.4)' },
+  { date: '2020-03', label: 'COVID-19', color: 'rgba(239,68,68,0.5)' },
+  { date: '2022-03', label: 'FRB利上げ開始', color: 'rgba(234,179,8,0.4)' },
   { date: '2024-08', label: 'Sahmトリガー', color: 'rgba(249,115,22,0.4)' },
-  { date: '2025-01', label: 'トランプ関税', color: 'rgba(234,179,8,0.4)' },
+];
+
+interface YearAnalysis {
+  year: string;
+  avgScore: number;
+  range: string;
+  phase: string;
+  scores: string;
+  situation: string;
+  verdict: string;
+}
+
+const YEAR_ANALYSIS: YearAnalysis[] = [
+  { year: '2007', avgScore: 32, range: '13-53', phase: 'SLOWDOWN', scores: 'E=16 C=3 S=11',
+    situation: 'サブプライム危機の発端。住宅市場崩壊開始。12月にNBERがリセッション認定。',
+    verdict: '年後半に急速悪化を正しく検出' },
+  { year: '2008', avgScore: 76, range: '53-87', phase: 'CONTRACTION', scores: 'E=40 C=16 S=14',
+    situation: 'リーマンショック(9月)。金融システム崩壊。大規模な雇用喪失が始まる。',
+    verdict: 'CONTRACTION判定でリセッションを正確に反映' },
+  { year: '2009', avgScore: 86, range: '82-91', phase: 'CRISIS', scores: 'E=42 C=16 S=21',
+    situation: 'GFC最悪期。失業率10%到達。3月にS&P500が底値(666)。',
+    verdict: 'CRISIS判定。91pt(1月)がモデル史上最高スコア' },
+  { year: '2010', avgScore: 53, range: '27-80', phase: 'CAUTION', scores: 'E=23 C=4 S=22',
+    situation: 'GFC後の緩やかな回復開始。構造的な弱さは残存。',
+    verdict: 'CRISIS→EXPANSIONへの段階的回復を正確に反映' },
+  { year: '2011', avgScore: 34, range: '26-42', phase: 'SLOWDOWN', scores: 'E=8 C=2 S=21',
+    situation: '米国債格下げ(8月)。欧州債務危機。二番底懸念。',
+    verdict: '構造スコア(S=21)が高止まりだが、雇用・消費は改善' },
+  { year: '2012', avgScore: 31, range: '24-40', phase: 'SLOWDOWN', scores: 'E=8 C=1 S=20',
+    situation: '緩やかな回復持続。QE3開始(9月)。財政の崖問題。',
+    verdict: '構造スコアが依然高いがSLOWDOWN判定は妥当' },
+  { year: '2013', avgScore: 36, range: '33-42', phase: 'SLOWDOWN', scores: 'E=5 C=8 S=20',
+    situation: 'テーパータントラム(5月)。政府閉鎖(10月)。回復は加速。',
+    verdict: '構造改善に時間がかかっている局面を正しく反映' },
+  { year: '2014', avgScore: 26, range: '20-37', phase: 'SLOWDOWN', scores: 'E=3 C=1 S=20',
+    situation: 'GFC後の回復途上。Q4に原油暴落。製造業が減速開始。',
+    verdict: '構造的な弱さは事実だが、雇用・消費が健全' },
+  { year: '2015', avgScore: 23, range: '20-30', phase: 'SLOWDOWN', scores: 'E=3 C=0 S=18',
+    situation: '製造業リセッション。原油暴落、中国人民元切下げ(8月)、ISM50割れ。',
+    verdict: '実際にSLOWDOWNだった。リセッション入りはしなかったが警戒は妥当' },
+  { year: '2016', avgScore: 24, range: '20-29', phase: 'SLOWDOWN', scores: 'E=4 C=3 S=14',
+    situation: 'Brexit(6月)。大統領選挙不確実性。2015年ショックからの緩やかな回復。',
+    verdict: '不確実性の年で、過度に楽観でも悲観でもない' },
+  { year: '2017', avgScore: 17, range: '11-23', phase: 'EXPANSION', scores: 'E=5 C=2 S=9',
+    situation: 'トランプ減税期待。強い成長。失業率低下。',
+    verdict: '構造改善が明確。EXPANSION判定は正解' },
+  { year: '2018', avgScore: 9, range: '3-14', phase: 'EXPANSION', scores: 'E=4 C=1 S=4',
+    situation: '好景気のピーク。利上げ進行。Q4に株式急落。',
+    verdict: 'JOLTS比率が初めて1.0超え。構造が最も健全だった時期' },
+  { year: '2019', avgScore: 10, range: '5-17', phase: 'EXPANSION', scores: 'E=6 C=2 S=2',
+    situation: '米中貿易戦争。8月に逆イールド（リセッション予兆とされた）。',
+    verdict: '偽陽性なし。逆イールドでパニックが起きたがモデルはEXPANSION維持' },
+  { year: '2020', avgScore: 53, range: '3-86', phase: 'CAUTION', scores: 'E=22 C=9 S=17',
+    situation: 'COVID-19パンデミック。3月ロックダウン。4月に2200万人失業。',
+    verdict: '1ヶ月で検出。4-6月に86pt(CRISIS)。外生ショックへの反応は完璧' },
+  { year: '2021', avgScore: 15, range: '2-62', phase: 'EXPANSION', scores: 'E=5 C=3 S=6',
+    situation: 'V字回復。大規模財政刺激策。ワクチン接種進行。',
+    verdict: '3月に20pt(EXPANSION)へ急回復。正常化を正確に反映' },
+  { year: '2022', avgScore: 15, range: '7-20', phase: 'EXPANSION', scores: 'E=0 C=14 S=1',
+    situation: 'インフレ急騰、FRB利上げ、株式ベアマーケット(-27%)。リセッションではない。',
+    verdict: '重要: 偽陽性なし。株価は大幅下落したが雇用が健全(E=0)でEXPANSION維持' },
+  { year: '2023', avgScore: 11, range: '5-21', phase: 'EXPANSION', scores: 'E=4 C=4 S=2',
+    situation: 'ソフトランディング成功。AI boom。SVB破綻もシステミックリスクに発展せず。',
+    verdict: '年末にSahm値が上昇開始したが、全体としてEXPANSION' },
+  { year: '2024', avgScore: 28, range: '15-42', phase: 'SLOWDOWN', scores: 'E=18 C=4 S=5',
+    situation: '景気減速。NFP下方修正。Sahm値0.53(8月)でトリガー。FRB利下げ開始(9月)。',
+    verdict: '8月の42ptはSahmトリガーを正しく反映。利下げ後にやや改善' },
+  { year: '2025', avgScore: 43, range: '25-59', phase: 'CAUTION', scores: 'E=24 C=8 S=9',
+    situation: 'トランプ関税。DOGE大量解雇。不確実性拡大。NFP減速。',
+    verdict: '現在進行形。CAUTION判定は妥当。12月に60pt(CONTRACTION目前)' },
+  { year: '2026', avgScore: 46, range: '46-46', phase: 'CAUTION', scores: 'E=23 C=11 S=10',
+    situation: '不確実性継続。NFP弱い。K字型拡大。',
+    verdict: '現在進行形' },
 ];
 
 const RISK_BG_ZONES: ChartBackgroundZone[] = [
@@ -337,6 +404,55 @@ const RISK_BG_ZONES: ChartBackgroundZone[] = [
   { yMin: 60, yMax: 80, color: 'rgba(249,115,22,0.06)' },
   { yMin: 80, yMax: 100, color: 'rgba(239,68,68,0.06)' },
 ];
+
+const PHASE_STYLE: Record<string, { bg: string; text: string }> = {
+  EXPANSION: { bg: 'bg-emerald-500/15', text: 'text-emerald-600 dark:text-emerald-400' },
+  SLOWDOWN: { bg: 'bg-cyan-500/15', text: 'text-cyan-600 dark:text-cyan-400' },
+  CAUTION: { bg: 'bg-yellow-500/15', text: 'text-yellow-600 dark:text-yellow-400' },
+  CONTRACTION: { bg: 'bg-orange-500/15', text: 'text-orange-600 dark:text-orange-400' },
+  CRISIS: { bg: 'bg-red-500/15', text: 'text-red-600 dark:text-red-400' },
+};
+
+function YearByYearAnalysis() {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  return (
+    <GlassCard>
+      <div className="p-5 space-y-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">年別バックテスト解説</h3>
+        <div className="space-y-1">
+          {YEAR_ANALYSIS.map((ya) => {
+            const ps = PHASE_STYLE[ya.phase] || PHASE_STYLE.EXPANSION;
+            const isOpen = expanded === ya.year;
+            return (
+              <div key={ya.year}>
+                <button
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
+                  onClick={() => setExpanded(isOpen ? null : ya.year)}
+                >
+                  <span className="text-sm font-bold font-mono w-10 shrink-0">{ya.year}</span>
+                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold font-mono ${ps.bg} ${ps.text}`}>
+                    {ya.phase}
+                  </span>
+                  <span className="text-xs font-mono text-muted-foreground">{ya.avgScore}pt</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">[{ya.range}]</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">{isOpen ? '▼' : '▶'}</span>
+                </button>
+                {isOpen && (
+                  <div className="ml-14 pb-3 space-y-1.5 plumb-animate-in">
+                    <p className="text-xs text-foreground leading-relaxed">{ya.situation}</p>
+                    <p className="text-[11px] font-mono text-muted-foreground">{ya.scores}</p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">{ya.verdict}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
 
 function RiskHistoryTab() {
   const [histData, setHistData] = useState<RiskHistoryResponse | null>(null);
@@ -360,10 +476,17 @@ function RiskHistoryTab() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const handleReset = () => {
-    const btn = chartRef.current?.querySelector('[data-chart-reset]') as HTMLButtonElement | null;
-    btn?.click();
-  };
+  const handleShowAll = useCallback(() => {
+    const container = chartRef.current;
+    const h = histData?.history;
+    if (!container || !h || h.length === 0) return;
+    const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
+    if (btn) {
+      btn.setAttribute('data-start', h[0].date);
+      btn.setAttribute('data-end', h[h.length - 1].date);
+      btn.click();
+    }
+  }, [histData]);
 
   if (loading) return <div className="flex items-center justify-center py-24"><Skeleton className="h-[400px] w-full rounded-xl" /></div>;
   if (error) return <div className="flex flex-col items-center justify-center py-24 text-sm text-muted-foreground">{error}<Button variant="outline" size="sm" className="mt-3" onClick={fetchHistory}>再試行</Button></div>;
@@ -399,7 +522,7 @@ function RiskHistoryTab() {
             className="w-3 h-3 rounded accent-emerald-500" />
           S&P 500
         </label>
-        <Button variant="outline" size="sm" className="text-[11px] font-mono h-7" onClick={handleReset}>
+        <Button variant="outline" size="sm" className="text-[11px] font-mono h-7" onClick={handleShowAll}>
           ズームリセット
         </Button>
       </div>
@@ -425,9 +548,7 @@ function RiskHistoryTab() {
               const container = chartRef.current;
               if (!container) return;
               if (!qr.months && !qr.start) {
-                // ALL: reset to full view
-                const resetBtn = container.querySelector('[data-chart-reset]') as HTMLButtonElement | null;
-                resetBtn?.click();
+                handleShowAll();
                 return;
               }
               if (qr.months) {
@@ -471,6 +592,13 @@ function RiskHistoryTab() {
           </div>
         ))}
       </div>
+
+      {/* Year-by-year analysis */}
+      <YearByYearAnalysis />
+
+      <p className="text-[10px] text-muted-foreground text-center">
+        ※ 過去スコアは雇用乖離・インフレ乖離を含まないため、リアルタイムスコアより低めに表示されます
+      </p>
     </div>
   );
 }
