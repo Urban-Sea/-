@@ -868,7 +868,10 @@ def _calc_labor_participation(nfp_data: list[dict]) -> RiskSubScore:
 
 
 def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
-    """K字型Proxy (3点): Russell 2000 / S&P 500 比率のYoY変化で格差拡大を検出"""
+    """K字型Proxy (3点): RUT/SPX比率の絶対水準で格差を検出
+    歴史的にRUT/SPXは0.55-0.63が健全圏。0.50以下はK字型拡大。
+    2024-2025は0.36-0.39と過去最低水準。
+    """
     if not market_data:
         return RiskSubScore(
             name="K字型Proxy", score=0, max_score=3,
@@ -876,38 +879,29 @@ def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
             status="normal",
         )
 
-    # 直近と約1年前のRUT/SPX比率を計算
-    # market_dataは日付降順（直近が先）
-    recent_ratio = None
-    year_ago_ratio = None
-
+    # market_dataは日付降順 — 直近のRUT/SPX比率を取得
+    ratio = None
     for row in market_data:
         sp = row.get("sp500")
         rut = row.get("russell2000")
         if sp and rut and sp > 0:
-            if recent_ratio is None:
-                recent_ratio = rut / sp
-                recent_date = row["date"]
-            else:
-                # 約252営業日（1年）前のデータを探す
-                year_ago_ratio = rut / sp
-                year_ago_date = row["date"]
+            ratio = rut / sp
+            break
 
-    if recent_ratio is None or year_ago_ratio is None:
+    if ratio is None:
         return RiskSubScore(
             name="K字型Proxy", score=0, max_score=3,
-            detail="RUT/SPX比率データ不足",
+            detail="RUT/SPXデータなし",
             status="normal",
         )
 
-    yoy_change = ((recent_ratio - year_ago_ratio) / year_ago_ratio) * 100
-
-    # YoY変化がマイナス = Small Capが相対的に弱い = K字型拡大
-    if yoy_change <= -15:
+    # 絶対水準判定: 歴史的分布(2011-2026)から設定
+    # P50=0.56, P25=0.46, P10=0.39, P5=0.37
+    if ratio < 0.40:
         score = 3
-    elif yoy_change <= -10:
+    elif ratio < 0.45:
         score = 2
-    elif yoy_change <= -5:
+    elif ratio < 0.50:
         score = 1
     else:
         score = 0
@@ -915,7 +909,7 @@ def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
     status = "danger" if score >= 3 else "warning" if score >= 1 else "normal"
     return RiskSubScore(
         name="K字型Proxy", score=score, max_score=3,
-        detail=f"RUT/SPX比率 YoY: {yoy_change:+.1f}% (現在{recent_ratio:.4f})",
+        detail=f"RUT/SPX比率: {ratio:.3f}",
         status=status,
     )
 
@@ -1152,14 +1146,13 @@ def _simplified_lfpr_score(current_lfpr: float | None, year_ago_lfpr: float | No
     return 0
 
 
-def _simplified_k_shape_score(current_ratio: float | None, year_ago_ratio: float | None) -> int:
-    """K字型Proxyスコア (3点): RUT/SPX比率のYoY変化"""
-    if current_ratio is None or year_ago_ratio is None or year_ago_ratio == 0:
+def _simplified_k_shape_score(ratio: float | None) -> int:
+    """K字型Proxyスコア (3点): RUT/SPX比率の絶対水準"""
+    if ratio is None:
         return 0
-    yoy = ((current_ratio - year_ago_ratio) / year_ago_ratio) * 100
-    if yoy <= -15: return 3
-    if yoy <= -10: return 2
-    if yoy <= -5: return 1
+    if ratio < 0.40: return 3
+    if ratio < 0.45: return 2
+    if ratio < 0.50: return 1
     return 0
 
 
@@ -1313,17 +1306,16 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 if prev_yr_nfp:
                     year_ago_lfpr = prev_yr_nfp[-1].get("labor_force_participation")
             lfpr_s = _simplified_lfpr_score(current_lfpr, year_ago_lfpr)
-            # K字型Proxy: RUT/SPX比率のYoY
+            # K字型Proxy: RUT/SPX比率の絶対水準
             current_ratio = rut_spx_ratio_by_month.get(month_key)
-            year_ago_ratio = rut_spx_ratio_by_month.get(prev_yr_key) if prev_yr_key else None
-            k_shape_s = _simplified_k_shape_score(current_ratio, year_ago_ratio)
+            k_shape_s = _simplified_k_shape_score(current_ratio)
             structure = min(job_s + u6u3_s + lfpr_s + k_shape_s, 25)
 
             raw_total = employment + consumer + structure
 
             # 除外按分: インフレ乖離(5点)は履歴計算では0固定
             # K字型はRUT/SPXデータがある月は有効
-            k_inactive = 3 if current_ratio is None or year_ago_ratio is None else 0
+            k_inactive = 3 if current_ratio is None else 0
             active_max = 100 - k_inactive - 5  # K字型(条件付き) + インフレ乖離(5)
             total = min(round(raw_total / active_max * 100), 100) if active_max > 0 else raw_total
 
