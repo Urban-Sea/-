@@ -312,11 +312,13 @@ const QUICK_RANGES: Array<{ name: string; months?: number; start?: string; end?:
   { name: '5Y', months: 60 },
   { name: '3Y', months: 36 },
   { name: '1Y', months: 12 },
+  { name: 'ITバブル', start: '2001-01-01', end: '2003-06-01' },
   { name: 'GFC', start: '2007-06-01', end: '2010-06-01' },
   { name: 'COVID', start: '2019-12-01', end: '2021-06-01' },
 ];
 
 const ECONOMIC_EVENTS: ChartEventMarker[] = [
+  { date: '2001-03', label: 'ITバブル崩壊', color: 'rgba(239,68,68,0.5)' },
   { date: '2008-09', label: 'リーマンショック', color: 'rgba(239,68,68,0.5)' },
   { date: '2011-08', label: '米国債格下げ', color: 'rgba(234,179,8,0.4)' },
   { date: '2020-03', label: 'COVID-19', color: 'rgba(239,68,68,0.5)' },
@@ -335,6 +337,24 @@ interface YearAnalysis {
 }
 
 const YEAR_ANALYSIS: YearAnalysis[] = [
+  { year: '2001', avgScore: 0, range: '—', phase: 'EXPANSION', scores: '—',
+    situation: 'ITバブル崩壊。NASDAQ -78%。9/11テロ。3月にNBERがリセッション認定。',
+    verdict: 'データ取得開始年（一部指標が不足する可能性あり）' },
+  { year: '2002', avgScore: 0, range: '—', phase: 'SLOWDOWN', scores: '—',
+    situation: 'エンロン・ワールドコム破綻。企業会計スキャンダル。ダブルディップ懸念。',
+    verdict: 'バッチ実行後にスコア更新' },
+  { year: '2003', avgScore: 0, range: '—', phase: 'EXPANSION', scores: '—',
+    situation: 'イラク戦争開始(3月)。景気回復開始。FRBが1%まで利下げ。',
+    verdict: 'バッチ実行後にスコア更新' },
+  { year: '2004', avgScore: 0, range: '—', phase: 'EXPANSION', scores: '—',
+    situation: '景気拡大。住宅ブーム加速。FRBが利上げ開始(6月)。',
+    verdict: 'バッチ実行後にスコア更新' },
+  { year: '2005', avgScore: 0, range: '—', phase: 'EXPANSION', scores: '—',
+    situation: '住宅バブルのピーク。サブプライムローン急拡大。',
+    verdict: 'バッチ実行後にスコア更新' },
+  { year: '2006', avgScore: 10, range: '0-24', phase: 'EXPANSION', scores: 'E=7 C=0 S=2',
+    situation: '住宅市場にピークの兆し。製造業は堅調。雇用も健全。',
+    verdict: '表面的にはEXPANSION。住宅市場の悪化はまだ雇用に波及せず' },
   { year: '2007', avgScore: 32, range: '13-53', phase: 'SLOWDOWN', scores: 'E=16 C=3 S=11',
     situation: 'サブプライム危機の発端。住宅市場崩壊開始。12月にNBERがリセッション認定。',
     verdict: '年後半に急速悪化を正しく検出' },
@@ -344,9 +364,9 @@ const YEAR_ANALYSIS: YearAnalysis[] = [
   { year: '2009', avgScore: 86, range: '82-91', phase: 'CRISIS', scores: 'E=42 C=16 S=21',
     situation: 'GFC最悪期。失業率10%到達。3月にS&P500が底値(666)。',
     verdict: 'CRISIS判定。91pt(1月)がモデル史上最高スコア' },
-  { year: '2010', avgScore: 53, range: '27-80', phase: 'CAUTION', scores: 'E=23 C=4 S=22',
+  { year: '2010', avgScore: 53, range: '27-80', phase: 'CRISIS→CAUTION→SLOWDOWN', scores: 'E=23 C=4 S=22',
     situation: 'GFC後の緩やかな回復開始。構造的な弱さは残存。',
-    verdict: 'CRISIS→EXPANSIONへの段階的回復を正確に反映' },
+    verdict: 'CRISIS(1月80pt)→SLOWDOWN(12月27pt)の段階的回復を正確に反映' },
   { year: '2011', avgScore: 34, range: '26-42', phase: 'SLOWDOWN', scores: 'E=8 C=2 S=21',
     situation: '米国債格下げ(8月)。欧州債務危機。二番底懸念。',
     verdict: '構造スコア(S=21)が高止まりだが、雇用・消費は改善' },
@@ -374,12 +394,12 @@ const YEAR_ANALYSIS: YearAnalysis[] = [
   { year: '2019', avgScore: 10, range: '5-17', phase: 'EXPANSION', scores: 'E=6 C=2 S=2',
     situation: '米中貿易戦争。8月に逆イールド（リセッション予兆とされた）。',
     verdict: '偽陽性なし。逆イールドでパニックが起きたがモデルはEXPANSION維持' },
-  { year: '2020', avgScore: 53, range: '3-86', phase: 'CAUTION', scores: 'E=22 C=9 S=17',
+  { year: '2020', avgScore: 53, range: '3-86', phase: 'EXPANSION→CRISIS→CAUTION', scores: 'E=22 C=9 S=17',
     situation: 'COVID-19パンデミック。3月ロックダウン。4月に2200万人失業。',
     verdict: '1ヶ月で検出。4-6月に86pt(CRISIS)。外生ショックへの反応は完璧' },
-  { year: '2021', avgScore: 15, range: '2-62', phase: 'EXPANSION', scores: 'E=5 C=3 S=6',
+  { year: '2021', avgScore: 15, range: '2-62', phase: 'CONTRACTION→EXPANSION', scores: 'E=5 C=3 S=6',
     situation: 'V字回復。大規模財政刺激策。ワクチン接種進行。',
-    verdict: '3月に20pt(EXPANSION)へ急回復。正常化を正確に反映' },
+    verdict: '1月62pt(CONTRACTION)→4月以降2-12pt(EXPANSION)。急回復を正確に反映' },
   { year: '2022', avgScore: 15, range: '7-20', phase: 'EXPANSION', scores: 'E=0 C=14 S=1',
     situation: 'インフレ急騰、FRB利上げ、株式ベアマーケット(-27%)。リセッションではない。',
     verdict: '重要: 偽陽性なし。株価は大幅下落したが雇用が健全(E=0)でEXPANSION維持' },
@@ -389,9 +409,9 @@ const YEAR_ANALYSIS: YearAnalysis[] = [
   { year: '2024', avgScore: 28, range: '15-42', phase: 'SLOWDOWN', scores: 'E=18 C=4 S=5',
     situation: '景気減速。NFP下方修正。Sahm値0.53(8月)でトリガー。FRB利下げ開始(9月)。',
     verdict: '8月の42ptはSahmトリガーを正しく反映。利下げ後にやや改善' },
-  { year: '2025', avgScore: 43, range: '25-59', phase: 'CAUTION', scores: 'E=24 C=8 S=9',
+  { year: '2025', avgScore: 43, range: '25-59', phase: 'SLOWDOWN→CAUTION', scores: 'E=24 C=8 S=9',
     situation: 'トランプ関税。DOGE大量解雇。不確実性拡大。NFP減速。',
-    verdict: '現在進行形。CAUTION判定は妥当。12月に60pt(CONTRACTION目前)' },
+    verdict: '現在進行形。CAUTION判定は妥当。12月に59pt(CONTRACTION目前)' },
   { year: '2026', avgScore: 46, range: '46-46', phase: 'CAUTION', scores: 'E=23 C=11 S=10',
     situation: '不確実性継続。NFP弱い。K字型拡大。',
     verdict: '現在進行形' },
@@ -422,7 +442,10 @@ function YearByYearAnalysis() {
         <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">年別バックテスト解説</h3>
         <div className="space-y-1">
           {YEAR_ANALYSIS.map((ya) => {
-            const ps = PHASE_STYLE[ya.phase] || PHASE_STYLE.EXPANSION;
+            // For transition phases like "EXPANSION→CRISIS→CAUTION", use the last phase for color
+            const phases = ya.phase.split('→');
+            const lastPhase = phases[phases.length - 1].trim();
+            const ps = PHASE_STYLE[lastPhase] || PHASE_STYLE.EXPANSION;
             const isOpen = expanded === ya.year;
             return (
               <div key={ya.year}>
@@ -465,7 +488,7 @@ function RiskHistoryTab() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getRiskHistory(240);
+      const data = await getRiskHistory(300);
       setHistData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'データ取得失敗');

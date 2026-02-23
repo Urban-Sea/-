@@ -1205,13 +1205,20 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             .order("reference_period", desc=True).limit(months * 6).execute()
         consumer_rows = list(reversed(consumer_all.data or []))
 
-        # NFPの日付範囲に合わせてSP500/RUT取得（古い順）
+        # NFPの日付範囲に合わせてSP500/RUT取得（ページネーションで全件取得）
         nfp_start_date = nfp_rows[0]["reference_period"] if nfp_rows else "2020-01-01"
-        sp500_all = supabase.table("market_indicators") \
-            .select("date,sp500,russell2000") \
-            .gte("date", nfp_start_date) \
-            .order("date", desc=True).limit(months * 22).execute()
-        sp500_rows = list(reversed(sp500_all.data or []))
+        sp500_rows: list[dict] = []
+        _page_size = 1000
+        _offset = 0
+        while True:
+            _chunk = supabase.table("market_indicators") \
+                .select("date,sp500,russell2000") \
+                .gte("date", nfp_start_date) \
+                .order("date", desc=False).limit(_page_size).offset(_offset).execute()
+            sp500_rows.extend(_chunk.data or [])
+            if not _chunk.data or len(_chunk.data) < _page_size:
+                break
+            _offset += _page_size
 
         # ===== データをインデックス化 =====
         nfp_by_month: dict[str, list[dict]] = {}
