@@ -16,10 +16,14 @@ import {
 } from '@/components/ui/table';
 import {
   useHoldings, useTrades, useTradeStats, useBatchQuotes, useUsdJpy,
+  usePortfolioHistory, useCashBalances,
   createHolding, updateHolding, deleteHolding, sellFromHolding,
+  createCashBalance, updateCashBalance, deleteCashBalance,
 } from '@/lib/api';
 import { GlassCard, StatusChip, ScoreRing } from '@/components/shared/glass';
 import DonutChart from '@/components/charts/DonutChart';
+import EconChartCanvas from '@/components/charts/EconChartCanvas';
+import type { ChartSeries, ChartEventMarker } from '@/components/charts/EconChartCanvas';
 import type { DonutSegment } from '@/components/charts/DonutChart';
 import type { HoldingRecord, TradeRecord, TradeStats, StockQuote } from '@/types';
 
@@ -376,9 +380,10 @@ function SectorBreakdown({ holdings, quotes, fxRate }: {
 // Holdings Table
 // ============================================================
 
-function HoldingsTable({ holdings, quotes, fxRate, onEdit, onSell, onDelete }: {
+function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell, onDelete }: {
   holdings: HoldingRecord[];
   quotes: Map<string, StockQuote>;
+  quotesLoading: boolean;
   fxRate: number;
   onEdit: (h: HoldingRecord) => void;
   onSell: (h: HoldingRecord) => void;
@@ -429,7 +434,13 @@ function HoldingsTable({ holdings, quotes, fxRate, onEdit, onSell, onDelete }: {
                   <TableCell className="text-right font-mono tabular-nums">{h.shares.toFixed(2)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatUSD(h.avg_price)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
-                    {quote ? formatUSD(currentPrice) : <span className="text-muted-foreground">—</span>}
+                    {quotesLoading && !quote ? (
+                      <Skeleton className="h-4 w-16 ml-auto" />
+                    ) : quote ? (
+                      formatUSD(currentPrice)
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <span className="font-mono tabular-nums">{formatUSD(marketValue)}</span>
@@ -920,6 +931,262 @@ function StatsTab({ stats }: { stats: TradeStats }) {
 }
 
 // ============================================================
+// Asset Trends Tab (資産推移)
+// ============================================================
+
+function AssetTrendsTab() {
+  const { data, error, isLoading } = usePortfolioHistory(60);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4 plumb-animate-in">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
+        </div>
+        <Skeleton className="h-[420px] rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <GlassCard>
+        <div className="p-8 text-center">
+          <p className="text-red-500 text-sm">データの取得に失敗しました</p>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  const history = data?.history ?? [];
+  const summary = data?.summary;
+
+  if (history.length === 0) {
+    return (
+      <GlassCard>
+        <div className="p-8 text-center text-muted-foreground">
+          <p className="text-sm">取引履歴がありません</p>
+          <p className="text-xs mt-1">取引を記録すると資産推移チャートが表示されます</p>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  const series: ChartSeries[] = [
+    {
+      data: history.map((p) => ({ x: p.date, y: p.total_cost_usd })),
+      type: 'area',
+      color: '#3b82f6',
+      label: '保有評価額 (取得額ベース)',
+    },
+    {
+      data: history.map((p) => ({ x: p.date, y: p.cumulative_invested_usd })),
+      type: 'line',
+      color: '#71717a',
+      label: '累積投資額',
+      dashed: true,
+    },
+    {
+      data: history.map((p) => ({ x: p.date, y: p.realized_pnl })),
+      type: 'line',
+      color: '#10b981',
+      label: '累積実現損益',
+      yAxisSide: 'right' as const,
+    },
+  ];
+
+  const eventMarkers: ChartEventMarker[] = history
+    .filter((p) => p.event.startsWith('SELL'))
+    .map((p) => ({
+      date: p.date,
+      label: p.event,
+      color: 'rgba(248, 113, 113, 0.5)',
+    }));
+
+  const summaryItems = [
+    { label: '累積投資額', value: formatUSD(summary?.total_invested_usd ?? 0), color: '' },
+    { label: '実現損益', value: formatUSD(summary?.total_realized_pnl ?? 0), color: pnlClass(summary?.total_realized_pnl ?? 0) },
+    { label: '総取引数', value: String(summary?.total_trades ?? 0), color: 'text-blue-600 dark:text-blue-400' },
+    { label: '現金残高 (USD換算)', value: formatUSD(summary?.total_cash_usd ?? 0), color: 'text-cyan-600 dark:text-cyan-400' },
+  ];
+
+  return (
+    <div className="space-y-4 plumb-animate-in">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {summaryItems.map((item) => (
+          <div key={item.label} className="plumb-glass rounded-lg px-4 py-3.5 plumb-glass-hover">
+            <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">{item.label}</span>
+            <span className={`text-lg font-bold tabular-nums font-mono ${item.color}`}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <GlassCard>
+        <div className="p-4">
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">資産推移チャート</h3>
+          <EconChartCanvas
+            series={series}
+            eventMarkers={eventMarkers}
+            yAxisFormat={(v) => `$${(v / 1000).toFixed(1)}K`}
+            yAxisRightFormat={(v) => `$${v.toFixed(0)}`}
+            height={420}
+          />
+        </div>
+      </GlassCard>
+
+      {/* Event Log */}
+      <GlassCard>
+        <div className="p-4">
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">取引イベント</h3>
+          <div className="max-h-60 overflow-y-auto space-y-1">
+            {[...history].reverse().map((p, i) => (
+              <div key={i} className="flex items-center gap-3 text-xs font-mono py-1 border-b border-white/5 last:border-0">
+                <span className="text-muted-foreground w-20 shrink-0">{p.date}</span>
+                <StatusChip
+                  label={p.event.startsWith('BUY') ? 'BUY' : p.event.startsWith('SELL') ? 'SELL' : 'OTHER'}
+                  color={p.event.startsWith('BUY') ? 'green' : 'red'}
+                />
+                <span className="truncate">{p.event}</span>
+                <span className="ml-auto text-muted-foreground">{p.holdings_count}銘柄</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+// ============================================================
+// Cash Balance Section (現金管理)
+// ============================================================
+
+function CashBalanceSection({ fxRate }: { fxRate: number }) {
+  const { data, mutate } = useCashBalances();
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
+  const balances = useMemo(() => data?.balances ?? [], [data]);
+
+  const totalJpy = useMemo(() => {
+    return balances.reduce((sum, b) => {
+      return sum + (b.currency === 'USD' ? b.amount * fxRate : b.amount);
+    }, 0);
+  }, [balances, fxRate]);
+
+  const totalUsd = useMemo(() => {
+    return balances.reduce((sum, b) => {
+      return sum + (b.currency === 'JPY' ? b.amount / fxRate : b.amount);
+    }, 0);
+  }, [balances, fxRate]);
+
+  const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    try {
+      await createCashBalance({
+        label: fd.get('label') as string,
+        currency: (fd.get('currency') as string) || 'JPY',
+        amount: parseFloat(fd.get('amount') as string),
+        account_type: (fd.get('account_type') as string) || undefined,
+      });
+      setAdding(false);
+      mutate();
+    } catch {
+      // handled silently
+    }
+  };
+
+  const handleDelete = async (id: string, label: string) => {
+    if (!window.confirm(`「${label}」を削除しますか？`)) return;
+    await deleteCashBalance(id);
+    mutate();
+  };
+
+  return (
+    <GlassCard stagger={6}>
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">現金・預金残高</h3>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-mono font-bold tabular-nums">{formatJPY(totalJpy)}</span>
+            <span className="text-xs text-muted-foreground font-mono">({formatUSD(totalUsd)})</span>
+            <Button variant="outline" size="sm" className="h-6 text-[10px] px-2" onClick={() => setAdding(true)}>+ 追加</Button>
+          </div>
+        </div>
+
+        {balances.length === 0 && !adding ? (
+          <p className="text-xs text-muted-foreground text-center py-4">現金残高を登録すると総資産に反映されます</p>
+        ) : (
+          <div className="space-y-1">
+            {balances.map((b) => (
+              <div key={b.id} className="flex items-center gap-3 py-1.5 border-b border-white/5 last:border-0 group">
+                {editId === b.id ? (
+                  <form
+                    className="flex items-center gap-2 w-full"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      await updateCashBalance(b.id, { amount: parseFloat(fd.get('amount') as string) });
+                      setEditId(null);
+                      mutate();
+                    }}
+                  >
+                    <span className="text-xs font-medium w-28 truncate">{b.label}</span>
+                    <Input name="amount" type="number" step="0.01" defaultValue={b.amount} className="h-6 w-32 text-xs font-mono" />
+                    <Button type="submit" variant="outline" size="sm" className="h-6 text-[10px] px-2">保存</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setEditId(null)}>取消</Button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="text-xs font-medium w-28 truncate">{b.label}</span>
+                    <StatusChip label={b.currency} color={b.currency === 'USD' ? 'blue' : 'green'} />
+                    {b.account_type && <StatusChip label={b.account_type === 'nisa' ? 'NISA' : b.account_type} color={b.account_type === 'nisa' ? 'green' : 'orange'} />}
+                    <span className="ml-auto text-sm font-mono font-bold tabular-nums">
+                      {b.currency === 'USD' ? formatUSD(b.amount) : formatJPY(b.amount)}
+                    </span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setEditId(b.id)} className="p-1 rounded hover:bg-blue-500/10 text-blue-600 dark:text-blue-400" title="編集">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" /></svg>
+                      </button>
+                      <button onClick={() => handleDelete(b.id, b.label)} className="p-1 rounded hover:bg-red-500/10 text-red-600 dark:text-red-400" title="削除">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add Form */}
+        {adding && (
+          <form onSubmit={handleAdd} className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5">
+            <Input name="label" required placeholder="ラベル (例: SBI証券)" className="h-7 w-32 text-xs" />
+            <select name="currency" className="h-7 rounded-md border border-input bg-transparent px-2 text-xs dark:bg-input/30">
+              <option value="JPY">JPY</option>
+              <option value="USD">USD</option>
+            </select>
+            <Input name="amount" type="number" step="0.01" required placeholder="金額" className="h-7 w-28 text-xs font-mono" />
+            <select name="account_type" className="h-7 rounded-md border border-input bg-transparent px-2 text-xs dark:bg-input/30">
+              <option value="">—</option>
+              <option value="tokutei">特定</option>
+              <option value="nisa">NISA</option>
+              <option value="bank">銀行</option>
+            </select>
+            <Button type="submit" variant="outline" size="sm" className="h-7 text-[10px] px-3">追加</Button>
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-[10px] px-2" onClick={() => setAdding(false)}>取消</Button>
+          </form>
+        )}
+      </div>
+    </GlassCard>
+  );
+}
+
+// ============================================================
 // Loading Skeleton
 // ============================================================
 
@@ -973,7 +1240,7 @@ export default function HoldingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [holdingsData],
   );
-  const { data: quotesData } = useBatchQuotes(tickers);
+  const { data: quotesData, isLoading: quotesLoading } = useBatchQuotes(tickers);
 
   const quotes = useMemo(() => {
     const map = new Map<string, StockQuote>();
@@ -1052,6 +1319,9 @@ export default function HoldingsPage() {
           <TabsTrigger value="portfolio" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
             ポートフォリオ ({holdings.length})
           </TabsTrigger>
+          <TabsTrigger value="trends" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
+            資産推移
+          </TabsTrigger>
           <TabsTrigger value="trades" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
             取引履歴 ({trades.length})
           </TabsTrigger>
@@ -1067,14 +1337,21 @@ export default function HoldingsPage() {
           <AccountBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <PortfolioCharts holdings={holdings} quotes={quotes} />
           <SectorBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
+          <CashBalanceSection fxRate={fxRate} />
           <HoldingsTable
             holdings={holdings}
             quotes={quotes}
+            quotesLoading={quotesLoading}
             fxRate={fxRate}
             onEdit={setEditTarget}
             onSell={setSellTarget}
             onDelete={handleDelete}
           />
+        </TabsContent>
+
+        {/* Asset Trends Tab */}
+        <TabsContent value="trends" className="mt-4">
+          <AssetTrendsTab />
         </TabsContent>
 
         {/* Trades Tab */}

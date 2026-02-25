@@ -262,6 +262,42 @@ export interface TradeStats {
   profit_factor: number;
 }
 
+// Portfolio History
+export interface PortfolioHistoryPoint {
+  date: string;
+  total_cost_usd: number;
+  cumulative_invested_usd: number;
+  realized_pnl: number;
+  holdings_count: number;
+  event: string;
+}
+
+export interface PortfolioHistoryResponse {
+  history: PortfolioHistoryPoint[];
+  summary: {
+    total_invested_usd: number;
+    total_realized_pnl: number;
+    total_trades: number;
+    total_cash_usd: number;
+  };
+}
+
+// Cash Balances
+export interface CashBalance {
+  id: string;
+  user_id: string;
+  label: string;
+  currency: string;
+  amount: number;
+  account_type: string | null;
+  updated_at: string;
+}
+
+export interface CashBalancesResponse {
+  balances: CashBalance[];
+  total: number;
+}
+
 // Employment types
 export interface EconomicIndicator {
   id: number;

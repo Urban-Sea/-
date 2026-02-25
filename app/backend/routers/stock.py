@@ -377,3 +377,26 @@ async def get_batch_quotes(
         "count": len(results),
         "updated_at": datetime.now().isoformat(),
     }
+
+
+@router.get("/batch-quotes")
+async def get_batch_quotes_cached(
+    tickers: str = Query(..., description="Comma-separated tickers, max 20"),
+):
+    """
+    GET variant of batch quotes (cacheable by Cloudflare Worker).
+    Example: /api/stock/batch-quotes?tickers=NVDA,TSLA,AAPL
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if len(ticker_list) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 tickers allowed")
+    target = [t for t in ticker_list if _TICKER_RE.match(t)][:20]
+    loop = asyncio.get_event_loop()
+    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
+    results = await asyncio.gather(*tasks)
+
+    return {
+        "quotes": list(results),
+        "count": len(results),
+        "updated_at": datetime.now().isoformat(),
+    }

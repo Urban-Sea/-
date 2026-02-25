@@ -30,6 +30,8 @@ import type {
   BacktestData,
   MarketEventsData,
   PolicyRegimeData,
+  PortfolioHistoryResponse,
+  CashBalancesResponse,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
@@ -262,10 +264,8 @@ export async function getStockQuote(ticker: string): Promise<StockQuote> {
 }
 
 export async function getBatchQuotes(tickers: string[]): Promise<{ quotes: StockQuote[]; count: number }> {
-  return fetchAPI('/api/stock/batch', {
-    method: 'POST',
-    body: JSON.stringify({ tickers }),
-  });
+  const param = tickers.sort().join(',');
+  return fetchAPI(`/api/stock/batch-quotes?tickers=${encodeURIComponent(param)}`);
 }
 
 export async function getStockHistory(
@@ -413,6 +413,26 @@ export function useTradeStats() {
   return useSWR<TradeStats>('/api/trades/stats');
 }
 
+export function usePortfolioHistory(months: number = 24) {
+  return useSWR<PortfolioHistoryResponse>(`/api/holdings/portfolio-history?months=${months}`);
+}
+
+export function useCashBalances() {
+  return useSWR<CashBalancesResponse>('/api/holdings/cash');
+}
+
+export async function createCashBalance(data: { label: string; currency?: string; amount: number; account_type?: string }) {
+  return fetchAPI('/api/holdings/cash', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateCashBalance(id: string, data: { label?: string; currency?: string; amount?: number; account_type?: string }) {
+  return fetchAPI(`/api/holdings/cash/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deleteCashBalance(id: string) {
+  return fetchAPI(`/api/holdings/cash/${id}`, { method: 'DELETE' });
+}
+
 export function useStocks(params?: { active_only?: boolean }) {
   const searchParams = new URLSearchParams();
   if (params?.active_only !== undefined) searchParams.set('active_only', String(params.active_only));
@@ -421,13 +441,12 @@ export function useStocks(params?: { active_only?: boolean }) {
 }
 
 export function useBatchQuotes(tickers: string[] | null) {
-  // Conditional fetch: only when tickers array is non-empty
-  const key = tickers && tickers.length > 0 ? ['batch-quotes', ...tickers] : null;
+  // GET variant — cacheable by Cloudflare Worker (5min TTL)
+  const key = tickers && tickers.length > 0
+    ? `/api/stock/batch-quotes?tickers=${tickers.sort().join(',')}`
+    : null;
   return useSWR<{ quotes: StockQuote[]; count: number }>(key, {
-    fetcher: () =>
-      fetchAPI<{ quotes: StockQuote[]; count: number }>('/api/stock/batch', {
-        method: 'POST',
-        body: JSON.stringify({ tickers }),
-      }),
+    refreshInterval: 5 * 60 * 1000,
+    keepPreviousData: true,
   });
 }

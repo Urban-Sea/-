@@ -30,6 +30,7 @@ const CACHE_RULES: CacheRule[] = [
   { pattern: /^\/api\/regime$/, ttl: 5 * 60 },
   { pattern: /^\/api\/market-state\/latest$/, ttl: 5 * 60 },
   { pattern: /^\/api\/fx\/usdjpy$/, ttl: 5 * 60 },
+  { pattern: /^\/api\/stock\/batch-quotes/, ttl: 5 * 60 },
 
   // No cache: user CRUD
   { pattern: /^\/api\/holdings/, ttl: 0 },

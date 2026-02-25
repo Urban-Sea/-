@@ -1,9 +1,10 @@
 """
-/api/holdings - 保有銘柄CRUD
+/api/holdings - 保有銘柄CRUD + ポートフォリオ分析 + 現金管理
 設計ドキュメント準拠
 """
 import re
 import logging
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -133,6 +134,263 @@ async def get_holdings(
         logger.exception("Holdings API error")
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
+
+# ============================================================
+# Portfolio History (取引履歴からポートフォリオ価値を再構築)
+# NOTE: Static routes MUST be before /{ticker} to avoid path conflict
+# ============================================================
+
+@router.get("/portfolio-history")
+async def get_portfolio_history(
+    months: int = Query(24, ge=1, le=120),
+    user_email: str = Depends(require_auth),
+):
+    """
+    取引履歴から日付順にポートフォリオの推移を再構築。
+    各取引時点での投資額・累積実現損益・保有銘柄数を返す。
+    """
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        trades_result = (
+            supabase.table("trades")
+            .select("*")
+            .eq("user_id", user_email)
+            .order("trade_date", desc=False)
+            .execute()
+        )
+        trades = trades_result.data or []
+
+        # 現金残高を取得（テーブルがなくても動くように）
+        total_cash_usd = 0.0
+        try:
+            cash_result = (
+                supabase.table("cash_balances")
+                .select("*")
+                .eq("user_id", user_email)
+                .execute()
+            )
+            cash_rows = cash_result.data or []
+            total_cash_usd = sum(
+                r["amount"] if r.get("currency", "USD") == "USD" else r["amount"] / 150.0
+                for r in cash_rows
+            )
+        except Exception:
+            pass  # テーブル未作成時はスキップ
+
+        if not trades:
+            return {
+                "history": [],
+                "summary": {
+                    "total_invested_usd": 0,
+                    "total_realized_pnl": 0,
+                    "total_trades": 0,
+                    "total_cash_usd": total_cash_usd,
+                },
+            }
+
+        # ポートフォリオ状態を日付順に構築
+        holdings_state: dict = {}
+        cumulative_invested = 0.0
+        cumulative_realized_pnl = 0.0
+        history = []
+
+        for trade in trades:
+            ticker = trade["ticker"]
+            action = trade["action"]
+            shares = float(trade["shares"])
+            price = float(trade["price"])
+            trade_date = trade["trade_date"]
+            pnl = float(trade.get("profit_loss") or 0)
+
+            if action == "BUY":
+                if ticker in holdings_state:
+                    old = holdings_state[ticker]
+                    new_shares = old["shares"] + shares
+                    new_avg = ((old["shares"] * old["avg_price"]) + (shares * price)) / new_shares
+                    holdings_state[ticker] = {"shares": new_shares, "avg_price": new_avg}
+                else:
+                    holdings_state[ticker] = {"shares": shares, "avg_price": price}
+                cumulative_invested += shares * price
+                event = f"BUY {ticker} {shares:.1f}@{price:.2f}"
+
+            elif action == "SELL":
+                if ticker in holdings_state:
+                    old = holdings_state[ticker]
+                    remaining = old["shares"] - shares
+                    if remaining <= 0.001:
+                        del holdings_state[ticker]
+                    else:
+                        holdings_state[ticker] = {"shares": remaining, "avg_price": old["avg_price"]}
+                cumulative_realized_pnl += pnl
+                event = f"SELL {ticker} {shares:.1f}@{price:.2f}"
+            else:
+                event = f"{action} {ticker}"
+
+            total_cost = sum(
+                h["shares"] * h["avg_price"] for h in holdings_state.values()
+            )
+
+            history.append({
+                "date": trade_date[:10] if trade_date else "",
+                "total_cost_usd": round(total_cost, 2),
+                "cumulative_invested_usd": round(cumulative_invested, 2),
+                "realized_pnl": round(cumulative_realized_pnl, 2),
+                "holdings_count": len(holdings_state),
+                "event": event,
+            })
+
+        return {
+            "history": history,
+            "summary": {
+                "total_invested_usd": round(cumulative_invested, 2),
+                "total_realized_pnl": round(cumulative_realized_pnl, 2),
+                "total_trades": len(trades),
+                "total_cash_usd": round(total_cash_usd, 2),
+            },
+        }
+
+    except Exception as e:
+        logger.exception("Portfolio history error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
+
+# ============================================================
+# Cash Balances (現金・金融資産管理)
+# ============================================================
+
+class CashBalanceCreate(BaseModel):
+    label: str
+    currency: str = "JPY"
+    amount: float
+    account_type: Optional[str] = None
+
+
+class CashBalanceUpdate(BaseModel):
+    label: Optional[str] = None
+    currency: Optional[str] = None
+    amount: Optional[float] = None
+    account_type: Optional[str] = None
+
+
+@router.get("/cash")
+async def get_cash_balances(
+    user_email: str = Depends(require_auth),
+):
+    """現金残高一覧を取得"""
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        result = (
+            supabase.table("cash_balances")
+            .select("*")
+            .eq("user_id", user_email)
+            .order("label")
+            .execute()
+        )
+        return {"balances": result.data or [], "total": len(result.data or [])}
+    except Exception as e:
+        logger.exception("Cash balances error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cash")
+async def create_cash_balance(
+    body: CashBalanceCreate,
+    user_email: str = Depends(require_auth),
+):
+    """現金残高を追加"""
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        data = {
+            "user_id": user_email,
+            "label": body.label,
+            "currency": body.currency,
+            "amount": body.amount,
+            "account_type": body.account_type,
+        }
+        result = supabase.table("cash_balances").insert(data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create cash balance")
+        return result.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Cash balance create error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/cash/{cash_id}")
+async def update_cash_balance(
+    cash_id: str,
+    body: CashBalanceUpdate,
+    user_email: str = Depends(require_auth),
+):
+    """現金残高を更新"""
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        update_data = {k: v for k, v in body.model_dump().items() if v is not None}
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update data")
+
+        result = (
+            supabase.table("cash_balances")
+            .update(update_data)
+            .eq("id", cash_id)
+            .eq("user_id", user_email)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Cash balance not found")
+        return result.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Cash balance update error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/cash/{cash_id}")
+async def delete_cash_balance(
+    cash_id: str,
+    user_email: str = Depends(require_auth),
+):
+    """現金残高を削除"""
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        result = (
+            supabase.table("cash_balances")
+            .delete()
+            .eq("id", cash_id)
+            .eq("user_id", user_email)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Cash balance not found")
+        return {"status": "deleted", "id": cash_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Cash balance delete error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Holdings by Ticker (dynamic route — must be LAST among GET routes)
+# ============================================================
 
 @router.get("/{ticker}", response_model=HoldingRecord)
 async def get_holding(
