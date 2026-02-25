@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
 
     # 起動時: Supabase接続
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    # service_role キーを優先（RLSバイパス）、なければ anon key にフォールバック
+    supabase_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
     if supabase_url and supabase_key:
         supabase = create_client(supabase_url, supabase_key)
