@@ -1,7 +1,13 @@
 """
-/api/stock - 株価データAPI（キャッシュ付き）
+/api/stock - 株価データAPI（二段キャッシュ付き）
+
+L1: インメモリキャッシュ（同一プロセス内、0ms）
+L2: Supabase stock_cache テーブル（全ユーザー共有、~10ms）
+L3: yfinance API（200-500ms/銘柄）
 """
 import re
+import json
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -12,6 +18,10 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import time
+
+import main as app_main
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -86,14 +96,62 @@ def set_cache(key: str, data: dict):
     }
 
 
+def _db_cache_get(ticker: str) -> Optional[dict]:
+    """L2: Supabase stock_cache からキャッシュ取得（期限内のみ）"""
+    try:
+        sb = app_main.get_supabase()
+        if not sb:
+            return None
+        result = (
+            sb.table("stock_cache")
+            .select("data, expires_at")
+            .eq("ticker", ticker)
+            .execute()
+        )
+        if result.data:
+            row = result.data[0]
+            expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
+            if expires_at > datetime.now(expires_at.tzinfo):
+                return row["data"]
+    except Exception as e:
+        logger.debug(f"DB cache read error for {ticker}: {e}")
+    return None
+
+
+def _db_cache_set(ticker: str, data: dict):
+    """L2: Supabase stock_cache に upsert"""
+    try:
+        sb = app_main.get_supabase()
+        if not sb:
+            return
+        now = datetime.utcnow()
+        sb.table("stock_cache").upsert({
+            "ticker": ticker,
+            "data": data,
+            "fetched_at": now.isoformat(),
+            "expires_at": (now + timedelta(seconds=CACHE_TTL)).isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.debug(f"DB cache write error for {ticker}: {e}")
+
+
 def _fetch_single_quote(ticker: str) -> dict:
-    """1銘柄の株価を取得（同期、スレッドプール用）"""
+    """1銘柄の株価を取得（二段キャッシュ: L1→L2→yfinance）"""
     ticker = ticker.upper()
     cache_key = f"quote:{ticker}"
+
+    # L1: インメモリキャッシュ
     cached = get_cached(cache_key)
     if cached:
         return cached
 
+    # L2: Supabase DB キャッシュ
+    db_cached = _db_cache_get(ticker)
+    if db_cached:
+        set_cache(cache_key, db_cached)  # L1にもセット
+        return db_cached
+
+    # L3: yfinance API
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -110,7 +168,8 @@ def _fetch_single_quote(ticker: str) -> dict:
                 "change_pct": round(change_pct, 2),
                 "volume": info.get("volume") or 0,
             }
-            set_cache(cache_key, quote)
+            set_cache(cache_key, quote)  # L1
+            _db_cache_set(ticker, quote)  # L2
             return quote
         return {"ticker": ticker, "error": "No price data"}
     except Exception:

@@ -43,6 +43,7 @@ from app.batch.config import (
     INCREMENTAL_LOOKBACK_DAYS,
     DAILY_LOOKBACK_DAYS,
     DAILY_FRED_LOOKBACK_DAYS,
+    get_supabase,
 )
 from app.batch.db import (
     upsert_credit_spreads,
@@ -184,6 +185,14 @@ def _run_daily(end: str):
 
     rows = fetch_bank_sector(yahoo_start, end)
     upsert_bank_sector(rows)
+
+    # 期限切れ stock_cache を掃除
+    try:
+        sb = get_supabase()
+        sb.table("stock_cache").delete().lt("expires_at", datetime.now().isoformat()).execute()
+        logger.info("Cleaned expired stock_cache rows")
+    except Exception as e:
+        logger.debug(f"stock_cache cleanup skipped: {e}")
 
     # ポートフォリオスナップショット（市場データ取得後に実行）
     logger.info("--- Portfolio snapshot ---")
