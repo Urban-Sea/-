@@ -19,6 +19,8 @@ import {
   createHolding, updateHolding, deleteHolding, sellFromHolding,
 } from '@/lib/api';
 import { GlassCard, StatusChip, ScoreRing } from '@/components/shared/glass';
+import DonutChart from '@/components/charts/DonutChart';
+import type { DonutSegment } from '@/components/charts/DonutChart';
 import type { HoldingRecord, TradeRecord, TradeStats, StockQuote } from '@/types';
 
 // ============================================================
@@ -54,6 +56,20 @@ const ACCOUNT_COLORS: Record<string, { chipColor: string; border: string; text: 
   nisa:    { chipColor: 'green', border: 'border-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
   tokutei: { chipColor: 'orange', border: 'border-orange-500', text: 'text-orange-600 dark:text-orange-400' },
 };
+
+const DONUT_SECTOR_COLORS: Record<string, string> = {
+  'AI Infrastructure': '#a855f7', 'AI Chips': '#3b82f6',
+  'Space': '#06b6d4', 'Nuclear': '#f97316', 'Power Grid': '#10b981',
+  'Robotics': '#ec4899', 'Drones': '#f59e0b', 'Defense': '#64748b',
+  'Quantum': '#8b5cf6', 'Crypto': '#eab308', 'Rare Minerals': '#14b8a6',
+  'Finance': '#0d9488', 'Battery': '#84cc16', 'Tech': '#6366f1',
+  'Index': '#71717a', 'Other': '#52525b',
+};
+
+const STOCK_PALETTE = [
+  '#3b82f6', '#a855f7', '#06b6d4', '#10b981', '#f97316',
+  '#ec4899', '#eab308', '#8b5cf6', '#14b8a6', '#6366f1',
+];
 
 function formatUSD(v: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
@@ -205,6 +221,106 @@ function AccountBreakdown({ holdings, quotes, fxRate }: {
           </div>
         </GlassCard>
       ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Portfolio Charts (3 donut charts)
+// ============================================================
+
+function PortfolioCharts({ holdings, quotes }: {
+  holdings: HoldingRecord[]; quotes: Map<string, StockQuote>;
+}) {
+  const { sectorSegments, accountSegments, stockSegments, totalValUsd } = useMemo(() => {
+    // Sector aggregation
+    const sectorMap = new Map<string, number>();
+    // Account aggregation
+    let nisaVal = 0, tokuteiVal = 0;
+    // Stock aggregation
+    const stockMap = new Map<string, number>();
+
+    let totalVal = 0;
+    for (const h of holdings) {
+      const price = quotes.get(h.ticker)?.price ?? h.avg_price;
+      const mv = h.shares * price;
+      totalVal += mv;
+
+      const sector = h.sector || 'Other';
+      sectorMap.set(sector, (sectorMap.get(sector) || 0) + mv);
+
+      if (h.account_type === 'nisa') nisaVal += mv;
+      else tokuteiVal += mv;
+
+      stockMap.set(h.ticker, (stockMap.get(h.ticker) || 0) + mv);
+    }
+
+    const sectorSegs: DonutSegment[] = Array.from(sectorMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({
+        label,
+        value,
+        color: DONUT_SECTOR_COLORS[label] || DONUT_SECTOR_COLORS['Other'],
+      }));
+
+    const accountSegs: DonutSegment[] = [];
+    if (nisaVal > 0) accountSegs.push({ label: 'NISA', value: nisaVal, color: '#10b981' });
+    if (tokuteiVal > 0) accountSegs.push({ label: '特定', value: tokuteiVal, color: '#f97316' });
+
+    const stockSegs: DonutSegment[] = Array.from(stockMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({
+        label,
+        value,
+        color: STOCK_PALETTE[i % STOCK_PALETTE.length],
+      }));
+
+    return { sectorSegments: sectorSegs, accountSegments: accountSegs, stockSegments: stockSegs, totalValUsd: totalVal };
+  }, [holdings, quotes]);
+
+  if (holdings.length === 0) return null;
+
+  const charts = [
+    {
+      title: 'セクター配分',
+      segments: sectorSegments,
+      centerValue: formatUSD(totalValUsd),
+      centerLabel: '総評価額',
+    },
+    {
+      title: '口座配分',
+      segments: accountSegments,
+      centerValue: String(accountSegments.length),
+      centerLabel: '口座タイプ',
+    },
+    {
+      title: '銘柄別配分',
+      segments: stockSegments,
+      centerValue: String(new Set(holdings.map(h => h.ticker)).size),
+      centerLabel: '銘柄数',
+    },
+  ];
+
+  return (
+    <div className="plumb-animate-in plumb-stagger-3">
+      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400 mb-2">ポートフォリオ配分</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {charts.map((c) => (
+          <GlassCard key={c.title}>
+            <div className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">{c.title}</p>
+              <DonutChart
+                segments={c.segments}
+                height={240}
+                centerValue={c.centerValue}
+                centerLabel={c.centerLabel}
+                valueFormat={formatUSD}
+                maxSegments={8}
+              />
+            </div>
+          </GlassCard>
+        ))}
+      </div>
     </div>
   );
 }
@@ -943,6 +1059,7 @@ export default function HoldingsPage() {
           <FxBar fxRate={fxRate} onFxRateChange={setFxRate} />
           <PortfolioHero holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <AccountBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
+          <PortfolioCharts holdings={holdings} quotes={quotes} />
           <SectorBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <HoldingsTable
             holdings={holdings}
