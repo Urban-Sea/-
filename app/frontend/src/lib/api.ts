@@ -196,6 +196,27 @@ export async function createTrade(trade: Partial<TradeRecord>, userId?: string):
   });
 }
 
+// Sell from Holding API
+export async function sellFromHolding(params: {
+  holding_id: string;
+  shares: number;
+  price: number;
+  trade_date: string;
+  fees?: number;
+  reason?: string;
+  lessons_learned?: string;
+}): Promise<{ status: string; trade: TradeRecord; holding_status: string; profit_loss: number; profit_loss_pct: number }> {
+  const sp = new URLSearchParams();
+  sp.set('holding_id', params.holding_id);
+  sp.set('shares', String(params.shares));
+  sp.set('price', String(params.price));
+  sp.set('trade_date', params.trade_date);
+  if (params.fees != null) sp.set('fees', String(params.fees));
+  if (params.reason) sp.set('reason', params.reason);
+  if (params.lessons_learned) sp.set('lessons_learned', params.lessons_learned);
+  return fetchAPI(`/api/trades/sell-from-holding?${sp.toString()}`, { method: 'POST' });
+}
+
 // Employment API
 export async function getEmploymentOverview(): Promise<EmploymentOverview> {
   return fetchAPI('/api/employment/overview');
