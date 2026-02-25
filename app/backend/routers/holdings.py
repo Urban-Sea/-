@@ -3,11 +3,14 @@
 設計ドキュメント準拠
 """
 import re
+import logging
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import main
 from auth import require_auth
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -127,7 +130,8 @@ async def get_holdings(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/{ticker}", response_model=HoldingRecord)
@@ -162,7 +166,8 @@ async def get_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.post("", response_model=HoldingRecord)
@@ -205,7 +210,8 @@ async def create_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.put("/{holding_id}", response_model=HoldingRecord)
@@ -261,7 +267,8 @@ async def update_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.delete("/{holding_id}")
@@ -293,7 +300,8 @@ async def delete_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.post("/{holding_id}/add-shares")
@@ -352,4 +360,5 @@ async def add_shares(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.exception("Holdings API error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
