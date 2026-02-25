@@ -22,12 +22,12 @@ _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(_env_path)
 
 # ===== 環境変数 =====
-SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
 # SECURITY WARNING: service_role キーは RLS をバイパスする最高権限キーです。
 # 将来的には書き込み専用の制限付きロールへの移行を推奨します。
 # 参考: https://supabase.com/docs/guides/auth/row-level-security
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-FRED_API_KEY = os.environ["FRED_API_KEY"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"].strip()
+FRED_API_KEY = os.environ["FRED_API_KEY"].strip()
 
 # ===== FRED 系列ID =====
 # FRED API ドキュメント: https://fred.stlouisfed.org/docs/api/fred/series_observations.html
