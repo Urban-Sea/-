@@ -149,7 +149,7 @@ async def get_trades(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Trades error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/stats", response_model=TradeStats)
