@@ -261,11 +261,7 @@ export default function EconChartCanvas({
           ctx.lineTo(lastPt.x, padding.top + chartHeight);
           ctx.lineTo(firstPt.x, padding.top + chartHeight);
           ctx.closePath();
-          const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
           const baseColor = s.color;
-          gradient.addColorStop(0, baseColor.replace(')', ',0.15)').replace('rgb(', 'rgba(').replace('#', ''));
-          gradient.addColorStop(1, 'rgba(0,0,0,0)');
-          // Simple alpha gradient from color
           const r = parseInt(baseColor.length === 7 ? baseColor.slice(1, 3) : 'ff', 16);
           const g = parseInt(baseColor.length === 7 ? baseColor.slice(3, 5) : 'ff', 16);
           const b = parseInt(baseColor.length === 7 ? baseColor.slice(5, 7) : 'ff', 16);
