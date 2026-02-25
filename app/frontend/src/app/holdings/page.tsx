@@ -23,7 +23,7 @@ import {
 import { GlassCard, StatusChip, ScoreRing } from '@/components/shared/glass';
 import DonutChart from '@/components/charts/DonutChart';
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
-import type { ChartSeries, ChartEventMarker } from '@/components/charts/EconChartCanvas';
+import type { ChartSeries } from '@/components/charts/EconChartCanvas';
 import type { DonutSegment } from '@/components/charts/DonutChart';
 import type { HoldingRecord, TradeRecord, TradeStats, StockQuote } from '@/types';
 
@@ -974,40 +974,38 @@ function AssetTrendsTab() {
 
   const series: ChartSeries[] = [
     {
-      data: history.map((p) => ({ x: p.date, y: p.total_cost_usd })),
+      data: history.map((p) => ({ x: p.date, y: p.total_assets_usd })),
       type: 'area',
-      color: '#3b82f6',
-      label: '保有評価額 (取得額ベース)',
+      color: '#06b6d4',
+      label: '総資産 (時価+現金)',
     },
     {
-      data: history.map((p) => ({ x: p.date, y: p.cumulative_invested_usd })),
+      data: history.map((p) => ({ x: p.date, y: p.total_market_value_usd })),
+      type: 'line',
+      color: '#3b82f6',
+      label: 'ポートフォリオ時価',
+    },
+    {
+      data: history.map((p) => ({ x: p.date, y: p.total_cost_usd })),
       type: 'line',
       color: '#71717a',
-      label: '累積投資額',
+      label: '取得原価',
       dashed: true,
     },
     {
-      data: history.map((p) => ({ x: p.date, y: p.realized_pnl })),
+      data: history.map((p) => ({ x: p.date, y: p.unrealized_pnl_usd })),
       type: 'line',
       color: '#10b981',
-      label: '累積実現損益',
+      label: '含み損益',
       yAxisSide: 'right' as const,
     },
   ];
 
-  const eventMarkers: ChartEventMarker[] = history
-    .filter((p) => p.event.startsWith('SELL'))
-    .map((p) => ({
-      date: p.date,
-      label: p.event,
-      color: 'rgba(248, 113, 113, 0.5)',
-    }));
-
   const summaryItems = [
-    { label: '累積投資額', value: formatUSD(summary?.total_invested_usd ?? 0), color: '' },
-    { label: '実現損益', value: formatUSD(summary?.total_realized_pnl ?? 0), color: pnlClass(summary?.total_realized_pnl ?? 0) },
-    { label: '総取引数', value: String(summary?.total_trades ?? 0), color: 'text-blue-600 dark:text-blue-400' },
-    { label: '現金残高 (USD換算)', value: formatUSD(summary?.total_cash_usd ?? 0), color: 'text-cyan-600 dark:text-cyan-400' },
+    { label: '総資産', value: formatUSD(summary?.total_assets_usd ?? 0), color: 'text-cyan-600 dark:text-cyan-400' },
+    { label: 'ポートフォリオ時価', value: formatUSD(summary?.total_market_value_usd ?? 0), color: '' },
+    { label: '含み損益', value: formatUSD(summary?.unrealized_pnl_usd ?? 0), color: pnlClass(summary?.unrealized_pnl_usd ?? 0) },
+    { label: '現金残高 (USD)', value: formatUSD(summary?.total_cash_usd ?? 0), color: 'text-zinc-500 dark:text-zinc-400' },
   ];
 
   return (
@@ -1025,34 +1023,13 @@ function AssetTrendsTab() {
       {/* Chart */}
       <GlassCard>
         <div className="p-4">
-          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">資産推移チャート</h3>
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">資産推移チャート (日次スナップショット)</h3>
           <EconChartCanvas
             series={series}
-            eventMarkers={eventMarkers}
             yAxisFormat={(v) => `$${(v / 1000).toFixed(1)}K`}
             yAxisRightFormat={(v) => `$${v.toFixed(0)}`}
             height={420}
           />
-        </div>
-      </GlassCard>
-
-      {/* Event Log */}
-      <GlassCard>
-        <div className="p-4">
-          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">取引イベント</h3>
-          <div className="max-h-60 overflow-y-auto space-y-1">
-            {[...history].reverse().map((p, i) => (
-              <div key={i} className="flex items-center gap-3 text-xs font-mono py-1 border-b border-white/5 last:border-0">
-                <span className="text-muted-foreground w-20 shrink-0">{p.date}</span>
-                <StatusChip
-                  label={p.event.startsWith('BUY') ? 'BUY' : p.event.startsWith('SELL') ? 'SELL' : 'OTHER'}
-                  color={p.event.startsWith('BUY') ? 'green' : 'red'}
-                />
-                <span className="truncate">{p.event}</span>
-                <span className="ml-auto text-muted-foreground">{p.holdings_count}銘柄</span>
-              </div>
-            ))}
-          </div>
         </div>
       </GlassCard>
     </div>

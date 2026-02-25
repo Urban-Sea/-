@@ -239,3 +239,9 @@ def upsert_weekly_claims(rows: List[dict]) -> int:
 
 def upsert_economic_indicators(rows: List[dict]) -> int:
     return _upsert_batch("economic_indicators", _add_updated_at(rows), conflict_col="indicator,reference_period")
+
+
+# ===== ポートフォリオスナップショット =====
+
+def upsert_portfolio_snapshots(rows: List[dict]) -> int:
+    return _upsert_batch("portfolio_snapshots", rows, conflict_col="user_id,snapshot_date")

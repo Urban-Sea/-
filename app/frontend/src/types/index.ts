@@ -262,23 +262,25 @@ export interface TradeStats {
   profit_factor: number;
 }
 
-// Portfolio History
+// Portfolio History (snapshot-based, market value)
 export interface PortfolioHistoryPoint {
   date: string;
+  total_market_value_usd: number;
   total_cost_usd: number;
-  cumulative_invested_usd: number;
-  realized_pnl: number;
+  unrealized_pnl_usd: number;
+  cash_usd: number;
+  total_assets_usd: number;
   holdings_count: number;
-  event: string;
 }
 
 export interface PortfolioHistoryResponse {
   history: PortfolioHistoryPoint[];
   summary: {
-    total_invested_usd: number;
-    total_realized_pnl: number;
-    total_trades: number;
+    total_market_value_usd: number;
+    total_cost_usd: number;
+    unrealized_pnl_usd: number;
     total_cash_usd: number;
+    total_assets_usd: number;
   };
 }
 

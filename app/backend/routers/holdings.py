@@ -4,7 +4,7 @@
 """
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -146,109 +146,47 @@ async def get_portfolio_history(
     user_email: str = Depends(require_auth),
 ):
     """
-    取引履歴から日付順にポートフォリオの推移を再構築。
-    各取引時点での投資額・累積実現損益・保有銘柄数を返す。
+    日次ポートフォリオスナップショットを返す（時価ベース）。
+    バッチ (snapshot.py) が毎日保存したデータを直接クエリ。
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        trades_result = (
-            supabase.table("trades")
-            .select("*")
+        cutoff = (datetime.now() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
+
+        result = (
+            supabase.table("portfolio_snapshots")
+            .select("snapshot_date, total_market_value_usd, total_cost_usd, unrealized_pnl_usd, cash_usd, total_assets_usd, holdings_count")
             .eq("user_id", user_email)
-            .order("trade_date", desc=False)
+            .gte("snapshot_date", cutoff)
+            .order("snapshot_date", desc=False)
             .execute()
         )
-        trades = trades_result.data or []
 
-        # 現金残高を取得（テーブルがなくても動くように）
-        total_cash_usd = 0.0
-        try:
-            cash_result = (
-                supabase.table("cash_balances")
-                .select("*")
-                .eq("user_id", user_email)
-                .execute()
-            )
-            cash_rows = cash_result.data or []
-            total_cash_usd = sum(
-                r["amount"] if r.get("currency", "USD") == "USD" else r["amount"] / 150.0
-                for r in cash_rows
-            )
-        except Exception:
-            pass  # テーブル未作成時はスキップ
-
-        if not trades:
-            return {
-                "history": [],
-                "summary": {
-                    "total_invested_usd": 0,
-                    "total_realized_pnl": 0,
-                    "total_trades": 0,
-                    "total_cash_usd": total_cash_usd,
-                },
-            }
-
-        # ポートフォリオ状態を日付順に構築
-        holdings_state: dict = {}
-        cumulative_invested = 0.0
-        cumulative_realized_pnl = 0.0
-        history = []
-
-        for trade in trades:
-            ticker = trade["ticker"]
-            action = trade["action"]
-            shares = float(trade["shares"])
-            price = float(trade["price"])
-            trade_date = trade["trade_date"]
-            pnl = float(trade.get("profit_loss") or 0)
-
-            if action == "BUY":
-                if ticker in holdings_state:
-                    old = holdings_state[ticker]
-                    new_shares = old["shares"] + shares
-                    new_avg = ((old["shares"] * old["avg_price"]) + (shares * price)) / new_shares
-                    holdings_state[ticker] = {"shares": new_shares, "avg_price": new_avg}
-                else:
-                    holdings_state[ticker] = {"shares": shares, "avg_price": price}
-                cumulative_invested += shares * price
-                event = f"BUY {ticker} {shares:.1f}@{price:.2f}"
-
-            elif action == "SELL":
-                if ticker in holdings_state:
-                    old = holdings_state[ticker]
-                    remaining = old["shares"] - shares
-                    if remaining <= 0.001:
-                        del holdings_state[ticker]
-                    else:
-                        holdings_state[ticker] = {"shares": remaining, "avg_price": old["avg_price"]}
-                cumulative_realized_pnl += pnl
-                event = f"SELL {ticker} {shares:.1f}@{price:.2f}"
-            else:
-                event = f"{action} {ticker}"
-
-            total_cost = sum(
-                h["shares"] * h["avg_price"] for h in holdings_state.values()
-            )
-
-            history.append({
-                "date": trade_date[:10] if trade_date else "",
-                "total_cost_usd": round(total_cost, 2),
-                "cumulative_invested_usd": round(cumulative_invested, 2),
-                "realized_pnl": round(cumulative_realized_pnl, 2),
-                "holdings_count": len(holdings_state),
-                "event": event,
-            })
+        snapshots = result.data or []
+        latest = snapshots[-1] if snapshots else None
 
         return {
-            "history": history,
+            "history": [
+                {
+                    "date": s["snapshot_date"],
+                    "total_market_value_usd": float(s["total_market_value_usd"]),
+                    "total_cost_usd": float(s["total_cost_usd"]),
+                    "unrealized_pnl_usd": float(s["unrealized_pnl_usd"]),
+                    "cash_usd": float(s["cash_usd"]),
+                    "total_assets_usd": float(s["total_assets_usd"]),
+                    "holdings_count": s["holdings_count"],
+                }
+                for s in snapshots
+            ],
             "summary": {
-                "total_invested_usd": round(cumulative_invested, 2),
-                "total_realized_pnl": round(cumulative_realized_pnl, 2),
-                "total_trades": len(trades),
-                "total_cash_usd": round(total_cash_usd, 2),
+                "total_market_value_usd": float(latest["total_market_value_usd"]) if latest else 0,
+                "total_cost_usd": float(latest["total_cost_usd"]) if latest else 0,
+                "unrealized_pnl_usd": float(latest["unrealized_pnl_usd"]) if latest else 0,
+                "total_cash_usd": float(latest["cash_usd"]) if latest else 0,
+                "total_assets_usd": float(latest["total_assets_usd"]) if latest else 0,
             },
         }
 

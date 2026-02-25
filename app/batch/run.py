@@ -68,6 +68,7 @@ from app.batch.fetchers.nyfed import fetch_srf_data
 from app.batch.fetchers.yahoo import fetch_bank_sector, fetch_market_indicators
 from app.batch.calculators.layer_stress import calculate_monthly_states
 from app.batch.calculators.precompute import precompute_all
+from app.batch.snapshot import take_daily_snapshot
 import urllib.request
 
 logger = logging.getLogger("batch")
@@ -184,6 +185,13 @@ def _run_daily(end: str):
     rows = fetch_bank_sector(yahoo_start, end)
     upsert_bank_sector(rows)
 
+    # ポートフォリオスナップショット（市場データ取得後に実行）
+    logger.info("--- Portfolio snapshot ---")
+    try:
+        take_daily_snapshot(snapshot_date=end)
+    except Exception as e:
+        logger.warning(f"Portfolio snapshot failed (non-fatal): {e}")
+
 
 def _run_weekly(start: str, end: str):
     """週次更新データ: FRBバランスシート(WALCL, WTREGEN), RRP, SRF"""
@@ -224,6 +232,10 @@ def main():
     parser.add_argument("--precompute", action="store_true",
                         help="事前計算のみ（API結果をSupabaseに保存）")
     parser.add_argument("--full", action="store_true", help="15年分フル取得 + Layer計算")
+    parser.add_argument("--snapshot", action="store_true",
+                        help="ポートフォリオスナップショットのみ")
+    parser.add_argument("--backfill-snapshots", action="store_true",
+                        help="過去の取引履歴からスナップショットをバックフィル")
     parser.add_argument("--since", type=str, help="指定日以降を取得 (YYYY-MM-DD)")
     parser.add_argument("--verbose", "-v", action="store_true", help="DEBUG ログ")
     args = parser.parse_args()
@@ -246,13 +258,23 @@ def main():
         # デフォルト: 3年分
         start = (datetime.now() - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
-    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.precompute or args.daily or args.weekly
+    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.precompute or args.daily or args.weekly or args.snapshot or getattr(args, 'backfill_snapshots', False)
     t0 = time.time()
 
     logger.info(f"=== Batch run: {start} → {end} ===")
 
     try:
-        if args.precompute:
+        if args.snapshot:
+            # スナップショットのみ
+            take_daily_snapshot(snapshot_date=end)
+
+        elif getattr(args, 'backfill_snapshots', False):
+            # バックフィル
+            from app.batch.backfill_snapshots import backfill_snapshots
+            since = args.since or (datetime.now() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
+            backfill_snapshots(since=since)
+
+        elif args.precompute:
             # 事前計算のみ
             precompute_all()
             _warmup_cache()
