@@ -99,9 +99,14 @@ async def root():
 @app.get("/health")
 async def health_check():
     """詳細ヘルスチェック"""
+    raw_key = (os.getenv("SUPABASE_KEY") or "").strip()
+    raw_anon = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
+    kt = "service_role" if raw_key else ("anon" if raw_anon else "none")
     return {
         "status": "healthy",
         "supabase": "connected" if supabase else "disconnected",
+        "key_type": kt,
+        "key_len": len(raw_key) if raw_key else len(raw_anon),
     }
 
 
