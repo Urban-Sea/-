@@ -86,6 +86,85 @@ def set_cache(key: str, data: dict):
     }
 
 
+def _fetch_single_quote(ticker: str) -> dict:
+    """1銘柄の株価を取得（同期、スレッドプール用）"""
+    ticker = ticker.upper()
+    cache_key = f"quote:{ticker}"
+    cached = get_cached(cache_key)
+    if cached:
+        return cached
+
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        current_price = info.get("regularMarketPrice") or info.get("currentPrice")
+        prev_close = info.get("previousClose")
+
+        if current_price:
+            change = current_price - prev_close if prev_close else 0
+            change_pct = (change / prev_close * 100) if prev_close else 0
+            quote = {
+                "ticker": ticker,
+                "price": round(current_price, 2),
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2),
+                "volume": info.get("volume") or 0,
+            }
+            set_cache(cache_key, quote)
+            return quote
+        return {"ticker": ticker, "error": "No price data"}
+    except Exception:
+        return {"ticker": ticker, "error": "Failed to fetch"}
+
+
+# === Static routes MUST come before /{ticker} dynamic route ===
+
+@router.get("/batch-quotes")
+async def get_batch_quotes_cached(
+    tickers: str = Query(..., description="Comma-separated tickers, max 20"),
+):
+    """
+    GET variant of batch quotes (cacheable by Cloudflare Worker).
+    Example: /api/stock/batch-quotes?tickers=NVDA,TSLA,AAPL
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if len(ticker_list) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 tickers allowed")
+    target = [t for t in ticker_list if _TICKER_RE.match(t)][:20]
+    loop = asyncio.get_event_loop()
+    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
+    results = await asyncio.gather(*tasks)
+
+    return {
+        "quotes": list(results),
+        "count": len(results),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+
+@router.post("/batch")
+async def get_batch_quotes(
+    tickers: List[str],
+):
+    """
+    複数銘柄の株価を一括取得（並列実行、最大20銘柄）
+    """
+    if len(tickers) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 tickers allowed")
+    target = [t.upper() for t in tickers if _TICKER_RE.match(t.upper())][:20]
+    loop = asyncio.get_event_loop()
+    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
+    results = await asyncio.gather(*tasks)
+
+    return {
+        "quotes": list(results),
+        "count": len(results),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+
+# === Dynamic routes ===
+
 @router.get("/{ticker}", response_model=StockInfo)
 async def get_stock_info(ticker: str):
     """
@@ -326,77 +405,3 @@ async def get_stock_ema(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-def _fetch_single_quote(ticker: str) -> dict:
-    """1銘柄の株価を取得（同期、スレッドプール用）"""
-    ticker = ticker.upper()
-    cache_key = f"quote:{ticker}"
-    cached = get_cached(cache_key)
-    if cached:
-        return cached
-
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        current_price = info.get("regularMarketPrice") or info.get("currentPrice")
-        prev_close = info.get("previousClose")
-
-        if current_price:
-            change = current_price - prev_close if prev_close else 0
-            change_pct = (change / prev_close * 100) if prev_close else 0
-            quote = {
-                "ticker": ticker,
-                "price": round(current_price, 2),
-                "change": round(change, 2),
-                "change_pct": round(change_pct, 2),
-                "volume": info.get("volume") or 0,
-            }
-            set_cache(cache_key, quote)
-            return quote
-        return {"ticker": ticker, "error": "No price data"}
-    except Exception:
-        return {"ticker": ticker, "error": "Failed to fetch"}
-
-
-@router.post("/batch")
-async def get_batch_quotes(
-    tickers: List[str],
-):
-    """
-    複数銘柄の株価を一括取得（並列実行、最大20銘柄）
-    """
-    if len(tickers) > 50:
-        raise HTTPException(status_code=400, detail="Maximum 50 tickers allowed")
-    # バリデーション済みのtickerのみ使用
-    target = [t.upper() for t in tickers if _TICKER_RE.match(t.upper())][:20]
-    loop = asyncio.get_event_loop()
-    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
-    results = await asyncio.gather(*tasks)
-
-    return {
-        "quotes": list(results),
-        "count": len(results),
-        "updated_at": datetime.now().isoformat(),
-    }
-
-
-@router.get("/batch-quotes")
-async def get_batch_quotes_cached(
-    tickers: str = Query(..., description="Comma-separated tickers, max 20"),
-):
-    """
-    GET variant of batch quotes (cacheable by Cloudflare Worker).
-    Example: /api/stock/batch-quotes?tickers=NVDA,TSLA,AAPL
-    """
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-    if len(ticker_list) > 20:
-        raise HTTPException(status_code=400, detail="Maximum 20 tickers allowed")
-    target = [t for t in ticker_list if _TICKER_RE.match(t)][:20]
-    loop = asyncio.get_event_loop()
-    tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
-    results = await asyncio.gather(*tasks)
-
-    return {
-        "quotes": list(results),
-        "count": len(results),
-        "updated_at": datetime.now().isoformat(),
-    }
