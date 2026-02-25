@@ -246,6 +246,15 @@ export async function getRiskHistory(months = 120): Promise<RiskHistoryResponse>
   return fetchAPI(`/api/employment/risk-history?months=${months}`);
 }
 
+// FX API
+export async function getUsdJpy(): Promise<{ rate: number }> {
+  return fetchAPI('/api/fx/usdjpy');
+}
+
+export function useUsdJpy() {
+  return useSWR('usdjpy', getUsdJpy, { refreshInterval: 5 * 60 * 1000 });
+}
+
 // Stock Price API
 export async function getStockQuote(ticker: string): Promise<StockQuote> {
   const response = await fetchAPI<{ ticker: string; quote: StockQuote }>(`/api/stock/${ticker}/quote`);

@@ -96,6 +96,7 @@ YAHOO_TICKERS = {
     "nasdaq": "^IXIC",            # NASDAQ           確認: https://finance.yahoo.com/quote/%5EIXIC/
     "russell2000": "^RUT",        # Russell 2000     確認: https://finance.yahoo.com/quote/%5ERUT/
     "kre": "KRE",                 # 地方銀行ETF      確認: https://finance.yahoo.com/quote/KRE/
+    "usdjpy": "JPY=X",            # ドル円           確認: https://finance.yahoo.com/quote/JPY=X/
 }
 
 # ===== NY Fed SRF =====

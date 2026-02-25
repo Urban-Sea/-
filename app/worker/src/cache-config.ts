@@ -29,6 +29,7 @@ const CACHE_RULES: CacheRule[] = [
   // Market-connected, short cache
   { pattern: /^\/api\/regime$/, ttl: 5 * 60 },
   { pattern: /^\/api\/market-state\/latest$/, ttl: 5 * 60 },
+  { pattern: /^\/api\/fx\/usdjpy$/, ttl: 5 * 60 },
 
   // No cache: user CRUD
   { pattern: /^\/api\/holdings/, ttl: 0 },

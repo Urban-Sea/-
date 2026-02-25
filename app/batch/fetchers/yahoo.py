@@ -39,6 +39,7 @@ def fetch_market_indicators(start: str, end: str) -> List[dict]:
         "sp500": YAHOO_TICKERS["sp500"],
         "nasdaq": YAHOO_TICKERS["nasdaq"],
         "russell2000": YAHOO_TICKERS["russell2000"],
+        "usdjpy": YAHOO_TICKERS["usdjpy"],
     }
 
     # 各ティッカーのデータを取得

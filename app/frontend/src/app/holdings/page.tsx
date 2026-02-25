@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  useHoldings, useTrades, useTradeStats, useBatchQuotes,
+  useHoldings, useTrades, useTradeStats, useBatchQuotes, useUsdJpy,
   createHolding, updateHolding, deleteHolding, sellFromHolding,
 } from '@/lib/api';
 import { GlassCard, StatusChip, ScoreRing } from '@/components/shared/glass';
@@ -98,18 +98,20 @@ function pnlClass(v: number): string {
 // FX Bar
 // ============================================================
 
-function FxBar({ fxRate, onFxRateChange }: { fxRate: number; onFxRateChange: (r: number) => void }) {
+function FxBar({ fxRate, isLive, onFxRateChange }: { fxRate: number; isLive: boolean; onFxRateChange: (r: number) => void }) {
   return (
     <div className="plumb-glass rounded-lg px-4 py-3 flex items-center justify-between plumb-glass-hover plumb-animate-in plumb-stagger-1">
       <div className="flex items-center gap-4">
         <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">USD/JPY</span>
         <span className="text-lg font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400">{fxRate.toFixed(2)}</span>
+        {isLive && <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">LIVE</span>}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground">手動入力:</span>
+        <span className="text-[11px] text-muted-foreground">上書き:</span>
         <Input
           type="number"
           step="0.01"
+          key={fxRate}
           defaultValue={fxRate}
           className="w-24 h-7 text-xs font-mono text-right"
           onBlur={(e) => {
@@ -979,8 +981,14 @@ export default function HoldingsPage() {
     return map;
   }, [quotesData]);
 
-  // Local state
+  // Auto-fetch USD/JPY
+  const { data: fxData } = useUsdJpy();
   const [fxRate, setFxRate] = useState(150.0);
+  useEffect(() => {
+    if (fxData?.rate) setFxRate(fxData.rate);
+  }, [fxData]);
+
+  // Local state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<HoldingRecord | null>(null);
   const [sellTarget, setSellTarget] = useState<HoldingRecord | null>(null);
@@ -1056,7 +1064,7 @@ export default function HoldingsPage() {
 
         {/* Portfolio Tab */}
         <TabsContent value="portfolio" className="mt-4 space-y-4">
-          <FxBar fxRate={fxRate} onFxRateChange={setFxRate} />
+          <FxBar fxRate={fxRate} isLive={!!fxData?.rate} onFxRateChange={setFxRate} />
           <PortfolioHero holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <AccountBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <PortfolioCharts holdings={holdings} quotes={quotes} />
