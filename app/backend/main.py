@@ -102,12 +102,26 @@ async def health_check():
     """詳細ヘルスチェック"""
     raw_key = (os.getenv("SUPABASE_KEY") or "").strip()
     raw_anon = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
+    active_key = raw_key or raw_anon
     kt = "service_role" if raw_key else ("anon" if raw_anon else "none")
+    # JWT の role を直接確認
+    import base64, json
+    role = "unknown"
+    try:
+        payload = active_key.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        role = json.loads(base64.b64decode(payload)).get("role", "unknown")
+    except Exception:
+        pass
     return {
         "status": "healthy",
         "supabase": "connected" if supabase else "disconnected",
-        "key_type": kt,
-        "key_len": len(raw_key) if raw_key else len(raw_anon),
+        "env_key_exists": bool(raw_key),
+        "env_anon_exists": bool(raw_anon),
+        "env_key_len": len(raw_key),
+        "env_anon_len": len(raw_anon),
+        "active_key_type": kt,
+        "jwt_role": role,
     }
 
 
