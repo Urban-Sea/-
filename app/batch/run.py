@@ -68,8 +68,37 @@ from app.batch.fetchers.nyfed import fetch_srf_data
 from app.batch.fetchers.yahoo import fetch_bank_sector, fetch_market_indicators
 from app.batch.calculators.layer_stress import calculate_monthly_states
 from app.batch.calculators.precompute import precompute_all
+import urllib.request
 
 logger = logging.getLogger("batch")
+
+WORKER_URL = "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev"
+
+WARMUP_ENDPOINTS = [
+    "/api/regime",
+    "/api/market-state/latest",
+    "/api/employment/risk-score",
+    "/api/employment/overview",
+    "/api/employment/risk-history?months=120",
+    "/api/liquidity/overview",
+    "/api/liquidity/plumbing-summary",
+    "/api/liquidity/events",
+    "/api/liquidity/policy-regime",
+    "/api/liquidity/history-charts?period=2y",
+    "/api/liquidity/backtest-states?limit=120",
+    "/api/stocks",
+]
+
+
+def _warmup_cache():
+    """Worker キャッシュをウォームアップ（バッチ後に全エンドポイントを1回叩く）"""
+    logger.info("--- Cache warmup ---")
+    for ep in WARMUP_ENDPOINTS:
+        try:
+            urllib.request.urlopen(f"{WORKER_URL}{ep}", timeout=30)
+            logger.info(f"  ✓ {ep}")
+        except Exception as e:
+            logger.warning(f"  ✗ {ep}: {e}")
 
 
 # ===== データ取得関数 =====
@@ -226,17 +255,20 @@ def main():
         if args.precompute:
             # 事前計算のみ
             precompute_all()
+            _warmup_cache()
 
         elif args.daily:
             # daily は内部で FRED(3年) / Yahoo(14日) を分けて処理
             _run_daily(end)
             # データ更新後に事前計算を自動実行
             precompute_all()
+            _warmup_cache()
 
         elif args.weekly:
             _run_weekly(start, end)
             # データ更新後に事前計算を自動実行
             precompute_all()
+            _warmup_cache()
 
         else:
             # 個別指定 or 全実行
@@ -258,6 +290,7 @@ def main():
             # 全実行時も事前計算
             if not any_specific or args.full:
                 precompute_all()
+                _warmup_cache()
 
         elapsed = time.time() - t0
         logger.info(f"=== Done in {elapsed:.1f}s ===")
