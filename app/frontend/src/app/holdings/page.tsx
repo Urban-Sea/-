@@ -505,35 +505,23 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
 // Add Holding Modal
 // ============================================================
 
-function AddHoldingModal({ open, onClose, onSuccess }: {
-  open: boolean; onClose: () => void; onSuccess: () => void;
+function AddHoldingModal({ open, onClose, onAdd }: {
+  open: boolean; onClose: () => void; onAdd: (data: Partial<HoldingRecord>) => void;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
     const fd = new FormData(e.currentTarget);
-    try {
-      await createHolding({
-        ticker: (fd.get('ticker') as string).toUpperCase(),
-        shares: parseFloat(fd.get('shares') as string),
-        avg_price: parseFloat(fd.get('avg_price') as string),
-        entry_date: fd.get('entry_date') as string || undefined,
-        account_type: (fd.get('account_type') as 'nisa' | 'tokutei') || 'tokutei',
-        sector: (fd.get('sector') as string) || 'Other',
-        fx_rate: parseFloat(fd.get('fx_rate') as string) || 150.0,
-        thesis: (fd.get('thesis') as string) || undefined,
-      });
-      onSuccess();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '登録に失敗しました');
-    } finally {
-      setLoading(false);
-    }
+    onAdd({
+      ticker: (fd.get('ticker') as string).toUpperCase(),
+      shares: parseFloat(fd.get('shares') as string),
+      avg_price: parseFloat(fd.get('avg_price') as string),
+      entry_date: fd.get('entry_date') as string || undefined,
+      account_type: (fd.get('account_type') as 'nisa' | 'tokutei') || 'tokutei',
+      sector: (fd.get('sector') as string) || 'Other',
+      fx_rate: parseFloat(fd.get('fx_rate') as string) || 150.0,
+      thesis: (fd.get('thesis') as string) || undefined,
+    });
+    onClose();
   };
 
   return (
@@ -583,10 +571,9 @@ function AddHoldingModal({ open, onClose, onSuccess }: {
               <Input name="thesis" placeholder="例: AI需要の成長に期待" className="h-8 text-sm" />
             </div>
           </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={onClose}>キャンセル</Button>
-            <Button type="submit" size="sm" disabled={loading}>{loading ? '登録中...' : '登録'}</Button>
+            <Button type="submit" size="sm">登録</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1220,9 +1207,12 @@ function LoadingSkeleton() {
 // ============================================================
 
 export default function HoldingsPage() {
+  const [activeTab, setActiveTab] = useState('portfolio');
   const { data: holdingsData, error: holdingsError, isLoading: holdingsLoading, mutate: mutateHoldings } = useHoldings();
-  const { data: tradesData, isLoading: tradesLoading, mutate: mutateTrades } = useTrades({ limit: 100 });
-  const { data: stats, mutate: mutateStats } = useTradeStats();
+  // Lazy load: only fetch trades/stats when their tabs are visited
+  const tradesEnabled = activeTab === 'trades' || activeTab === 'stats';
+  const { data: tradesData, isLoading: tradesLoading, mutate: mutateTrades } = useTrades({ limit: 100, enabled: tradesEnabled });
+  const { data: stats, mutate: mutateStats } = useTradeStats(activeTab === 'stats');
 
   const holdings = holdingsData?.holdings ?? [];
   const trades = tradesData?.trades ?? [];
@@ -1257,6 +1247,33 @@ export default function HoldingsPage() {
     mutateTrades();
     mutateStats();
   }, [mutateHoldings, mutateTrades, mutateStats]);
+
+  const handleAddHolding = useCallback((data: Partial<HoldingRecord>) => {
+    const temp: HoldingRecord = {
+      id: `temp-${Date.now()}`,
+      user_id: '',
+      ticker: data.ticker || '',
+      shares: data.shares || 0,
+      avg_price: data.avg_price || 0,
+      ...data,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as HoldingRecord;
+
+    mutateHoldings(
+      async (current) => {
+        const result = await createHolding(data);
+        return { holdings: [...(current?.holdings ?? []), result], total: (current?.total ?? 0) + 1 };
+      },
+      {
+        optimisticData: (current) => ({
+          holdings: [...(current?.holdings ?? []), temp],
+          total: (current?.total ?? 0) + 1,
+        }),
+        rollbackOnError: true,
+      },
+    );
+  }, [mutateHoldings]);
 
   const handleDelete = useCallback(async (h: HoldingRecord) => {
     try {
@@ -1306,7 +1323,7 @@ export default function HoldingsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="portfolio">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="plumb-glass rounded-lg p-1 border-none w-full justify-start">
           <TabsTrigger value="portfolio" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
             ポートフォリオ ({holdings.length})
@@ -1315,7 +1332,7 @@ export default function HoldingsPage() {
             資産推移
           </TabsTrigger>
           <TabsTrigger value="trades" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
-            取引履歴 ({trades.length})
+            取引履歴{tradesData ? ` (${trades.length})` : ''}
           </TabsTrigger>
           <TabsTrigger value="stats" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
             統計
@@ -1370,7 +1387,7 @@ export default function HoldingsPage() {
       </Tabs>
 
       {/* Modals */}
-      <AddHoldingModal open={addModalOpen} onClose={() => setAddModalOpen(false)} onSuccess={mutateAll} />
+      <AddHoldingModal open={addModalOpen} onClose={() => setAddModalOpen(false)} onAdd={handleAddHolding} />
       <EditHoldingModal holding={editTarget} onClose={() => setEditTarget(null)} onSuccess={mutateAll} />
       <SellHoldingModal
         holding={sellTarget}

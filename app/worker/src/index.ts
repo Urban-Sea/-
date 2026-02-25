@@ -61,11 +61,23 @@ export default {
     // Remove host header so Railway gets the correct one
     proxyHeaders.delete('Host');
 
-    const proxyResponse = await fetch(proxyUrl, {
-      method: request.method,
-      headers: proxyHeaders,
-      body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
-    });
+    let proxyResponse: Response;
+    try {
+      proxyResponse = await fetch(proxyUrl, {
+        method: request.method,
+        headers: proxyHeaders,
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
+      });
+    } catch (err) {
+      // Railway cold start / network error → return 502 instead of crashing (520)
+      return new Response(
+        JSON.stringify({ detail: `Origin unavailable: ${err instanceof Error ? err.message : String(err)}` }),
+        {
+          status: 502,
+          headers: { ...cors, 'Content-Type': 'application/json' },
+        },
+      );
+    }
 
     // Build response with CORS
     const responseHeaders = new Headers(proxyResponse.headers);

@@ -7,11 +7,11 @@ import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
 const navItems = [
-  { href: '/', label: '統合' },
-  { href: '/liquidity', label: '配管' },
-  { href: '/employment', label: '米国景気' },
-  { href: '/signals', label: 'シグナル' },
-  { href: '/holdings', label: '保有' },
+  { href: '/', label: '統合システム' },
+  { href: '/liquidity', label: '流動性配管システム' },
+  { href: '/employment', label: '米国景気警戒システム' },
+  { href: '/signals', label: '個別シグナル分析' },
+  { href: '/holdings', label: '保有・取引管理' },
 ];
 
 export function Header() {
@@ -24,9 +24,9 @@ export function Header() {
           <Image
             src="/logo.png"
             alt="Open Regime"
-            width={140}
-            height={80}
-            className="h-9 w-auto dark:invert-0"
+            width={174}
+            height={100}
+            className="h-10 w-auto"
             priority
           />
         </Link>

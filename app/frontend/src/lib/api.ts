@@ -402,23 +402,34 @@ export function useHoldings() {
   return useSWR<HoldingsResponse>('/api/holdings');
 }
 
-export function useTrades(params?: { limit?: number }) {
+export function useTrades(params?: { limit?: number; enabled?: boolean }) {
   const searchParams = new URLSearchParams();
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const query = searchParams.toString();
-  return useSWR<{ trades: TradeRecord[]; total: number }>(`/api/trades${query ? `?${query}` : ''}`);
+  const enabled = params?.enabled !== false;
+  return useSWR<{ trades: TradeRecord[]; total: number }>(
+    enabled ? `/api/trades${query ? `?${query}` : ''}` : null,
+    { keepPreviousData: true },
+  );
 }
 
-export function useTradeStats() {
-  return useSWR<TradeStats>('/api/trades/stats');
+export function useTradeStats(enabled: boolean = true) {
+  return useSWR<TradeStats>(enabled ? '/api/trades/stats' : null, {
+    keepPreviousData: true,
+  });
 }
 
-export function usePortfolioHistory(months: number = 24) {
-  return useSWR<PortfolioHistoryResponse>(`/api/holdings/portfolio-history?months=${months}`);
+export function usePortfolioHistory(months: number = 24, enabled: boolean = true) {
+  return useSWR<PortfolioHistoryResponse>(
+    enabled ? `/api/holdings/portfolio-history?months=${months}` : null,
+    { keepPreviousData: true, refreshInterval: 30 * 60 * 1000 },
+  );
 }
 
 export function useCashBalances() {
-  return useSWR<CashBalancesResponse>('/api/holdings/cash');
+  return useSWR<CashBalancesResponse>('/api/holdings/cash', {
+    refreshInterval: 30 * 60 * 1000,
+  });
 }
 
 export async function createCashBalance(data: { label: string; currency?: string; amount: number; account_type?: string }) {
@@ -441,12 +452,30 @@ export function useStocks(params?: { active_only?: boolean }) {
 }
 
 export function useBatchQuotes(tickers: string[] | null) {
-  // GET variant — cacheable by Cloudflare Worker (5min TTL)
-  const key = tickers && tickers.length > 0
-    ? `/api/stock/batch-quotes?tickers=${tickers.sort().join(',')}`
-    : null;
-  return useSWR<{ quotes: StockQuote[]; count: number }>(key, {
-    refreshInterval: 5 * 60 * 1000,
-    keepPreviousData: true,
-  });
+  // Custom key that encodes all tickers; fetcher splits into ≤20 chunks
+  const sorted = tickers && tickers.length > 0 ? [...tickers].sort() : null;
+  const key = sorted ? `batch-quotes:${sorted.join(',')}` : null;
+
+  return useSWR<{ quotes: StockQuote[]; count: number }>(key, async () => {
+    if (!sorted) return { quotes: [], count: 0 };
+    const CHUNK = 20;
+    if (sorted.length <= CHUNK) {
+      return fetchAPI(`/api/stock/batch-quotes?tickers=${sorted.join(',')}`);
+    }
+    const chunks: string[][] = [];
+    for (let i = 0; i < sorted.length; i += CHUNK) {
+      chunks.push(sorted.slice(i, i + CHUNK));
+    }
+    const results = await Promise.all(
+      chunks.map(c =>
+        fetchAPI<{ quotes: StockQuote[]; count: number }>(
+          `/api/stock/batch-quotes?tickers=${c.join(',')}`
+        )
+      )
+    );
+    return {
+      quotes: results.flatMap(r => r.quotes),
+      count: results.reduce((s, r) => s + r.count, 0),
+    };
+  }, { refreshInterval: 5 * 60 * 1000, keepPreviousData: true });
 }
