@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -40,7 +41,15 @@ const chartOptionLabels: Record<ChartOption, { label: string; title: string }> =
   choch: { label: 'CHoCH', title: 'トレンド転換' },
 };
 
-export default function SignalsPage() {
+export default function SignalsPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <SignalsPage />
+    </Suspense>
+  );
+}
+
+function SignalsPage() {
   const [ticker, setTicker] = useState('');
   const [mode, setMode] = useState<Mode>('balanced');
   const [signal, setSignal] = useState<SignalResponse | null>(null);
@@ -68,6 +77,28 @@ export default function SignalsPage() {
   const [quickTickers, setQuickTickers] = useState<string[]>(defaultQuickTickers);
   const [showAddTicker, setShowAddTicker] = useState(false);
   const [newTickerInput, setNewTickerInput] = useState('');
+
+  // URL params support: /signals?ticker=AAPL&tab=holding
+  const searchParams = useSearchParams();
+  const [initialParamsHandled, setInitialParamsHandled] = useState(false);
+
+  useEffect(() => {
+    if (initialParamsHandled) return;
+    const paramTicker = searchParams.get('ticker');
+    const paramTab = searchParams.get('tab') as Tab | null;
+    if (paramTicker) {
+      setTicker(paramTicker.toUpperCase());
+      if (paramTab && ['entry', 'holding', 'history', 'system'].includes(paramTab)) {
+        setActiveTab(paramTab);
+      }
+      setInitialParamsHandled(true);
+      // Auto-analyze after state update
+      setTimeout(() => handleAnalyze(paramTicker.toUpperCase()), 100);
+    } else {
+      setInitialParamsHandled(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, initialParamsHandled]);
 
   useEffect(() => {
     const saved = localStorage.getItem('quickTickers');

@@ -21,6 +21,7 @@ import {
   createCashBalance, updateCashBalance, deleteCashBalance,
 } from '@/lib/api';
 import { GlassCard, StatusChip, ScoreRing } from '@/components/shared/glass';
+import { TickerIcon } from '@/components/shared/TickerIcon';
 import DonutChart from '@/components/charts/DonutChart';
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
 import type { ChartSeries } from '@/components/charts/EconChartCanvas';
@@ -430,7 +431,12 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
 
               return (
                 <TableRow key={h.id} className="group">
-                  <TableCell className="font-bold font-mono">{h.ticker}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <TickerIcon ticker={h.ticker} size={28} />
+                      <span className="font-bold font-mono">{h.ticker}</span>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{h.shares.toFixed(2)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatUSD(h.avg_price)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
@@ -460,6 +466,15 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <a href={`/signals?ticker=${h.ticker}&tab=entry`} className="p-1 rounded hover:bg-purple-500/10 text-purple-600 dark:text-purple-400" title="シグナル分析">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" /></svg>
+                      </a>
+                      <a href={`/signals?ticker=${h.ticker}&tab=history`} className="p-1 rounded hover:bg-amber-500/10 text-amber-600 dark:text-amber-400" title="シグナル履歴">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                      </a>
+                      <a href={`/signals?ticker=${h.ticker}&tab=holding`} className="p-1 rounded hover:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" title="Exit分析">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+                      </a>
                       <button onClick={() => onEdit(h)} className="p-1 rounded hover:bg-blue-500/10 text-blue-600 dark:text-blue-400" title="編集">
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" /></svg>
                       </button>
