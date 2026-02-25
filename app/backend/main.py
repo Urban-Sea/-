@@ -101,18 +101,6 @@ async def health_check():
     }
 
 
-@app.get("/debug/precomputed")
-async def debug_precomputed():
-    """事前計算デバッグ（一時的）"""
-    from precomputed import get_precomputed, _last_debug
-    # テスト: risk_scoreを取得してみる
-    result = get_precomputed("risk_score")
-    return {
-        "found": result is not None,
-        "result_type": type(result).__name__ if result else None,
-        "debug": _last_debug,
-    }
-
 
 def get_supabase() -> Client:
     """Supabaseクライアントを取得"""

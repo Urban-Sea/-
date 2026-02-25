@@ -10,9 +10,6 @@ from typing import Any
 import main
 
 
-_last_debug: dict = {}
-
-
 def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
     """
     事前計算結果を取得。有効期限内なら結果を返し、なければNoneを返す。
@@ -26,7 +23,6 @@ def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
     """
     supabase = main.get_supabase()
     if not supabase:
-        _last_debug[key] = "no supabase"
         return None
 
     try:
@@ -38,7 +34,6 @@ def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
             .execute()
         )
         if not resp.data:
-            _last_debug[key] = "no data"
             return None
 
         row = resp.data[0]
@@ -46,11 +41,8 @@ def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
         age = (datetime.now(timezone.utc) - computed_at).total_seconds()
 
         if age < max_age_seconds:
-            _last_debug[key] = f"hit: age={age:.0f}s"
             return row["result"]
 
-        _last_debug[key] = f"expired: age={age:.0f}s"
         return None
-    except Exception as e:
-        _last_debug[key] = f"error: {type(e).__name__}: {e}"
+    except Exception:
         return None
