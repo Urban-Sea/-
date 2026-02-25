@@ -12,6 +12,9 @@ pandas==2.2.0
 numpy==1.26.3
 yfinance>=0.2.40
 
+# Security
+slowapi==0.1.9
+
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.6.1

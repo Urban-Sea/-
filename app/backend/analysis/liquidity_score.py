@@ -840,7 +840,7 @@ POLICY_REGIME_DEFINITIONS = {
     },
     'PIVOT_EARLY': {
         'label': '政策転換初期',
-        'description': '利下げ開始。保険的利下げの可能性あり。RRP枯渇があれば警戒強。'
+        'description': '利下げの見込みあり。保険的利下げの可能性あり。RRP枯渇があれば警戒強。'
     },
     'QE_MODE': {
         'label': '量的緩和モード',

@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { getSignal, getStocks, getRegime, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals } from '@/lib/api';
+import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime } from '@/lib/api';
 import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
-import type { SignalResponse, StockMaster, RegimeResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
+import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
 
 type Mode = 'balanced' | 'aggressive' | 'conservative';
 type Tab = 'entry' | 'holding' | 'history' | 'system';
@@ -44,7 +44,10 @@ export default function SignalsPage() {
   const [ticker, setTicker] = useState('');
   const [mode, setMode] = useState<Mode>('balanced');
   const [signal, setSignal] = useState<SignalResponse | null>(null);
-  const [regime, setRegime] = useState<RegimeResponse | null>(null);
+  const { data: regimeData } = useRegime();
+  const regime = regimeData ?? null;
+  const { data: stocksData } = useStocks({ active_only: true });
+  const stocks = stocksData?.stocks ?? [];
   const [history, setHistory] = useState<StockHistoryData[]>([]);
   const [exitAnalysis, setExitAnalysis] = useState<ExitAnalysisResponse | null>(null);
   const [signalHistory, setSignalHistory] = useState<SignalHistoryResponse | null>(null);
@@ -52,7 +55,6 @@ export default function SignalsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stocks, setStocks] = useState<StockMaster[]>([]);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('entry');
   const [period, setPeriod] = useState<Period>('6mo');
@@ -68,8 +70,6 @@ export default function SignalsPage() {
   const [newTickerInput, setNewTickerInput] = useState('');
 
   useEffect(() => {
-    getStocks({ active_only: true }).then((res) => setStocks(res.stocks)).catch(console.error);
-    getRegime().then(setRegime).catch(console.error);
     const saved = localStorage.getItem('quickTickers');
     if (saved) {
       try {
@@ -188,21 +188,21 @@ export default function SignalsPage() {
 
   const getRegimeColor = (r: string) => {
     switch (r) {
-      case 'BULL': return 'text-emerald-400';
-      case 'BEAR': return 'text-red-400';
-      case 'RECOVERY': return 'text-blue-400';
-      case 'WEAKENING': return 'text-orange-400';
-      default: return 'text-zinc-400';
+      case 'BULL': return 'text-emerald-600 dark:text-emerald-400';
+      case 'BEAR': return 'text-red-600 dark:text-red-400';
+      case 'RECOVERY': return 'text-blue-600 dark:text-blue-400';
+      case 'WEAKENING': return 'text-orange-600 dark:text-orange-400';
+      default: return 'text-zinc-500 dark:text-zinc-400';
     }
   };
 
   const getRegimeBadge = (r: string) => {
     switch (r) {
-      case 'BULL': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'BEAR': return 'bg-red-500/10 text-red-400 border-red-500/20';
-      case 'RECOVERY': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-      case 'WEAKENING': return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
-      default: return 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20';
+      case 'BULL': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+      case 'BEAR': return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+      case 'RECOVERY': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+      case 'WEAKENING': return 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20';
+      default: return 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border-zinc-500/20';
     }
   };
 
@@ -219,21 +219,21 @@ export default function SignalsPage() {
         <div className="h-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 mb-4" />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">シグナル分析</h1>
-            <p className="text-xs text-zinc-500 mt-0.5">統合エントリーシステム・チャート・保有管理</p>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">シグナル分析</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">統合エントリーシステム・チャート・保有管理</p>
           </div>
           {/* Mode Selector */}
           <div className="flex items-center gap-3">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wider">運用モード</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">運用モード</span>
             <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
               {(Object.keys(modeLabels) as Mode[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
-                  className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     mode === m
-                      ? 'bg-blue-500/20 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
-                      : 'text-zinc-500 hover:text-zinc-300'
+                      ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                      : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                   }`}
                 >
                   {modeLabels[m].label}
@@ -257,7 +257,7 @@ export default function SignalsPage() {
                 onChange={(e) => setTicker(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                 list="stock-list"
-                className="plumb-glass rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600"
+                className="plumb-glass rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 text-foreground"
               />
               <datalist id="stock-list">
                 {stocks.map((s) => (
@@ -295,18 +295,18 @@ export default function SignalsPage() {
           </div>
 
           {/* Row 2: Quick Tickers */}
-          <div className="flex gap-1.5 flex-wrap items-center pt-3 border-t border-white/[0.04]">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wider mr-1">Quick</span>
+          <div className="flex gap-1.5 flex-wrap items-center pt-3 border-t border-border">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider mr-1 font-medium">Quick</span>
             {quickTickers.map((t) => (
               <span
                 key={t}
-                className="group relative flex items-center gap-1.5 px-2 py-1 plumb-glass rounded-lg text-[11px] font-semibold text-zinc-400 hover:text-blue-400 hover:border-blue-500/30 transition-all cursor-pointer"
+                className="group relative flex items-center gap-1.5 px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-500/30 transition-all cursor-pointer"
               >
-                <TickerIcon ticker={t} size={18} />
+                <TickerIcon ticker={t} size={20} />
                 <span onClick={() => handleAnalyze(t)}>{t}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeQuickTicker(t); }}
-                  className="hidden group-hover:inline text-red-400 hover:text-red-300 font-bold text-xs ml-0.5"
+                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 font-bold text-xs ml-0.5"
                 >
                   ×
                 </button>
@@ -320,16 +320,16 @@ export default function SignalsPage() {
                   onChange={(e) => setNewTickerInput(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === 'Enter' && addQuickTicker(newTickerInput)}
                   placeholder="AAPL"
-                  className="plumb-glass rounded px-2 py-1 text-[11px] w-16 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                  className="plumb-glass rounded px-2.5 py-1.5 text-xs w-16 focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-foreground"
                   autoFocus
                 />
-                <button onClick={() => addQuickTicker(newTickerInput)} className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-[10px] font-bold hover:bg-blue-500/30">OK</button>
-                <button onClick={() => { setShowAddTicker(false); setNewTickerInput(''); }} className="px-2 py-1 border border-red-500/30 text-red-400 rounded text-[10px] font-bold hover:bg-red-500/10">×</button>
+                <button onClick={() => addQuickTicker(newTickerInput)} className="px-2.5 py-1.5 bg-blue-500/20 text-blue-700 dark:text-blue-400 rounded text-xs font-bold hover:bg-blue-500/30">OK</button>
+                <button onClick={() => { setShowAddTicker(false); setNewTickerInput(''); }} className="px-2.5 py-1.5 border border-red-500/30 text-red-500 dark:text-red-400 rounded text-xs font-bold hover:bg-red-500/10">×</button>
               </span>
             ) : (
               <button
                 onClick={() => setShowAddTicker(true)}
-                className="px-2 py-1 border border-dashed border-zinc-700 rounded-lg text-zinc-600 text-[10px] font-semibold hover:border-blue-500/30 hover:text-blue-400 transition-colors"
+                className="px-2.5 py-1.5 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-500 dark:text-zinc-600 text-xs font-semibold hover:border-blue-500/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               >
                 + 追加
               </button>
@@ -347,8 +347,8 @@ export default function SignalsPage() {
 
       {/* ── Loading ── */}
       {(loading || batchLoading) && (
-        <div className="flex justify-center items-center py-12 gap-3 text-zinc-400">
-          <div className="w-6 h-6 border-2 border-zinc-700 border-t-blue-500 rounded-full animate-spin" />
+        <div className="flex justify-center items-center py-12 gap-3 text-muted-foreground">
+          <div className="w-6 h-6 border-2 border-zinc-300 dark:border-zinc-700 border-t-blue-500 rounded-full animate-spin" />
           <span className="text-sm">{batchLoading ? '一括分析中...' : '分析中...'}</span>
         </div>
       )}
@@ -358,22 +358,22 @@ export default function SignalsPage() {
         <GlassCard stagger={1}>
           <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
-              <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Regime</span>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Regime</span>
               <span className={`text-lg font-bold ${getRegimeColor(regime.regime)}`}>{regime.regime}</span>
-              <span className="text-xs text-zinc-500">{regime.description}</span>
+              <span className="text-sm text-muted-foreground">{regime.description}</span>
             </div>
             <div className="flex gap-5">
               <div className="text-center">
-                <div className="text-[9px] text-zinc-600 uppercase">SPY</div>
-                <div className="text-xs font-semibold font-mono">${regime.benchmark_price.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground uppercase font-medium">SPY</div>
+                <div className="text-sm font-semibold font-mono text-foreground">${regime.benchmark_price.toFixed(2)}</div>
               </div>
               <div className="text-center">
-                <div className="text-[9px] text-zinc-600 uppercase">200 EMA</div>
-                <div className="text-xs font-semibold font-mono">${regime.benchmark_ema_long.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground uppercase font-medium">200 EMA</div>
+                <div className="text-sm font-semibold font-mono text-foreground">${regime.benchmark_ema_long.toFixed(2)}</div>
               </div>
               <div className="text-center">
-                <div className="text-[9px] text-zinc-600 uppercase">21傾き</div>
-                <div className={`text-xs font-semibold font-mono ${regime.ema_short_slope >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <div className="text-[10px] text-muted-foreground uppercase font-medium">21傾き</div>
+                <div className={`text-sm font-semibold font-mono ${regime.ema_short_slope >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                   {regime.ema_short_slope >= 0 ? '+' : ''}{regime.ema_short_slope.toFixed(3)}
                 </div>
               </div>
@@ -389,8 +389,8 @@ export default function SignalsPage() {
           <GlassCard>
             <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-3">
-                <span className="text-sm font-bold">一括分析結果</span>
-                <span className="text-xs text-zinc-500">{batchResults.total_analyzed}銘柄 / {modeLabels[mode].label}モード</span>
+                <span className="text-sm font-bold text-foreground">一括分析結果</span>
+                <span className="text-sm text-muted-foreground">{batchResults.total_analyzed}銘柄 / {modeLabels[mode].label}モード</span>
               </div>
               <StatusChip label={`エントリー可能: ${batchResults.entry_ready_count}`} color="green" />
             </div>
@@ -399,7 +399,7 @@ export default function SignalsPage() {
           {/* Card Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {batchResults.results.map((r, idx) => {
-              const rsColors: Record<string, string> = { UP: 'text-emerald-400', FLAT: 'text-yellow-400', DOWN: 'text-red-400' };
+              const rsColors: Record<string, string> = { UP: 'text-emerald-600 dark:text-emerald-400', FLAT: 'text-yellow-600 dark:text-yellow-400', DOWN: 'text-red-600 dark:text-red-400' };
               const rsLabels: Record<string, string> = { UP: '上昇', FLAT: '横ばい', DOWN: '下落' };
               const rsTrend = r.relative_strength?.trend || 'FLAT';
               return (
@@ -414,7 +414,7 @@ export default function SignalsPage() {
                     <>
                       <div className="flex items-center gap-2">
                         <TickerIcon ticker={r.ticker} size={28} />
-                        <span className="text-lg font-bold">{r.ticker}</span>
+                        <span className="text-lg font-bold text-foreground">{r.ticker}</span>
                       </div>
                       <div className="text-xs text-red-400 mt-2">Error</div>
                     </>
@@ -423,19 +423,19 @@ export default function SignalsPage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <TickerIcon ticker={r.ticker} size={28} />
-                          <span className="text-lg font-bold">{r.ticker}</span>
+                          <span className="text-lg font-bold text-foreground">{r.ticker}</span>
                         </div>
-                        <span className="text-sm font-semibold font-mono text-zinc-300">${r.price?.toFixed(2)}</span>
+                        <span className="text-sm font-semibold font-mono text-foreground">${r.price?.toFixed(2)}</span>
                       </div>
                       <div className="mb-2 flex items-center gap-2">
                         <StatusChip label={r.entry_allowed ? '買いシグナル' : 'エントリーなし'} color={r.entry_allowed ? 'green' : 'blue'} />
                         {r.position_size_pct > 0 && (
-                          <span className="text-[10px] text-zinc-500">サイズ: {r.position_size_pct}%</span>
+                          <span className="text-[10px] text-muted-foreground">サイズ: {r.position_size_pct}%</span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1 text-[11px] text-zinc-500">
-                        <span>統合判定: <span className={r.combined_ready ? 'text-emerald-400' : 'text-zinc-600'}>{r.combined_ready ? '達成' : '未達'}</span></span>
-                        <span>RS: <span className={rsColors[rsTrend]}>{rsLabels[rsTrend]}</span></span>
+                      <div className="grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
+                        <span>統合判定: <span className={`font-semibold ${r.combined_ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'}`}>{r.combined_ready ? '達成' : '未達'}</span></span>
+                        <span>RS: <span className={`font-semibold ${rsColors[rsTrend]}`}>{rsLabels[rsTrend]}</span></span>
                       </div>
                     </>
                   )}
@@ -450,23 +450,23 @@ export default function SignalsPage() {
       {signal && !loading && (
         <div className="space-y-4 plumb-animate-in">
           {/* Hero Card */}
-          <div className="relative rounded-2xl border border-zinc-800 overflow-hidden plumb-animate-scale">
-            <div className="absolute inset-0 bg-zinc-500/[0.02]" />
+          <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden plumb-animate-scale">
+            <div className="absolute inset-0 bg-zinc-100/50 dark:bg-zinc-500/[0.02]" />
             <div className="relative p-5 md:p-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
                   <TickerIcon ticker={signal.ticker} size={72} />
                   <div>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-extrabold tracking-tight">{signal.ticker}</span>
+                      <span className="text-2xl font-extrabold tracking-tight text-foreground">{signal.ticker}</span>
                       {(() => {
                         const stock = stocks.find(s => s.ticker === signal.ticker);
-                        return stock?.name ? <span className="text-xs text-zinc-500 max-w-[200px] truncate">{stock.name}</span> : null;
+                        return stock?.name ? <span className="text-xs text-muted-foreground max-w-[200px] truncate">{stock.name}</span> : null;
                       })()}
                     </div>
                     <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-xl font-bold font-mono">${signal.price.toFixed(2)}</span>
-                      <span className={`text-sm font-semibold ${signal.price_change_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className="text-xl font-bold font-mono text-foreground">${signal.price.toFixed(2)}</span>
+                      <span className={`text-sm font-semibold ${signal.price_change_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                         {signal.price_change_pct >= 0 ? '+' : ''}{signal.price_change_pct.toFixed(2)}%
                       </span>
                     </div>
@@ -497,14 +497,14 @@ export default function SignalsPage() {
                   <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
                     <button
                       onClick={() => setChartType('line')}
-                      className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                        chartType === 'line' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                        chartType === 'line' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                       }`}
                     >ライン</button>
                     <button
                       onClick={() => setChartType('candlestick')}
-                      className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                        chartType === 'candlestick' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                        chartType === 'candlestick' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                       }`}
                     >ローソク足</button>
                   </div>
@@ -515,13 +515,13 @@ export default function SignalsPage() {
                         key={opt}
                         onClick={() => toggleChartOption(opt)}
                         title={chartOptionLabels[opt].title}
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                        className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                           chartOptions.has(opt)
-                            ? opt === 'ema' ? 'bg-emerald-500/20 text-emerald-400'
-                            : opt === 'fvg' ? 'bg-purple-400/20 text-purple-400'
-                            : opt === 'bos' ? 'bg-yellow-500/20 text-yellow-400'
-                            : 'bg-purple-500/20 text-purple-400'
-                            : 'text-zinc-600 hover:text-zinc-400'
+                            ? opt === 'ema' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                            : opt === 'fvg' ? 'bg-purple-400/20 text-purple-700 dark:text-purple-400'
+                            : opt === 'bos' ? 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
+                            : 'bg-purple-500/20 text-purple-700 dark:text-purple-400'
+                            : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                         }`}
                       >
                         {chartOptionLabels[opt].label}
@@ -535,8 +535,8 @@ export default function SignalsPage() {
                     <button
                       key={p.value}
                       onClick={() => handlePeriodChange(p.value)}
-                      className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                        period === p.value ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                        period === p.value ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                       }`}
                     >
                       {p.label}
@@ -566,7 +566,7 @@ export default function SignalsPage() {
               </div>
 
               {/* Chart Legend */}
-              <div className="flex gap-4 mt-3 justify-center text-[11px] text-zinc-400 flex-wrap">
+              <div className="flex gap-4 mt-3 justify-center text-xs text-muted-foreground flex-wrap">
                 {chartType === 'candlestick' && (
                   <>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#26a69a]" /> 陽線</span>
@@ -600,21 +600,21 @@ export default function SignalsPage() {
               <GlassCard stagger={1}>
                 <div className="p-6">
                   <div className="flex items-center gap-3 mb-5">
-                    <span className="text-sm font-bold">エントリー判定パネル</span>
-                    <span className="text-xs text-zinc-500">統合エントリーシステム</span>
+                    <span className="text-base font-bold text-foreground">エントリー判定パネル</span>
+                    <span className="text-sm text-muted-foreground">統合エントリーシステム</span>
                     <StatusChip label={modeLabels[mode].label} color="blue" />
                   </div>
 
                   {/* Regime Info */}
                   {regime && (
-                    <div className="flex items-center gap-4 mb-5 px-4 py-2.5 plumb-glass rounded-lg text-xs flex-wrap">
-                      <Metric label="市場" value={regime.regime}>
-                        <span className={`text-xs font-bold ${getRegimeColor(regime.regime)}`}>{regime.regime}</span>
+                    <div className="flex items-center gap-4 mb-5 px-4 py-3 plumb-glass rounded-lg text-sm flex-wrap">
+                      <Metric label="市場" value="">
+                        <span className={`text-sm font-bold ${getRegimeColor(regime.regime)}`}>{regime.regime}</span>
                       </Metric>
-                      <span className="w-px h-4 bg-white/[0.06]" />
-                      <span className="text-zinc-500">SPY: <span className="text-zinc-200 font-mono font-semibold">${regime.benchmark_price.toFixed(2)}</span></span>
-                      <span className="text-zinc-500">200EMA: <span className="text-zinc-200 font-mono font-semibold">${regime.benchmark_ema_long.toFixed(2)}</span></span>
-                      <span className="text-zinc-500">傾き: <span className={`font-mono font-semibold ${regime.ema_short_slope >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{regime.ema_short_slope >= 0 ? '+' : ''}{regime.ema_short_slope.toFixed(3)}</span></span>
+                      <span className="w-px h-4 bg-border" />
+                      <span className="text-muted-foreground">SPY: <span className="text-foreground font-mono font-semibold">${regime.benchmark_price.toFixed(2)}</span></span>
+                      <span className="text-muted-foreground">200EMA: <span className="text-foreground font-mono font-semibold">${regime.benchmark_ema_long.toFixed(2)}</span></span>
+                      <span className="text-muted-foreground">傾き: <span className={`font-mono font-semibold ${regime.ema_short_slope >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{regime.ema_short_slope >= 0 ? '+' : ''}{regime.ema_short_slope.toFixed(3)}</span></span>
                     </div>
                   )}
 
@@ -622,21 +622,21 @@ export default function SignalsPage() {
                   <div className={`relative text-center py-8 rounded-xl mb-5 border overflow-hidden ${
                     signal.entry_allowed
                       ? 'border-emerald-500/30'
-                      : 'border-zinc-800'
+                      : 'border-zinc-200 dark:border-zinc-800'
                   }`}>
                     {signal.entry_allowed && (
-                      <div className="absolute inset-0 bg-emerald-500/[0.04]" />
+                      <div className="absolute inset-0 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.04]" />
                     )}
                     {signal.entry_allowed && (
                       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20 plumb-glow" style={{ background: '#10b981' }} />
                     )}
                     <div className="relative">
                       <div className={`text-4xl font-extrabold tracking-[0.2em] ${
-                        signal.entry_allowed ? 'text-emerald-400' : 'text-zinc-600'
+                        signal.entry_allowed ? 'text-emerald-500 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'
                       }`}>
                         {signal.entry_allowed ? 'BUY' : 'NO ENTRY'}
                       </div>
-                      <div className="text-sm text-zinc-400 mt-2">
+                      <div className="text-sm text-muted-foreground mt-2">
                         {signal.entry_allowed
                           ? `ポジションサイズ: ${signal.position_size_pct}%`
                           : signal.mode_note || '条件未達成'}
@@ -647,7 +647,7 @@ export default function SignalsPage() {
                   {/* Toggle Details */}
                   <button
                     onClick={() => setShowDetails(!showDetails)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 border-t border-white/[0.04] text-xs text-zinc-500 hover:text-blue-400 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 border-t border-border text-xs text-muted-foreground hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
                   >
                     <span>{showDetails ? '詳細を閉じる' : '詳細を見る'}</span>
                     <svg className={`w-3 h-3 transition-transform duration-200 ${showDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -678,30 +678,30 @@ export default function SignalsPage() {
               <GlassCard stagger={1}>
                 <div className="p-6">
                   <div className="flex items-center gap-3 mb-5">
-                    <span className="text-sm font-bold">保有分析パネル</span>
+                    <span className="text-base font-bold text-foreground">保有分析パネル</span>
                     <StatusChip label="5層Exit System" color="purple" />
                   </div>
 
                   {/* Entry Inputs */}
                   <div className="flex gap-4 mb-5 flex-wrap items-end">
                     <div>
-                      <label className="text-[11px] text-zinc-500 block mb-1.5">エントリー価格</label>
+                      <label className="text-xs text-muted-foreground block mb-1.5 font-medium">エントリー価格</label>
                       <input
                         type="number"
                         value={entryPrice}
                         onChange={(e) => setEntryPrice(e.target.value)}
                         placeholder="例: 25.50"
                         step="0.01"
-                        className="plumb-glass rounded-lg px-3 py-2 w-32 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600"
+                        className="plumb-glass rounded-lg px-3 py-2 w-32 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 text-foreground"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] text-zinc-500 block mb-1.5">エントリー日（任意）</label>
+                      <label className="text-xs text-muted-foreground block mb-1.5 font-medium">エントリー日（任意）</label>
                       <input
                         type="date"
                         value={entryDate}
                         onChange={(e) => setEntryDate(e.target.value)}
-                        className="plumb-glass rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all"
+                        className="plumb-glass rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all text-foreground"
                       />
                     </div>
                     <button
@@ -712,14 +712,14 @@ export default function SignalsPage() {
                       {exitLoading ? '分析中...' : '保有分析'}
                     </button>
                     {signal && (
-                      <span className="text-xs text-zinc-500">現在価格: <span className="font-mono font-semibold text-zinc-300">${signal.price.toFixed(2)}</span></span>
+                      <span className="text-xs text-muted-foreground">現在価格: <span className="font-mono font-semibold text-foreground">${signal.price.toFixed(2)}</span></span>
                     )}
                   </div>
 
                   {/* Loading */}
                   {exitLoading && (
-                    <div className="flex justify-center items-center py-8 gap-3 text-zinc-400">
-                      <div className="w-5 h-5 border-2 border-zinc-700 border-t-blue-500 rounded-full animate-spin" />
+                    <div className="flex justify-center items-center py-8 gap-3 text-muted-foreground">
+                      <div className="w-5 h-5 border-2 border-zinc-300 dark:border-zinc-700 border-t-blue-500 rounded-full animate-spin" />
                       <span className="text-sm">分析中...</span>
                     </div>
                   )}
@@ -738,15 +738,15 @@ export default function SignalsPage() {
                         <div className="relative flex items-center justify-between flex-wrap gap-4">
                           <div className="flex items-center gap-5">
                             <div>
-                              <span className="text-[10px] text-zinc-500 uppercase block">総合判定</span>
-                              <span className={`text-3xl font-extrabold tracking-wider ${exitAnalysis.should_exit ? 'text-red-400' : 'text-emerald-400'}`}>
+                              <span className="text-xs text-muted-foreground uppercase block font-medium">総合判定</span>
+                              <span className={`text-3xl font-extrabold tracking-wider ${exitAnalysis.should_exit ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                 {exitAnalysis.should_exit ? 'EXIT' : 'HOLD'}
                               </span>
                             </div>
                             {exitAnalysis.should_exit && exitAnalysis.exit_pct > 0 && (
                               <div>
-                                <span className="text-[10px] text-zinc-500 uppercase block">売却比率</span>
-                                <span className="text-xl font-bold text-red-400">{exitAnalysis.exit_pct}%</span>
+                                <span className="text-xs text-muted-foreground uppercase block font-medium">売却比率</span>
+                                <span className="text-xl font-bold text-red-600 dark:text-red-400">{exitAnalysis.exit_pct}%</span>
                               </div>
                             )}
                             <StatusChip
@@ -756,24 +756,24 @@ export default function SignalsPage() {
                           </div>
                           <div className="flex gap-6">
                             <div className="text-center">
-                              <div className="text-[10px] text-zinc-500 uppercase">エントリー</div>
-                              <div className="text-sm font-semibold font-mono">${exitAnalysis.entry_price.toFixed(2)}</div>
+                              <div className="text-xs text-muted-foreground uppercase font-medium">エントリー</div>
+                              <div className="text-sm font-semibold font-mono text-foreground">${exitAnalysis.entry_price.toFixed(2)}</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-[10px] text-zinc-500 uppercase">現在価格</div>
-                              <div className="text-sm font-semibold font-mono">${exitAnalysis.current_price.toFixed(2)}</div>
+                              <div className="text-xs text-muted-foreground uppercase font-medium">現在価格</div>
+                              <div className="text-sm font-semibold font-mono text-foreground">${exitAnalysis.current_price.toFixed(2)}</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-[10px] text-zinc-500 uppercase">含み損益</div>
-                              <div className={`text-lg font-bold font-mono ${exitAnalysis.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              <div className="text-xs text-muted-foreground uppercase font-medium">含み損益</div>
+                              <div className={`text-lg font-bold font-mono ${exitAnalysis.pnl_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                                 {exitAnalysis.pnl_pct >= 0 ? '+' : ''}{exitAnalysis.pnl_pct.toFixed(2)}%
                               </div>
                             </div>
                           </div>
                         </div>
                         {exitAnalysis.exit_reason && (
-                          <div className="relative mt-4 pt-3 border-t border-white/[0.06] text-sm text-zinc-400">
-                            <span className="text-zinc-500">理由:</span> {exitAnalysis.exit_reason}
+                          <div className="relative mt-4 pt-3 border-t border-border text-sm text-muted-foreground">
+                            <span className="text-muted-foreground">理由:</span> {exitAnalysis.exit_reason}
                           </div>
                         )}
                       </div>
@@ -781,7 +781,7 @@ export default function SignalsPage() {
                       {/* EMA Status & Structure Stop */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="plumb-glass rounded-xl p-4">
-                          <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-3">EMAステータス</div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">EMAステータス</div>
                           <div className="grid grid-cols-3 gap-3">
                             {[
                               { label: 'EMA 8', val: exitAnalysis.ema_status?.ema_8, above: exitAnalysis.ema_status?.above_ema_8 },
@@ -789,9 +789,9 @@ export default function SignalsPage() {
                               { label: 'EMA 21', val: exitAnalysis.ema_status?.ema_21, above: exitAnalysis.ema_status?.above_ema_21 },
                             ].map((e) => (
                               <div key={e.label} className="text-center">
-                                <div className="text-[10px] text-zinc-600">{e.label}</div>
-                                <div className="text-xs font-semibold font-mono mt-0.5">${(e.val ?? 0).toFixed(2)}</div>
-                                <div className={`text-[10px] font-bold mt-0.5 ${e.above ? 'text-emerald-400' : 'text-red-400'}`}>
+                                <div className="text-xs text-muted-foreground font-medium">{e.label}</div>
+                                <div className="text-sm font-semibold font-mono mt-0.5 text-foreground">${(e.val ?? 0).toFixed(2)}</div>
+                                <div className={`text-xs font-bold mt-0.5 ${e.above ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                                   {e.above ? '上' : '下'}
                                 </div>
                               </div>
@@ -799,14 +799,14 @@ export default function SignalsPage() {
                           </div>
                         </div>
                         <div className="plumb-glass rounded-xl p-4">
-                          <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-3">ストップライン</div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">ストップライン</div>
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="text-[10px] text-zinc-600">構造ストップ</div>
-                              <div className="text-lg font-bold text-red-400 font-mono">${(exitAnalysis.structure_stop ?? 0).toFixed(2)}</div>
+                              <div className="text-xs text-muted-foreground font-medium">構造ストップ</div>
+                              <div className="text-lg font-bold text-red-600 dark:text-red-400 font-mono">${(exitAnalysis.structure_stop ?? 0).toFixed(2)}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-[10px] text-zinc-600">ストップまでの距離</div>
+                              <div className="text-xs text-muted-foreground font-medium">ストップまでの距離</div>
                               <div className={`text-sm font-semibold font-mono ${
                                 ((exitAnalysis.current_price - (exitAnalysis.structure_stop ?? 0)) / exitAnalysis.current_price * 100) > 5
                                   ? 'text-emerald-400' : 'text-orange-400'
@@ -820,19 +820,19 @@ export default function SignalsPage() {
 
                       {/* Exit Layers */}
                       <div className="plumb-glass rounded-xl p-4">
-                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-3">レイヤー判定</div>
+                        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">レイヤー判定</div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {exitAnalysis.layers.map((layer, idx) => (
-                            <div key={layer.layer} className={`plumb-glass rounded-lg p-3 plumb-animate-in plumb-stagger-${Math.min(idx + 1, 8)}`}>
+                            <div key={layer.layer} className={`plumb-glass rounded-lg p-3.5 plumb-animate-in plumb-stagger-${Math.min(idx + 1, 8)}`}>
                               <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[10px] text-zinc-500 font-mono">L{layer.layer}</span>
+                                <span className="text-xs text-muted-foreground font-mono font-medium">L{layer.layer}</span>
                                 <StatusChip
                                   label={layer.status}
                                   color={layer.status === 'SAFE' ? 'green' : layer.status === 'WARNING' ? 'orange' : 'red'}
                                 />
                               </div>
-                              <div className="text-xs font-semibold">{layer.name}</div>
-                              {layer.detail && <div className="text-[10px] text-zinc-600 mt-1 truncate">{layer.detail}</div>}
+                              <div className="text-sm font-semibold text-foreground">{layer.name}</div>
+                              {layer.detail && <div className="text-xs text-muted-foreground mt-1 truncate">{layer.detail}</div>}
                             </div>
                           ))}
                         </div>
@@ -841,15 +841,15 @@ export default function SignalsPage() {
                       {/* Targets */}
                       {exitAnalysis.targets.length > 0 && (
                         <div className="plumb-glass rounded-xl p-4">
-                          <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-3">利確ターゲット</div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">利確ターゲット</div>
                           <div className="flex gap-3 flex-wrap">
                             {exitAnalysis.targets.map((t, i) => (
-                              <div key={i} className={`plumb-glass rounded-lg px-4 py-3 text-center min-w-[90px] plumb-animate-in plumb-stagger-${Math.min(i + 1, 8)}`}>
-                                <div className="text-[10px] text-zinc-500 uppercase">{t.type}</div>
-                                <div className="text-sm font-bold font-mono mt-0.5">${t.price.toFixed(2)}</div>
-                                <div className="text-xs text-emerald-400 font-mono">+{t.pct.toFixed(1)}%</div>
+                              <div key={i} className={`plumb-glass rounded-lg px-4 py-3 text-center min-w-[100px] plumb-animate-in plumb-stagger-${Math.min(i + 1, 8)}`}>
+                                <div className="text-xs text-muted-foreground uppercase font-medium">{t.type}</div>
+                                <div className="text-base font-bold font-mono mt-0.5 text-foreground">${t.price.toFixed(2)}</div>
+                                <div className="text-sm text-emerald-600 dark:text-emerald-400 font-mono font-semibold">+{t.pct.toFixed(1)}%</div>
                                 {t.exit_pct > 0 && (
-                                  <div className="text-[10px] text-zinc-600 mt-1">売却 {t.exit_pct}%</div>
+                                  <div className="text-xs text-muted-foreground mt-1">売却 {t.exit_pct}%</div>
                                 )}
                               </div>
                             ))}
@@ -861,7 +861,7 @@ export default function SignalsPage() {
 
                   {/* Empty State */}
                   {!exitAnalysis && !exitLoading && (
-                    <div className="text-center py-10 text-zinc-500 text-sm">
+                    <div className="text-center py-10 text-muted-foreground text-sm">
                       エントリー価格を入力して「保有分析」をクリックしてください
                     </div>
                   )}
@@ -874,9 +874,9 @@ export default function SignalsPage() {
               <GlassCard stagger={1}>
                 <div className="p-6">
                   <div className="flex items-center gap-3 mb-5">
-                    <span className="text-sm font-bold">過去シグナル履歴（1年間）</span>
+                    <span className="text-base font-bold text-foreground">過去シグナル履歴（1年間）</span>
                     {signalHistory && (
-                      <span className="text-xs text-zinc-500">({signalHistory.total_signals || signalHistory.stats.total_signals}件)</span>
+                      <span className="text-sm text-muted-foreground">({signalHistory.total_signals || signalHistory.stats.total_signals}件)</span>
                     )}
                     <button
                       onClick={handleFetchSignalHistory}
@@ -893,11 +893,11 @@ export default function SignalsPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="plumb-glass rounded-lg px-4 py-3 flex items-center gap-3">
                           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                          <span className="text-sm text-zinc-400">買い: <strong className="text-emerald-400">{signalHistory.stats.entry_count || signalHistory.timeline?.filter(s => s.type === 'ENTRY').length || 0}</strong></span>
+                          <span className="text-sm text-muted-foreground">買い: <strong className="text-emerald-500 dark:text-emerald-400">{signalHistory.stats.entry_count || signalHistory.timeline?.filter(s => s.type === 'ENTRY').length || 0}</strong></span>
                         </div>
                         <div className="plumb-glass rounded-lg px-4 py-3 flex items-center gap-3">
                           <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                          <span className="text-sm text-zinc-400">RSI過熱: <strong className="text-orange-400">{signalHistory.stats.rsi_high_count || signalHistory.timeline?.filter(s => s.type === 'RSI_HIGH').length || 0}</strong></span>
+                          <span className="text-sm text-muted-foreground">RSI過熱: <strong className="text-orange-500 dark:text-orange-400">{signalHistory.stats.rsi_high_count || signalHistory.timeline?.filter(s => s.type === 'RSI_HIGH').length || 0}</strong></span>
                         </div>
                       </div>
 
@@ -905,7 +905,7 @@ export default function SignalsPage() {
                       {signalHistory.timeline && signalHistory.timeline.filter(s => s.type === 'EXIT').length > 0 && (
                         <div className="plumb-glass rounded-lg px-4 py-3">
                           <div className="flex gap-4 flex-wrap items-center">
-                            <span className="text-[10px] text-zinc-500 uppercase tracking-wider">決済</span>
+                            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">決済</span>
                             {(() => {
                               const exitSignals = signalHistory.timeline.filter(s => s.type === 'EXIT');
                               const exitByCat: Record<string, number> = {};
@@ -914,26 +914,26 @@ export default function SignalsPage() {
                                 <>
                                   {exitByCat['MIRROR_FULL'] && (
                                     <div className="flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full bg-red-500" />
-                                      <span className="text-[11px] text-zinc-400">Mirror FULL <strong className="text-red-400">{exitByCat['MIRROR_FULL']}</strong><span className="text-[9px] text-zinc-600 ml-1">(100%)</span></span>
+                                      <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                                      <span className="text-xs text-muted-foreground">Mirror FULL <strong className="text-red-600 dark:text-red-400">{exitByCat['MIRROR_FULL']}</strong><span className="text-[10px] text-muted-foreground ml-1">(100%)</span></span>
                                     </div>
                                   )}
                                   {exitByCat['MIRROR_WARN'] && (
                                     <div className="flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full bg-orange-500" />
-                                      <span className="text-[11px] text-zinc-400">Mirror WARN <strong className="text-orange-400">{exitByCat['MIRROR_WARN']}</strong><span className="text-[9px] text-zinc-600 ml-1">(50%)</span></span>
+                                      <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                                      <span className="text-xs text-muted-foreground">Mirror WARN <strong className="text-orange-600 dark:text-orange-400">{exitByCat['MIRROR_WARN']}</strong><span className="text-[10px] text-muted-foreground ml-1">(50%)</span></span>
                                     </div>
                                   )}
                                   {exitByCat['TRAIL'] && (
                                     <div className="flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full bg-purple-500" />
-                                      <span className="text-[11px] text-zinc-400">Trail <strong className="text-purple-400">{exitByCat['TRAIL']}</strong><span className="text-[9px] text-zinc-600 ml-1">(100%)</span></span>
+                                      <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+                                      <span className="text-xs text-muted-foreground">Trail <strong className="text-purple-600 dark:text-purple-400">{exitByCat['TRAIL']}</strong><span className="text-[10px] text-muted-foreground ml-1">(100%)</span></span>
                                     </div>
                                   )}
                                   {exitByCat['BEAR_CHOCH'] && (
                                     <div className="flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full bg-pink-400" />
-                                      <span className="text-[11px] text-zinc-400">CHoCH <strong className="text-pink-400">{exitByCat['BEAR_CHOCH']}</strong><span className="text-[9px] text-zinc-600 ml-1">(警告)</span></span>
+                                      <span className="w-2.5 h-2.5 rounded-full bg-pink-400" />
+                                      <span className="text-xs text-muted-foreground">CHoCH <strong className="text-pink-600 dark:text-pink-400">{exitByCat['BEAR_CHOCH']}</strong><span className="text-[10px] text-muted-foreground ml-1">(警告)</span></span>
                                     </div>
                                   )}
                                 </>
@@ -946,7 +946,7 @@ export default function SignalsPage() {
                       {/* Timeline */}
                       {signalHistory.timeline && signalHistory.timeline.length > 0 ? (
                         <div className="relative pl-6">
-                          <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-700 to-zinc-800/50 rounded" />
+                          <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-300 dark:from-zinc-700 to-zinc-200/50 dark:to-zinc-800/50 rounded" />
                           {signalHistory.timeline.slice().reverse().map((s, i) => {
                             const getTypeStyle = () => {
                               switch (s.type) {
@@ -971,40 +971,40 @@ export default function SignalsPage() {
                             const dateRange = s.days > 1 ? `${s.date} ~ ${s.end_date}` : s.date;
                             const priceRange = s.days > 1 && s.end_price ? `$${s.price.toFixed(2)} → $${s.end_price.toFixed(2)}` : `$${s.price.toFixed(2)}`;
                             return (
-                              <div key={i} className="relative py-3 border-b border-white/[0.03] last:border-b-0">
+                              <div key={i} className="relative py-3 border-b border-border last:border-b-0">
                                 <div className={`absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full border-2 ${style.dot}`} />
                                 <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                                  <span className="text-[11px] text-zinc-500 font-mono">{dateRange}</span>
+                                  <span className="text-xs text-muted-foreground font-mono">{dateRange}</span>
                                   <StatusChip label={style.label} color={style.badge} />
                                   {s.days > 1 && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded plumb-glass text-zinc-500">{s.days}日間</span>
+                                    <span className="text-xs px-1.5 py-0.5 rounded plumb-glass text-muted-foreground">{s.days}日間</span>
                                   )}
-                                  <span className="text-xs font-semibold font-mono">{priceRange}</span>
+                                  <span className="text-sm font-semibold font-mono text-foreground">{priceRange}</span>
                                 </div>
-                                <div className="text-[11px] text-zinc-400">{s.detail}</div>
+                                <div className="text-xs text-muted-foreground">{s.detail}</div>
                               </div>
                             );
                           })}
                         </div>
                       ) : signalHistory.signals && signalHistory.signals.length > 0 ? (
                         <div className="relative pl-6">
-                          <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-700 to-zinc-800/50 rounded" />
+                          <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-300 dark:from-zinc-700 to-zinc-200/50 dark:to-zinc-800/50 rounded" />
                           {signalHistory.signals.slice().reverse().map((s, i) => (
-                            <div key={i} className="relative py-3 border-b border-white/[0.03] last:border-b-0">
+                            <div key={i} className="relative py-3 border-b border-border last:border-b-0">
                               <div className="absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
                               <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                                <span className="text-[11px] text-zinc-500 font-mono">{s.date}</span>
+                                <span className="text-xs text-muted-foreground font-mono">{s.date}</span>
                                 <StatusChip label="買いシグナル" color="green" />
-                                <span className="text-xs font-semibold font-mono">${s.price.toFixed(2)}</span>
+                                <span className="text-sm font-semibold font-mono text-foreground">${s.price.toFixed(2)}</span>
                               </div>
-                              <div className="text-[11px] text-zinc-400">
+                              <div className="text-xs text-muted-foreground">
                                 買いシグナル（RS: {s.rs_diff >= 0 ? 'UP' : 'DOWN'}）EMA収束 {s.ema_convergence}%
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-10 text-zinc-500 text-sm">
+                        <div className="text-center py-10 text-muted-foreground text-sm">
                           過去1年間にシグナルは検出されませんでした
                         </div>
                       )}
@@ -1012,7 +1012,7 @@ export default function SignalsPage() {
                   )}
 
                   {!signalHistory && !historyLoading && (
-                    <div className="text-center py-10 text-zinc-500 text-sm">
+                    <div className="text-center py-10 text-muted-foreground text-sm">
                       「分析実行」をクリックして過去シグナルを取得してください
                     </div>
                   )}
@@ -1032,17 +1032,17 @@ export default function SignalsPage() {
 
                 <DocSection title="エントリー条件">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="plumb-glass rounded-lg p-3">
-                      <h4 className="text-xs font-bold text-emerald-400 mb-2">1. 弱気CHoCH</h4>
-                      <p className="text-[11px] leading-relaxed">直近10個の転換点から弱気CHoCHを検出。下落トレンドの転換を確認。</p>
+                    <div className="plumb-glass rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-2">1. 弱気CHoCH</h4>
+                      <p className="text-xs leading-relaxed text-muted-foreground">直近10個の転換点から弱気CHoCHを検出。下落トレンドの転換を確認。</p>
                     </div>
-                    <div className="plumb-glass rounded-lg p-3">
-                      <h4 className="text-xs font-bold text-blue-400 mb-2">2. 強気CHoCH</h4>
-                      <p className="text-[11px] leading-relaxed">弱気CHoCH後の強気CHoCHを検出。上昇トレンドへの転換を確認。</p>
+                    <div className="plumb-glass rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-2">2. 強気CHoCH</h4>
+                      <p className="text-xs leading-relaxed text-muted-foreground">弱気CHoCH後の強気CHoCHを検出。上昇トレンドへの転換を確認。</p>
                     </div>
-                    <div className="plumb-glass rounded-lg p-3">
-                      <h4 className="text-xs font-bold text-cyan-400 mb-2">3. EMA収束</h4>
-                      <p className="text-[11px] leading-relaxed">8EMA と 21EMA が 1.5ATR 以内に収束。エントリーポイントの確認。</p>
+                    <div className="plumb-glass rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mb-2">3. EMA収束</h4>
+                      <p className="text-xs leading-relaxed text-muted-foreground">8EMA と 21EMA が 1.5ATR 以内に収束。エントリーポイントの確認。</p>
                     </div>
                   </div>
                 </DocSection>
@@ -1073,20 +1073,20 @@ export default function SignalsPage() {
 
                 <DocSection title="バックテスト結果（23銘柄 / 4年間）">
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="plumb-glass rounded-lg p-3 text-center">
-                      <div className="text-[10px] text-zinc-500 uppercase mb-1">標準</div>
-                      <div className="text-sm font-bold text-blue-400">+7.54%</div>
-                      <div className="text-[10px] text-zinc-500">PF 3.61</div>
+                    <div className="plumb-glass rounded-lg p-4 text-center">
+                      <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">標準</div>
+                      <div className="text-base font-bold text-blue-600 dark:text-blue-400">+7.54%</div>
+                      <div className="text-xs text-muted-foreground">PF 3.61</div>
                     </div>
-                    <div className="plumb-glass rounded-lg p-3 text-center">
-                      <div className="text-[10px] text-zinc-500 uppercase mb-1">積極型</div>
-                      <div className="text-sm font-bold text-orange-400">+6.63%</div>
-                      <div className="text-[10px] text-zinc-500">PF 3.15</div>
+                    <div className="plumb-glass rounded-lg p-4 text-center">
+                      <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">積極型</div>
+                      <div className="text-base font-bold text-orange-600 dark:text-orange-400">+6.63%</div>
+                      <div className="text-xs text-muted-foreground">PF 3.15</div>
                     </div>
-                    <div className="plumb-glass rounded-lg p-3 text-center">
-                      <div className="text-[10px] text-zinc-500 uppercase mb-1">慎重型</div>
-                      <div className="text-sm font-bold text-emerald-400">+6.96%</div>
-                      <div className="text-[10px] text-zinc-500">PF 3.64</div>
+                    <div className="plumb-glass rounded-lg p-4 text-center">
+                      <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">慎重型</div>
+                      <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">+6.96%</div>
+                      <div className="text-xs text-muted-foreground">PF 3.64</div>
                     </div>
                   </div>
                 </DocSection>
@@ -1105,18 +1105,18 @@ function ConditionCard({ label, value, isPositive, sub }: {
   return (
     <div className="plumb-gradient-border rounded-xl">
       <div className="plumb-glass rounded-xl p-4 text-center">
-        <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">{label}</div>
-        <div className={`text-xl font-bold ${isPositive ? 'text-emerald-400' : 'text-zinc-600'}`}>
+        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">{label}</div>
+        <div className={`text-xl font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
           {value}
         </div>
-        {sub && <div className="text-[11px] text-zinc-600 mt-1 font-mono">{sub}</div>}
+        {sub && <div className="text-xs text-muted-foreground mt-1.5 font-mono">{sub}</div>}
       </div>
     </div>
   );
 }
 
-function calculateEMA(prices: number[], period: number): number {
-  if (prices.length < period) return prices[prices.length - 1] || 0;
+function calculateEMA(prices: number[], period: number): number | undefined {
+  if (prices.length < period) return undefined;
   const k = 2 / (period + 1);
   let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < prices.length; i++) {

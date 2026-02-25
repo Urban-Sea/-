@@ -182,7 +182,7 @@ async def get_liquidity_overview():
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/plumbing-summary")
@@ -197,7 +197,14 @@ async def get_plumbing_summary():
     Market State: 統合市場状態判定
 
     最適化: 11クエリ並列実行 + 30分キャッシュ
+    高速パス: バッチ事前計算結果があれば即座に返す
     """
+    # 高速パス: 事前計算結果をチェック
+    from precomputed import get_precomputed
+    precomputed = get_precomputed("plumbing_summary")
+    if precomputed is not None:
+        return precomputed
+
     # キャッシュチェック
     now = datetime.now()
     if _plumbing_cache["data"] and _plumbing_cache["expires"] and _plumbing_cache["expires"] > now:
@@ -459,7 +466,7 @@ async def get_plumbing_summary():
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class MarginDebtInput(BaseModel):
@@ -514,7 +521,7 @@ async def upsert_margin_debt(data: MarginDebtInput):
             "change_2y": round(change_2y, 2) if change_2y else None,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/fed-balance-sheet")
@@ -530,7 +537,7 @@ async def get_fed_balance_sheet(
         result = supabase.table("fed_balance_sheet").select("*").order("date", desc=True).limit(limit).execute()
         return {"data": result.data, "count": len(result.data)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/interest-rates")
@@ -546,7 +553,7 @@ async def get_interest_rates(
         result = supabase.table("interest_rates").select("*").order("date", desc=True).limit(limit).execute()
         return {"data": result.data, "count": len(result.data)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/credit-spreads")
@@ -562,7 +569,7 @@ async def get_credit_spreads(
         result = supabase.table("credit_spreads").select("*").order("date", desc=True).limit(limit).execute()
         return {"data": result.data, "count": len(result.data)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/market-indicators")
@@ -578,7 +585,7 @@ async def get_market_indicators(
         result = supabase.table("market_indicators").select("*").order("date", desc=True).limit(limit).execute()
         return {"data": result.data, "count": len(result.data)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def _pct_change(current, previous):
@@ -595,6 +602,12 @@ async def get_market_events_endpoint():
     6種のイベント（FUNDING_STRESS, LIQUIDITY_DRAIN, BANK_STRESS,
     VOLATILITY_SHOCK, CREDIT_SPIKE, REPO_STRESS）をリアルタイム検出
     """
+    # 高速パス: 事前計算結果をチェック
+    from precomputed import get_precomputed
+    precomputed = get_precomputed("market_events")
+    if precomputed is not None:
+        return precomputed
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -721,7 +734,7 @@ async def get_market_events_endpoint():
         return event_result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/policy-regime")
@@ -730,6 +743,12 @@ async def get_policy_regime_endpoint():
     配管タブ：Policy Regime検出
     SOMA変化/RRP水準/FFレート等からFedの政策状態を判定
     """
+    # 高速パス: 事前計算結果をチェック
+    from precomputed import get_precomputed
+    precomputed = get_precomputed("policy_regime")
+    if precomputed is not None:
+        return precomputed
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -822,7 +841,7 @@ async def get_policy_regime_endpoint():
         return policy_result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/history-charts")
@@ -972,7 +991,7 @@ async def get_history_charts(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -1274,4 +1293,4 @@ async def get_backtest_states(
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

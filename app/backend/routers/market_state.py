@@ -81,7 +81,7 @@ async def get_market_state_history(
         return MarketStateResponse(records=records, total=total)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/latest", response_model=LatestMarketState)
@@ -126,7 +126,7 @@ async def get_latest_market_state():
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("")
@@ -158,4 +158,4 @@ async def add_market_state(record: MarketStateRecord):
         return {"status": "success", "id": result.data[0].get("id") if result.data else None}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

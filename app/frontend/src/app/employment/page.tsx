@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { getEmploymentRiskScore, getRiskHistory } from '@/lib/api';
+import { useEmploymentRiskScore, useRiskHistory } from '@/lib/api';
 import {
   scoreHue, scoreLabel,
   GlassCard, ScoreRing, GaugeBar, StatusChip, ScoreLegend, DocSection, DocTable,
 } from '@/components/shared/glass';
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
 import type { ChartSeries, ChartReferenceLine, ChartBackgroundZone, ChartEventMarker } from '@/components/charts/EconChartCanvas';
-import type { EmploymentRiskScore, RiskScoreCategory, RiskHistoryResponse } from '@/types';
+import type { EmploymentRiskScore, RiskScoreCategory } from '@/types';
 
 // ============================================================
 // Helpers
@@ -483,26 +483,9 @@ function YearByYearAnalysis() {
 }
 
 function RiskHistoryTab() {
-  const [histData, setHistData] = useState<RiskHistoryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data: histData, error: histError, isLoading: loading, mutate } = useRiskHistory(350);
   const [showSP500, setShowSP500] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
-
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getRiskHistory(350);
-      setHistData(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'データ取得失敗');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   const handleShowAll = useCallback(() => {
     const container = chartRef.current;
@@ -517,7 +500,7 @@ function RiskHistoryTab() {
   }, [histData]);
 
   if (loading) return <div className="flex items-center justify-center py-24"><Skeleton className="h-[400px] w-full rounded-xl" /></div>;
-  if (error) return <div className="flex flex-col items-center justify-center py-24 text-sm text-muted-foreground">{error}<Button variant="outline" size="sm" className="mt-3" onClick={fetchHistory}>再試行</Button></div>;
+  if (histError) return <div className="flex flex-col items-center justify-center py-24 text-sm text-muted-foreground">{histError instanceof Error ? histError.message : 'データ取得失敗'}<Button variant="outline" size="sm" className="mt-3" onClick={() => mutate()}>再試行</Button></div>;
   if (!histData || histData.history.length === 0) return <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">リスク履歴データがありません</div>;
 
   const series: ChartSeries[] = [
@@ -975,30 +958,13 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 // ============================================================
 
 export default function EmploymentPage() {
-  const [data, setData] = useState<EmploymentRiskScore | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error: riskError, isLoading, isValidating, mutate } = useEmploymentRiskScore();
 
-  const fetchData = useCallback(async (isRefresh = false) => {
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      const riskScore = await getEmploymentRiskScore();
-      setData(riskScore);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'データの取得に失敗しました');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refreshing = isValidating && !isLoading;
+  const handleRefresh = () => mutate();
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  if (loading) return <LoadingSkeleton />;
-  if (error) return <ErrorState error={error} onRetry={() => fetchData()} />;
+  if (isLoading) return <LoadingSkeleton />;
+  if (riskError) return <ErrorState error={riskError instanceof Error ? riskError.message : 'データの取得に失敗しました'} onRetry={handleRefresh} />;
   if (!data) return null;
 
   return (
@@ -1014,7 +980,7 @@ export default function EmploymentPage() {
         </div>
         <div className="flex items-center gap-4">
           <ScoreLegend />
-          <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing} className="text-xs font-mono">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="text-xs font-mono">
             {refreshing ? (
               <span className="flex items-center gap-1.5">
                 <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">

@@ -4,12 +4,19 @@ FastAPI + Supabase
 """
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from supabase import create_client, Client
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock
 
+
+# レート制限 (60 req/min per IP)
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 # Supabase client (global)
 supabase: Client = None
@@ -43,6 +50,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# レート制限をアプリに登録
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS設定
 app.add_middleware(
     CORSMiddleware,
@@ -52,8 +63,8 @@ app.add_middleware(
         "https://open-regime.pages.dev",  # Cloudflare Pages
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "CF-Access-Authenticated-User-Email"],
 )
 
 

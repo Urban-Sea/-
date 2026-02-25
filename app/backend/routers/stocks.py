@@ -67,7 +67,7 @@ async def get_stocks(
         return StocksResponse(stocks=stocks, total=len(stocks))
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}", response_model=StockMaster)
@@ -90,7 +90,7 @@ async def get_stock(ticker: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/categories/list")
@@ -120,4 +120,4 @@ async def get_categories():
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

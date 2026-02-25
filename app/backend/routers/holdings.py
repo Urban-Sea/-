@@ -2,12 +2,25 @@
 /api/holdings - 保有銘柄CRUD
 設計ドキュメント準拠
 """
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+import re
+from fastapi import APIRouter, HTTPException, Query, Depends
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import main
+from auth import require_auth
 
 router = APIRouter()
+
+# --- 入力バリデーション ---
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+_ACCOUNT_TYPES = {"nisa", "tokutei"}
+
+
+def _validate_ticker(v: str) -> str:
+    v = v.upper()
+    if not _TICKER_RE.match(v):
+        raise ValueError("Invalid ticker format")
+    return v
 
 
 class HoldingRecord(BaseModel):
@@ -47,6 +60,25 @@ class HoldingCreate(BaseModel):
     thesis: Optional[str] = None
     notes: Optional[str] = None
 
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, v: str) -> str:
+        return _validate_ticker(v)
+
+    @field_validator("shares")
+    @classmethod
+    def validate_shares(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("shares must be positive")
+        return v
+
+    @field_validator("avg_price")
+    @classmethod
+    def validate_price(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("avg_price must be positive")
+        return v
+
 
 class HoldingUpdate(BaseModel):
     """保有銘柄更新"""
@@ -69,20 +101,17 @@ class HoldingsResponse(BaseModel):
 
 @router.get("", response_model=HoldingsResponse)
 async def get_holdings(
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    保有銘柄一覧を取得
+    保有銘柄一覧を取得（認証済みユーザーのデータのみ）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("holdings").select("*")
-
-        if user_id:
-            query = query.eq("user_id", user_id)
+        query = supabase.table("holdings").select("*").eq("user_id", user_email)
 
         result = query.order("ticker").execute()
 
@@ -98,28 +127,32 @@ async def get_holdings(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}", response_model=HoldingRecord)
 async def get_holding(
     ticker: str,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    特定銘柄の保有情報を取得
+    特定銘柄の保有情報を取得（認証済みユーザーのデータのみ）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
+    ticker = _validate_ticker(ticker)
+
     try:
-        query = supabase.table("holdings").select("*").eq("ticker", ticker.upper())
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.limit(1).execute()
+        result = (
+            supabase.table("holdings")
+            .select("*")
+            .eq("ticker", ticker)
+            .eq("user_id", user_email)
+            .limit(1)
+            .execute()
+        )
 
         if not result.data:
             raise HTTPException(status_code=404, detail=f"Holding {ticker} not found")
@@ -129,16 +162,16 @@ async def get_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=HoldingRecord)
 async def create_holding(
     holding: HoldingCreate,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    保有銘柄を追加
+    保有銘柄を追加（認証済みユーザーに紐付け）
     """
     supabase = main.get_supabase()
     if not supabase:
@@ -146,7 +179,8 @@ async def create_holding(
 
     try:
         data = {
-            "ticker": holding.ticker.upper(),
+            "user_id": user_email,
+            "ticker": holding.ticker,
             "shares": holding.shares,
             "avg_price": holding.avg_price,
             "entry_date": holding.entry_date,
@@ -161,9 +195,6 @@ async def create_holding(
             "notes": holding.notes,
         }
 
-        if user_id:
-            data["user_id"] = user_id
-
         result = supabase.table("holdings").insert(data).execute()
 
         if not result.data:
@@ -174,17 +205,17 @@ async def create_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{holding_id}", response_model=HoldingRecord)
 async def update_holding(
     holding_id: str,
     holding: HoldingUpdate,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    保有銘柄を更新
+    保有銘柄を更新（所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
@@ -213,80 +244,85 @@ async def update_holding(
         if not update_data:
             raise HTTPException(status_code=400, detail="No update data provided")
 
-        query = supabase.table("holdings").update(update_data).eq("id", holding_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.execute()
+        # 所有権を検証しつつ更新
+        result = (
+            supabase.table("holdings")
+            .update(update_data)
+            .eq("id", holding_id)
+            .eq("user_id", user_email)
+            .execute()
+        )
 
         if not result.data:
-            raise HTTPException(status_code=404, detail=f"Holding not found")
+            raise HTTPException(status_code=404, detail="Holding not found")
 
         return HoldingRecord(**result.data[0])
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{holding_id}")
 async def delete_holding(
     holding_id: str,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    保有銘柄を削除
+    保有銘柄を削除（所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("holdings").delete().eq("id", holding_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.execute()
+        result = (
+            supabase.table("holdings")
+            .delete()
+            .eq("id", holding_id)
+            .eq("user_id", user_email)
+            .execute()
+        )
 
         if not result.data:
-            raise HTTPException(status_code=404, detail=f"Holding not found")
+            raise HTTPException(status_code=404, detail="Holding not found")
 
         return {"status": "deleted", "holding_id": holding_id}
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{holding_id}/add-shares")
 async def add_shares(
     holding_id: str,
-    shares: float = Query(..., description="追加株数"),
-    price: float = Query(..., description="取得単価"),
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    shares: float = Query(..., gt=0, description="追加株数"),
+    price: float = Query(..., gt=0, description="取得単価"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    既存の保有銘柄に買い増し（平均取得単価を再計算）
+    既存の保有銘柄に買い増し（平均取得単価を再計算、所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # 現在の保有を取得
-        query = supabase.table("holdings").select("*").eq("id", holding_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        current = query.single().execute()
+        # 所有権を検証しつつ取得
+        current = (
+            supabase.table("holdings")
+            .select("*")
+            .eq("id", holding_id)
+            .eq("user_id", user_email)
+            .single()
+            .execute()
+        )
 
         if not current.data:
-            raise HTTPException(status_code=404, detail=f"Holding not found")
+            raise HTTPException(status_code=404, detail="Holding not found")
 
         old_shares = current.data["shares"]
         old_price = current.data["avg_price"]
@@ -300,6 +336,7 @@ async def add_shares(
             supabase.table("holdings")
             .update({"shares": new_shares, "avg_price": new_avg_price})
             .eq("id", holding_id)
+            .eq("user_id", user_email)
             .execute()
         )
 
@@ -315,4 +352,4 @@ async def add_shares(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

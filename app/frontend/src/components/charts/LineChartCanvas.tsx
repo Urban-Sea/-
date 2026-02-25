@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
+import { useTheme } from 'next-themes';
 
 interface LineData {
   date: string;
@@ -15,25 +16,38 @@ interface LineChartCanvasProps {
   showEMA?: boolean;
 }
 
+const MIN_VISIBLE = 20;
+const DEFAULT_VISIBLE = 120;
+
 export default function LineChartCanvas({
   data,
   showEMA = true,
 }: LineChartCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
+  // Viewport state (refs to avoid re-render on every pan)
+  const viewRef = useRef({ start: 0, end: 0 });
+  const dragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0 });
+
+  // Initialize viewport when data changes
   useEffect(() => {
+    if (!data || data.length === 0) return;
+    const visible = Math.min(data.length, DEFAULT_VISIBLE);
+    viewRef.current = { start: data.length - visible, end: data.length };
+  }, [data]);
+
+  const draw = useCallback(() => {
     if (!data || data.length === 0) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const container = canvas.parentElement;
     if (!container) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // High DPI support
     const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -43,23 +57,32 @@ export default function LineChartCanvas({
     canvas.style.height = height + 'px';
     ctx.scale(dpr, dpr);
 
+    const { start, end } = viewRef.current;
+    const visibleData = data.slice(start, end);
+    if (visibleData.length === 0) return;
+
     const padding = { top: 36, right: 68, bottom: 44, left: 12 };
-    const totalChartHeight = height - padding.top - padding.bottom;
+    const scrollbarH = 6;
+    const totalChartHeight = height - padding.top - padding.bottom - scrollbarH - 4;
     const priceChartHeight = totalChartHeight;
 
-    // Format price
     const formatPrice = (val: number) => {
       if (val >= 1000) return '$' + val.toFixed(0);
       return '$' + val.toFixed(2);
     };
 
-    // Background
-    ctx.fillStyle = '#0a0a0a';
+    const bgColor = isDark ? '#0a0a0a' : '#ffffff';
+    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+    const priceTextColor = isDark ? '#555' : '#999';
+    const dateTextColor = isDark ? '#606060' : '#999';
+    const legendTextColor = isDark ? '#808080' : '#666';
+
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, height);
 
-    // Calculate price range (include EMA values)
+    // Price range for visible data
     let minPrice = Infinity, maxPrice = -Infinity;
-    data.forEach(d => {
+    visibleData.forEach(d => {
       if (d.close < minPrice) minPrice = d.close;
       if (d.close > maxPrice) maxPrice = d.close;
       if (showEMA) {
@@ -78,16 +101,16 @@ export default function LineChartCanvas({
     maxPrice += priceRange * 0.05;
 
     const chartWidth = width - padding.left - padding.right;
-    const pointSpacing = chartWidth / (data.length - 1 || 1);
+    const pointSpacing = chartWidth / (visibleData.length - 1 || 1);
 
     const yScale = (p: number) => padding.top + priceChartHeight * (1 - (p - minPrice) / (maxPrice - minPrice));
     const xScale = (i: number) => padding.left + pointSpacing * i;
 
-    // Grid lines (price area only)
+    // Grid lines
     const gridLines = 6;
     for (let i = 0; i <= gridLines; i++) {
       const y = padding.top + (priceChartHeight / gridLines) * i;
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.strokeStyle = gridColor;
       ctx.lineWidth = 0.5;
       ctx.setLineDash([3, 4]);
       ctx.beginPath();
@@ -96,18 +119,18 @@ export default function LineChartCanvas({
       ctx.stroke();
       ctx.setLineDash([]);
       const price = maxPrice - (maxPrice - minPrice) * (i / gridLines);
-      ctx.fillStyle = '#555';
+      ctx.fillStyle = priceTextColor;
       ctx.font = '10px -apple-system, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(formatPrice(price), width - padding.right + 6, y + 3);
     }
 
-    // Close price line - blue smooth line
+    // Close price line
     ctx.strokeStyle = '#60a5fa';
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     ctx.beginPath();
-    data.forEach((d, i) => {
+    visibleData.forEach((d, i) => {
       const x = xScale(i), y = yScale(d.close);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -115,7 +138,7 @@ export default function LineChartCanvas({
     ctx.stroke();
 
     // Fill area under line
-    const lastX = xScale(data.length - 1);
+    const lastX = xScale(visibleData.length - 1);
     ctx.lineTo(lastX, padding.top + priceChartHeight);
     ctx.lineTo(padding.left, padding.top + priceChartHeight);
     ctx.closePath();
@@ -125,10 +148,10 @@ export default function LineChartCanvas({
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Current price line
-    if (data.length > 0) {
-      const lastClose = data[data.length - 1].close;
-      const prevClose = data.length > 1 ? data[data.length - 2].close : lastClose;
+    // Current price line (last visible)
+    if (visibleData.length > 0) {
+      const lastClose = visibleData[visibleData.length - 1].close;
+      const prevClose = visibleData.length > 1 ? visibleData[visibleData.length - 2].close : lastClose;
       const lastY = yScale(lastClose);
       const isUp = lastClose >= prevClose;
       const lineColor = isUp ? '#26a69a' : '#ef5350';
@@ -143,8 +166,7 @@ export default function LineChartCanvas({
       ctx.setLineDash([]);
 
       ctx.fillStyle = lineColor;
-      const labelW = 60;
-      const labelH = 18;
+      const labelW = 60, labelH = 18;
       roundRect(ctx, width - padding.right + 1, lastY - labelH / 2, labelW, labelH, 3);
       ctx.fill();
       ctx.fillStyle = '#fff';
@@ -160,7 +182,7 @@ export default function LineChartCanvas({
       ctx.setLineDash([]);
       ctx.beginPath();
       let started = false;
-      data.forEach((d, i) => {
+      visibleData.forEach((d, i) => {
         if (d.ema8 === undefined) return;
         const x = xScale(i), y = yScale(d.ema8);
         if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
@@ -172,7 +194,7 @@ export default function LineChartCanvas({
       ctx.setLineDash([6, 3]);
       ctx.beginPath();
       started = false;
-      data.forEach((d, i) => {
+      visibleData.forEach((d, i) => {
         if (d.ema21 === undefined) return;
         const x = xScale(i), y = yScale(d.ema21);
         if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
@@ -182,21 +204,20 @@ export default function LineChartCanvas({
     }
 
     // Date labels
-    ctx.fillStyle = '#606060';
+    ctx.fillStyle = dateTextColor;
     ctx.font = '10px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    const labelStep = Math.ceil(data.length / 10);
-    data.forEach((d, i) => {
+    const labelStep = Math.max(1, Math.ceil(visibleData.length / 10));
+    visibleData.forEach((d, i) => {
       if (i % labelStep === 0) {
         const dateLabel = d.date.slice(5).replace('-', '/');
-        ctx.fillText(dateLabel, xScale(i), height - padding.bottom + 14);
+        ctx.fillText(dateLabel, xScale(i), height - padding.bottom - scrollbarH + 10);
       }
     });
 
-    // Legend (top-left)
+    // Legend
     ctx.textAlign = 'left';
     let legendX = padding.left + 4;
-
     ctx.strokeStyle = '#60a5fa';
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
@@ -205,7 +226,7 @@ export default function LineChartCanvas({
     ctx.lineTo(legendX + 14, 16);
     ctx.stroke();
     legendX += 18;
-    ctx.fillStyle = '#808080';
+    ctx.fillStyle = legendTextColor;
     ctx.font = '10px -apple-system, sans-serif';
     ctx.fillText('終値', legendX, 20);
     legendX += 28;
@@ -214,10 +235,9 @@ export default function LineChartCanvas({
       ctx.fillStyle = '#4ade80';
       ctx.fillRect(legendX, 15, 14, 2);
       legendX += 18;
-      ctx.fillStyle = '#808080';
+      ctx.fillStyle = legendTextColor;
       ctx.fillText('EMA8', legendX, 20);
       legendX += 36;
-
       ctx.strokeStyle = '#f87171';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 2]);
@@ -227,15 +247,106 @@ export default function LineChartCanvas({
       ctx.stroke();
       ctx.setLineDash([]);
       legendX += 18;
-      ctx.fillStyle = '#808080';
+      ctx.fillStyle = legendTextColor;
       ctx.fillText('EMA21', legendX, 20);
     }
 
-  }, [data, showEMA]);
+    // Scrollbar
+    if (data.length > MIN_VISIBLE) {
+      const sbY = height - scrollbarH - 2;
+      const sbWidth = chartWidth;
+      const sbX = padding.left;
+      // Track
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+      roundRect(ctx, sbX, sbY, sbWidth, scrollbarH, 3);
+      ctx.fill();
+      // Thumb
+      const thumbStart = (start / data.length) * sbWidth;
+      const thumbWidth = Math.max(20, ((end - start) / data.length) * sbWidth);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+      roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
+      ctx.fill();
+    }
+  }, [data, showEMA, isDark]);
+
+  // Draw on data/options change
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  // Mouse/wheel handlers for pan & zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !data || data.length <= MIN_VISIBLE) return;
+
+    const container = canvas.parentElement;
+    if (!container) return;
+    const chartWidth = container.clientWidth - 12 - 68; // padding.left + padding.right
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { start, end } = viewRef.current;
+      const visible = end - start;
+      const rect = canvas.getBoundingClientRect();
+      const mouseRatio = (e.clientX - rect.left - 12) / chartWidth;
+      const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
+      const newVisible = Math.max(MIN_VISIBLE, Math.min(data.length, Math.round(visible * zoomFactor)));
+      const pivot = start + visible * mouseRatio;
+      let newStart = Math.round(pivot - newVisible * mouseRatio);
+      let newEnd = newStart + newVisible;
+      if (newStart < 0) { newStart = 0; newEnd = newVisible; }
+      if (newEnd > data.length) { newEnd = data.length; newStart = data.length - newVisible; }
+      viewRef.current = { start: Math.max(0, newStart), end: Math.min(data.length, newEnd) };
+      draw();
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      dragRef.current = {
+        active: true,
+        startX: e.clientX,
+        startViewStart: viewRef.current.start,
+        startViewEnd: viewRef.current.end,
+      };
+      canvas.style.cursor = 'grabbing';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current.active) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const visible = dragRef.current.startViewEnd - dragRef.current.startViewStart;
+      const pixelsPerPoint = chartWidth / visible;
+      const shift = Math.round(-dx / pixelsPerPoint);
+      let newStart = dragRef.current.startViewStart + shift;
+      let newEnd = newStart + visible;
+      if (newStart < 0) { newStart = 0; newEnd = visible; }
+      if (newEnd > data.length) { newEnd = data.length; newStart = data.length - visible; }
+      viewRef.current = { start: Math.max(0, newStart), end: Math.min(data.length, newEnd) };
+      draw();
+    };
+
+    const onMouseUp = () => {
+      dragRef.current.active = false;
+      canvas.style.cursor = 'grab';
+    };
+
+    canvas.style.cursor = 'grab';
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [data, draw]);
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-[#808080]">
+      <div className="flex items-center justify-center h-full text-muted-foreground">
         データがありません
       </div>
     );
@@ -252,11 +363,7 @@ export default function LineChartCanvas({
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
+  x: number, y: number, w: number, h: number, r: number
 ) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
+import { useTheme } from 'next-themes';
 import type { BOSMarker, CHoCHMarker, FVGMarker } from '@/types';
 
 interface CandleData {
@@ -25,6 +26,9 @@ interface CandlestickChartProps {
   fvgMarkers?: FVGMarker[];
 }
 
+const MIN_VISIBLE = 20;
+const DEFAULT_VISIBLE = 120;
+
 export default function CandlestickChart({
   data,
   showEMA = true,
@@ -36,20 +40,30 @@ export default function CandlestickChart({
   fvgMarkers = [],
 }: CandlestickChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
+  // Viewport state (refs to avoid re-render on every pan)
+  const viewRef = useRef({ start: 0, end: 0 });
+  const dragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0 });
+
+  // Initialize viewport when data changes
   useEffect(() => {
+    if (!data || data.length === 0) return;
+    const visible = Math.min(data.length, DEFAULT_VISIBLE);
+    viewRef.current = { start: data.length - visible, end: data.length };
+  }, [data]);
+
+  const draw = useCallback(() => {
     if (!data || data.length === 0) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const container = canvas.parentElement;
     if (!container) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // High DPI support
     const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -59,47 +73,69 @@ export default function CandlestickChart({
     canvas.style.height = height + 'px';
     ctx.scale(dpr, dpr);
 
+    const { start, end } = viewRef.current;
+    const visibleData = data.slice(start, end);
+    if (visibleData.length === 0) return;
+
     // Layout: price chart top 78%, volume bottom 18%, gap 4%
-    const hasVolume = data.some(c => c.volume && c.volume > 0);
+    const hasVolume = visibleData.some(c => c.volume && c.volume > 0);
     const subRatio = hasVolume ? 0.18 : 0;
     const gapRatio = hasVolume ? 0.04 : 0;
     const priceRatio = 1 - subRatio - gapRatio;
 
     const padding = { top: 36, right: 68, bottom: 44, left: 12 };
-    const totalChartHeight = height - padding.top - padding.bottom;
+    const scrollbarH = 6;
+    const totalChartHeight = height - padding.top - padding.bottom - scrollbarH - 4;
     const priceChartHeight = totalChartHeight * priceRatio;
     const subChartTop = padding.top + priceChartHeight + totalChartHeight * gapRatio;
     const subChartHeight = totalChartHeight * subRatio;
 
-    // Create date to index map for markers
+    // Create date to visible-index map for markers
     const dateIndexMap = new Map<string, number>();
-    data.forEach((d, i) => {
+    visibleData.forEach((d, i) => {
       dateIndexMap.set(d.date, i);
     });
 
-    // Format price
     const formatPrice = (val: number) => {
       if (val >= 1000) return '$' + val.toFixed(0);
       return '$' + val.toFixed(2);
     };
 
-    // Background
-    ctx.fillStyle = '#0a0a0a';
+    // Theme colors
+    const bgColor = isDark ? '#0a0a0a' : '#ffffff';
+    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+    const priceTextColor = isDark ? '#555' : '#999';
+    const dateTextColor = isDark ? '#606060' : '#999';
+    const legendTextColor = isDark ? '#808080' : '#666';
+    const volSepColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
+    const volLabelColor = isDark ? '#444' : '#aaa';
+
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, height);
 
-    // Calculate price range
+    // Calculate price range for visible data
     let minPrice = Infinity, maxPrice = -Infinity;
-    data.forEach(c => {
+    visibleData.forEach(c => {
       if (c.low < minPrice) minPrice = c.low;
       if (c.high > maxPrice) maxPrice = c.high;
+      if (showEMA) {
+        if (c.ema8 !== undefined) {
+          if (c.ema8 < minPrice) minPrice = c.ema8;
+          if (c.ema8 > maxPrice) maxPrice = c.ema8;
+        }
+        if (c.ema21 !== undefined) {
+          if (c.ema21 < minPrice) minPrice = c.ema21;
+          if (c.ema21 > maxPrice) maxPrice = c.ema21;
+        }
+      }
     });
     const priceRange = maxPrice - minPrice;
     minPrice -= priceRange * 0.05;
     maxPrice += priceRange * 0.05;
 
     const chartWidth = width - padding.left - padding.right;
-    const candleWidth = Math.max(1, Math.min(12, (chartWidth / data.length) * 0.65));
-    const candleSpacing = chartWidth / data.length;
+    const candleWidth = Math.max(1, Math.min(12, (chartWidth / visibleData.length) * 0.65));
+    const candleSpacing = chartWidth / visibleData.length;
 
     const yScale = (p: number) => padding.top + priceChartHeight * (1 - (p - minPrice) / (maxPrice - minPrice));
     const xScale = (i: number) => padding.left + candleSpacing * i + candleSpacing / 2;
@@ -108,7 +144,7 @@ export default function CandlestickChart({
     const gridLines = 6;
     for (let i = 0; i <= gridLines; i++) {
       const y = padding.top + (priceChartHeight / gridLines) * i;
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.strokeStyle = gridColor;
       ctx.lineWidth = 0.5;
       ctx.setLineDash([3, 4]);
       ctx.beginPath();
@@ -117,7 +153,7 @@ export default function CandlestickChart({
       ctx.stroke();
       ctx.setLineDash([]);
       const price = maxPrice - (maxPrice - minPrice) * (i / gridLines);
-      ctx.fillStyle = '#555';
+      ctx.fillStyle = priceTextColor;
       ctx.font = '10px -apple-system, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(formatPrice(price), width - padding.right + 6, y + 3);
@@ -127,11 +163,11 @@ export default function CandlestickChart({
     if (showFVG && fvgMarkers.length > 0) {
       fvgMarkers.forEach(fvg => {
         const idx = dateIndexMap.get(fvg.date);
-        if (idx === undefined || idx < 0 || idx >= data.length) return;
+        if (idx === undefined || idx < 0 || idx >= visibleData.length) return;
         const gapTop = yScale(fvg.top);
         const gapBottom = yScale(fvg.bottom);
         const xStart = xScale(idx);
-        const maxExtend = Math.min(idx + 30, data.length - 1);
+        const maxExtend = Math.min(idx + 30, visibleData.length - 1);
         const xEnd = xScale(maxExtend);
         const fvgColor = 'rgba(192,132,252,0.15)';
         const fvgBorder = 'rgba(192,132,252,0.45)';
@@ -152,7 +188,7 @@ export default function CandlestickChart({
     }
 
     // Candlesticks
-    data.forEach((c, i) => {
+    visibleData.forEach((c, i) => {
       const x = xScale(i);
       const openY = yScale(c.open);
       const closeY = yScale(c.close);
@@ -182,9 +218,9 @@ export default function CandlestickChart({
       }
     });
 
-    // Current price line
-    if (data.length > 0) {
-      const lastCandle = data[data.length - 1];
+    // Current price line (last visible candle)
+    if (visibleData.length > 0) {
+      const lastCandle = visibleData[visibleData.length - 1];
       const lastY = yScale(lastCandle.close);
       const isUp = lastCandle.close >= lastCandle.open;
       const lineColor = isUp ? '#26a69a' : '#ef5350';
@@ -209,28 +245,28 @@ export default function CandlestickChart({
 
     // EMA Lines
     if (showEMA) {
-      const ema8Data = data.map(d => d.ema8).filter((v): v is number => v !== undefined);
+      const ema8Data = visibleData.map(d => d.ema8).filter((v): v is number => v !== undefined);
       if (ema8Data.length > 0) {
         ctx.strokeStyle = '#4ade80';
         ctx.lineWidth = 1.3;
         ctx.setLineDash([]);
         ctx.beginPath();
         let started = false;
-        data.forEach((d, i) => {
+        visibleData.forEach((d, i) => {
           if (d.ema8 === undefined) return;
           const x = xScale(i), y = yScale(d.ema8);
           if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
         });
         ctx.stroke();
       }
-      const ema21Data = data.map(d => d.ema21).filter((v): v is number => v !== undefined);
+      const ema21Data = visibleData.map(d => d.ema21).filter((v): v is number => v !== undefined);
       if (ema21Data.length > 0) {
         ctx.strokeStyle = '#f87171';
         ctx.lineWidth = 1.3;
         ctx.setLineDash([6, 3]);
         ctx.beginPath();
         let started = false;
-        data.forEach((d, i) => {
+        visibleData.forEach((d, i) => {
           if (d.ema21 === undefined) return;
           const x = xScale(i), y = yScale(d.ema21);
           if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
@@ -244,7 +280,7 @@ export default function CandlestickChart({
     if (showBOS && bosMarkers.length > 0) {
       bosMarkers.forEach(bos => {
         const idx = dateIndexMap.get(bos.date);
-        if (idx === undefined || idx < 0 || idx >= data.length) return;
+        if (idx === undefined || idx < 0 || idx >= visibleData.length) return;
         const x = xScale(idx), y = yScale(bos.price);
         const color = 'rgba(251,191,36,0.35)';
         ctx.font = 'bold 8px -apple-system, sans-serif';
@@ -255,7 +291,7 @@ export default function CandlestickChart({
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.textAlign = 'center';
         ctx.fillText('BOS', x, y - 8);
-        const maxExt = Math.min(idx + 12, data.length - 1);
+        const maxExt = Math.min(idx + 12, visibleData.length - 1);
         ctx.strokeStyle = 'rgba(251,191,36,0.2)';
         ctx.lineWidth = 0.8;
         ctx.setLineDash([2, 3]);
@@ -270,7 +306,7 @@ export default function CandlestickChart({
     if (showCHoCH && chochMarkers.length > 0) {
       chochMarkers.forEach(choch => {
         const idx = dateIndexMap.get(choch.date);
-        if (idx === undefined || idx < 0 || idx >= data.length) return;
+        if (idx === undefined || idx < 0 || idx >= visibleData.length) return;
         const x = xScale(idx), y = yScale(choch.price);
         const color = 'rgba(168,85,247,0.35)';
         ctx.font = 'bold 8px -apple-system, sans-serif';
@@ -282,7 +318,7 @@ export default function CandlestickChart({
         ctx.textAlign = 'center';
         ctx.fillText('CHoCH', x, y - 8);
         const sIdx = Math.max(0, idx - 5);
-        const eIdx = Math.min(data.length - 1, idx + 10);
+        const eIdx = Math.min(visibleData.length - 1, idx + 10);
         ctx.strokeStyle = 'rgba(168,85,247,0.2)';
         ctx.lineWidth = 0.8;
         ctx.setLineDash([3, 3]);
@@ -293,10 +329,9 @@ export default function CandlestickChart({
       });
     }
 
-    // ── Volume bars ──
+    // Volume bars
     if (hasVolume) {
-      // Separator line
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.strokeStyle = volSepColor;
       ctx.lineWidth = 0.5;
       ctx.setLineDash([]);
       ctx.beginPath();
@@ -304,16 +339,15 @@ export default function CandlestickChart({
       ctx.lineTo(width - padding.right, subChartTop - 2);
       ctx.stroke();
 
-      // Volume label
-      ctx.fillStyle = '#444';
+      ctx.fillStyle = volLabelColor;
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('Vol', padding.left + 2, subChartTop + 10);
 
-      const maxVol = Math.max(...data.map(c => c.volume || 0));
+      const maxVol = Math.max(...visibleData.map(c => c.volume || 0));
       if (maxVol > 0) {
         const volBarW = Math.max(1, candleWidth * 0.85);
-        data.forEach((c, i) => {
+        visibleData.forEach((c, i) => {
           if (!c.volume) return;
           const x = xScale(i);
           const barH = (c.volume / maxVol) * (subChartHeight - 4);
@@ -323,12 +357,11 @@ export default function CandlestickChart({
           ctx.fillRect(x - volBarW / 2, barY, volBarW, barH);
         });
 
-        // Volume scale label
         const volLabel = maxVol >= 1e9 ? (maxVol / 1e9).toFixed(1) + 'B'
           : maxVol >= 1e6 ? (maxVol / 1e6).toFixed(0) + 'M'
           : maxVol >= 1e3 ? (maxVol / 1e3).toFixed(0) + 'K'
           : maxVol.toString();
-        ctx.fillStyle = '#444';
+        ctx.fillStyle = volLabelColor;
         ctx.font = '9px -apple-system, sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(volLabel, width - padding.right + 6, subChartTop + 10);
@@ -336,27 +369,24 @@ export default function CandlestickChart({
     }
 
     // Date labels
-    ctx.fillStyle = '#606060';
+    ctx.fillStyle = dateTextColor;
     ctx.font = '10px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    const labelStep = Math.ceil(data.length / 10);
-    data.forEach((c, i) => {
+    const labelStep = Math.max(1, Math.ceil(visibleData.length / 10));
+    visibleData.forEach((c, i) => {
       if (i % labelStep === 0) {
         const dateLabel = c.date.slice(5).replace('-', '/');
-        ctx.fillText(dateLabel, xScale(i), height - padding.bottom + 14);
+        ctx.fillText(dateLabel, xScale(i), height - padding.bottom - scrollbarH + 10);
       }
     });
 
-    // Title & Legend
-    ctx.fillStyle = '#e0e0e0';
-    ctx.font = 'bold 12px -apple-system, sans-serif';
-    ctx.textAlign = 'left';
+    // Legend
     let titleX = padding.left + 4;
     if (showEMA) {
       ctx.fillStyle = '#4ade80';
       ctx.fillRect(titleX, 15, 14, 2);
       titleX += 18;
-      ctx.fillStyle = '#808080';
+      ctx.fillStyle = legendTextColor;
       ctx.font = '10px -apple-system, sans-serif';
       ctx.fillText('EMA8', titleX, 20);
       titleX += 36;
@@ -367,7 +397,7 @@ export default function CandlestickChart({
       ctx.beginPath(); ctx.moveTo(titleX, 16); ctx.lineTo(titleX + 14, 16); ctx.stroke();
       ctx.setLineDash([]);
       titleX += 18;
-      ctx.fillStyle = '#808080';
+      ctx.fillStyle = legendTextColor;
       ctx.fillText('EMA21', titleX, 20);
       titleX += 42;
     }
@@ -390,11 +420,100 @@ export default function CandlestickChart({
       ctx.fillText(`CHoCH:${visibleChoch}`, titleX, 20);
     }
 
-  }, [data, showEMA, showBOS, showCHoCH, showFVG, bosMarkers, chochMarkers, fvgMarkers]);
+    // Scrollbar
+    if (data.length > MIN_VISIBLE) {
+      const sbY = height - scrollbarH - 2;
+      const sbWidth = chartWidth;
+      const sbX = padding.left;
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+      roundRect(ctx, sbX, sbY, sbWidth, scrollbarH, 3);
+      ctx.fill();
+      const thumbStart = (start / data.length) * sbWidth;
+      const thumbWidth = Math.max(20, ((end - start) / data.length) * sbWidth);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+      roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
+      ctx.fill();
+    }
+  }, [data, showEMA, showBOS, showCHoCH, showFVG, bosMarkers, chochMarkers, fvgMarkers, isDark]);
+
+  // Draw on data/options change
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  // Mouse/wheel handlers for pan & zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !data || data.length <= MIN_VISIBLE) return;
+
+    const container = canvas.parentElement;
+    if (!container) return;
+    const chartWidth = container.clientWidth - 12 - 68; // padding.left + padding.right
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { start, end } = viewRef.current;
+      const visible = end - start;
+      const rect = canvas.getBoundingClientRect();
+      const mouseRatio = (e.clientX - rect.left - 12) / chartWidth;
+      const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
+      const newVisible = Math.max(MIN_VISIBLE, Math.min(data.length, Math.round(visible * zoomFactor)));
+      const pivot = start + visible * mouseRatio;
+      let newStart = Math.round(pivot - newVisible * mouseRatio);
+      let newEnd = newStart + newVisible;
+      if (newStart < 0) { newStart = 0; newEnd = newVisible; }
+      if (newEnd > data.length) { newEnd = data.length; newStart = data.length - newVisible; }
+      viewRef.current = { start: Math.max(0, newStart), end: Math.min(data.length, newEnd) };
+      draw();
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      dragRef.current = {
+        active: true,
+        startX: e.clientX,
+        startViewStart: viewRef.current.start,
+        startViewEnd: viewRef.current.end,
+      };
+      canvas.style.cursor = 'grabbing';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current.active) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const visible = dragRef.current.startViewEnd - dragRef.current.startViewStart;
+      const pixelsPerPoint = chartWidth / visible;
+      const shift = Math.round(-dx / pixelsPerPoint);
+      let newStart = dragRef.current.startViewStart + shift;
+      let newEnd = newStart + visible;
+      if (newStart < 0) { newStart = 0; newEnd = visible; }
+      if (newEnd > data.length) { newEnd = data.length; newStart = data.length - visible; }
+      viewRef.current = { start: Math.max(0, newStart), end: Math.min(data.length, newEnd) };
+      draw();
+    };
+
+    const onMouseUp = () => {
+      dragRef.current.active = false;
+      canvas.style.cursor = 'grab';
+    };
+
+    canvas.style.cursor = 'grab';
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [data, draw]);
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-[#808080]">
+      <div className="flex items-center justify-center h-full text-muted-foreground">
         データがありません
       </div>
     );

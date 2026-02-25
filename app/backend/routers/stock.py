@@ -1,6 +1,7 @@
 """
 /api/stock - 株価データAPI（キャッシュ付き）
 """
+import re
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -13,6 +14,11 @@ import asyncio
 import time
 
 router = APIRouter()
+
+# --- 入力バリデーション ---
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
+_ALLOWED_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
+_ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
 # シンプルなインメモリキャッシュ
 _cache: Dict[str, dict] = {}
@@ -89,13 +95,16 @@ async def get_stock_info(ticker: str):
     - 現在の株価クオート
     - 5分間キャッシュ
     """
-    cache_key = f"info:{ticker.upper()}"
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+    cache_key = f"info:{ticker}"
     cached = get_cached(cache_key)
     if cached:
         return StockInfo(**cached)
 
     try:
-        stock = yf.Ticker(ticker.upper())
+        stock = yf.Ticker(ticker)
         info = stock.info
 
         if not info or "symbol" not in info:
@@ -153,7 +162,7 @@ async def get_stock_info(ticker: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/quote", response_model=StockQuote)
@@ -161,7 +170,10 @@ async def get_stock_quote(ticker: str):
     """
     株価クオートのみ取得（軽量版）
     """
-    cache_key = f"quote:{ticker.upper()}"
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+    cache_key = f"quote:{ticker}"
     cached = get_cached(cache_key)
     if cached:
         return StockQuote(**cached)
@@ -203,7 +215,7 @@ async def get_stock_quote(ticker: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/history", response_model=StockHistory)
@@ -217,7 +229,14 @@ async def get_stock_history(
 
     OHLCVデータを返す
     """
-    cache_key = f"history:{ticker.upper()}:{period}:{interval}"
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+    if period not in _ALLOWED_PERIODS:
+        raise HTTPException(status_code=400, detail="Invalid period")
+    if interval not in _ALLOWED_INTERVALS:
+        raise HTTPException(status_code=400, detail="Invalid interval")
+    cache_key = f"history:{ticker}:{period}:{interval}"
     cached = get_cached(cache_key)
     if cached:
         return StockHistory(**cached)
@@ -254,7 +273,7 @@ async def get_stock_history(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/ema")
@@ -267,18 +286,29 @@ async def get_stock_ema(
 
     複数期間のEMAを計算して返す
     """
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+
+    # EMA期間のバリデーション
     try:
-        stock = yf.Ticker(ticker.upper())
+        ema_periods_list = [int(p.strip()) for p in periods.split(",")]
+        if len(ema_periods_list) > 10 or any(p < 1 or p > 500 for p in ema_periods_list):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid EMA periods")
+
+    try:
+        stock = yf.Ticker(ticker)
         df = stock.history(period="6mo")
 
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
 
         current_price = df["Close"].iloc[-1]
-        ema_periods = [int(p.strip()) for p in periods.split(",")]
 
         emas = {}
-        for period in ema_periods:
+        for period in ema_periods_list:
             ema_value = df["Close"].ewm(span=period, adjust=False).mean().iloc[-1]
             emas[f"ema_{period}"] = round(ema_value, 2)
             emas[f"above_ema_{period}"] = current_price > ema_value
@@ -293,7 +323,7 @@ async def get_stock_ema(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def _fetch_single_quote(ticker: str) -> dict:
@@ -332,9 +362,12 @@ async def get_batch_quotes(
     tickers: List[str],
 ):
     """
-    複数銘柄の株価を一括取得（並列実行）
+    複数銘柄の株価を一括取得（並列実行、最大20銘柄）
     """
-    target = tickers[:20]  # 最大20銘柄
+    if len(tickers) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 tickers allowed")
+    # バリデーション済みのtickerのみ使用
+    target = [t.upper() for t in tickers if _TICKER_RE.match(t.upper())][:20]
     loop = asyncio.get_event_loop()
     tasks = [loop.run_in_executor(_executor, _fetch_single_quote, t) for t in target]
     results = await asyncio.gather(*tasks)

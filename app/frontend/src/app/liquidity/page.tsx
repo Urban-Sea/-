@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,18 +10,18 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line,
+  ResponsiveContainer, Area, LineChart, Line,
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ReferenceLine,
 } from 'recharts';
-import { getPlumbingSummary, getHistoryCharts, getBacktestStates, getMarketEvents, getPolicyRegime } from '@/lib/api';
+import { usePlumbingSummary, useHistoryCharts, useBacktestStates, useMarketEvents, usePolicyRegime } from '@/lib/api';
 import {
   scoreHue, scoreLabel,
   GlassCard, ScoreRing, GaugeBar, Metric, StatusChip, ScoreLegend, DocSection, DocTable,
 } from '@/components/shared/glass';
 import type {
   PlumbingSummary, LayerStress, CreditPressure, MarketStateInfo,
-  HistoryChartsData, BacktestData, MarketEventsData, PolicyRegimeData,
+  MarketEventsData, PolicyRegimeData,
 } from '@/types';
 
 // ============================================================
@@ -130,9 +130,9 @@ function IndicatorBar({ indicators }: { indicators: { vix?: number; dxy?: number
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 plumb-animate-in plumb-stagger-2">
       {items.map((item) => (
-        <div key={item.label} className="plumb-glass rounded-lg px-4 py-3 flex items-center justify-between plumb-glass-hover">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{item.label}</span>
-          <span className={`text-base font-bold tabular-nums font-mono ${item.color}`}>
+        <div key={item.label} className="plumb-glass rounded-lg px-4 py-3.5 flex items-center justify-between plumb-glass-hover">
+          <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{item.label}</span>
+          <span className={`text-lg font-bold tabular-nums font-mono ${item.color}`}>
             {item.value != null ? item.format(item.value) : '—'}
           </span>
         </div>
@@ -149,13 +149,13 @@ function LayerHeader({ number, label, sub, color, score }: {
     <div className="p-5 pb-3">
       <div className="flex items-start justify-between">
         <div className="space-y-0.5">
-          <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${color}`}>{number}</p>
+          <p className={`text-[11px] font-bold uppercase tracking-[0.2em] ${color}`}>{number}</p>
           <h3 className="text-base font-bold text-foreground">{label}</h3>
-          <p className="text-[11px] text-muted-foreground">{sub}</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{sub}</p>
         </div>
         <div className="flex flex-col items-center gap-1">
           <ScoreRing score={score} size={56} strokeWidth={4} />
-          <Badge variant="outline" className={`text-[9px] ${h.text} ${h.border} font-mono`}>{scoreLabel(score)}</Badge>
+          <Badge variant="outline" className={`text-[10px] ${h.text} ${h.border} font-mono`}>{scoreLabel(score)}</Badge>
         </div>
       </div>
       <GaugeBar score={score} className="mt-3" />
@@ -170,32 +170,32 @@ function Layer1Card({ layer }: { layer: LayerStress }) {
     <GlassCard stagger={3} className="plumb-gradient-border before:bg-gradient-to-b before:from-blue-500/30 before:to-transparent">
       <LayerHeader number="LAYER 1" label="政策流動性" sub="元栓 — FRBバランスシート" color="text-blue-600 dark:text-blue-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
-        <p className="text-xs text-muted-foreground leading-relaxed">{layer.interpretation}</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{layer.interpretation}</p>
         {fed && (<>
-          <div className="rounded-lg bg-black/[0.03] dark:bg-black/20 p-3 space-y-0.5">
+          <div className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/50 p-3 space-y-0.5">
             <Metric label="SOMA資産" value={fmtB(fed.soma_assets)} />
             <Metric label="準備預金" value={fmtB(fed.reserves)} />
             <Metric label="RRP" value={fmtB(fed.rrp)} />
             <Metric label="TGA" value={fmtB(fed.tga)} />
           </div>
-          <div className="rounded-lg bg-blue-500/[0.06] border border-blue-500/10 p-3">
+          <div className="rounded-lg bg-blue-500/10 dark:bg-blue-500/[0.08] border border-blue-500/20 p-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider font-medium">純流動性</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">SOMA − RRP − TGA</p>
+                <p className="text-[11px] text-blue-700 dark:text-blue-300 uppercase tracking-wider font-medium">純流動性</p>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">SOMA − RRP − TGA</p>
               </div>
-              <p className="text-xl font-bold tabular-nums font-mono text-blue-600 dark:text-blue-400">{fmtB(netLiq)}</p>
+              <p className="text-xl font-bold tabular-nums font-mono text-blue-700 dark:text-blue-300">{fmtB(netLiq)}</p>
             </div>
             {layer.z_score != null && (
-              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-500/10">
-                <span className="text-[10px] text-muted-foreground">Z-Score</span>
-                <span className={`text-xs font-mono font-bold ${layer.z_score > 1 ? 'text-emerald-600 dark:text-emerald-400' : layer.z_score < -1 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-500/15">
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Z-Score</span>
+                <span className={`text-sm font-mono font-bold ${layer.z_score > 1 ? 'text-emerald-700 dark:text-emerald-300' : layer.z_score < -1 ? 'text-red-700 dark:text-red-300' : 'text-foreground'}`}>
                   {layer.z_score > 0 ? '+' : ''}{layer.z_score}
                 </span>
               </div>
             )}
           </div>
-          <p className="text-[10px] text-muted-foreground font-mono">UPD {fed.date}</p>
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">UPD {fed.date}</p>
         </>)}
       </div>
     </GlassCard>
@@ -208,9 +208,9 @@ function Layer2ACard({ layer }: { layer: LayerStress }) {
     <GlassCard stagger={4} className="plumb-gradient-border before:bg-gradient-to-b before:from-purple-500/30 before:to-transparent">
       <LayerHeader number="LAYER 2A" label="銀行システム" sub="配管 — 準備預金・KRE・SRF" color="text-purple-600 dark:text-purple-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
-        <p className="text-xs text-muted-foreground leading-relaxed">{layer.interpretation}</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{layer.interpretation}</p>
         {c && (
-          <div className="rounded-lg bg-black/[0.03] dark:bg-black/20 p-3 space-y-0.5">
+          <div className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/50 p-3 space-y-0.5">
             {c.reserves_value != null && (
               <Metric label="準備預金" value={fmtB(c.reserves_value as number)}>
                 {c.reserves_change_mom != null && (
@@ -237,9 +237,9 @@ function Layer2ACard({ layer }: { layer: LayerStress }) {
         {layer.alerts && layer.alerts.length > 0 && (
           <div className="space-y-1.5">
             {layer.alerts.map((alert, i) => (
-              <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/[0.05] border border-amber-500/10">
-                <span className="text-amber-600 dark:text-amber-400 text-[10px] mt-0.5 shrink-0">&#9650;</span>
-                <span className="text-[11px] text-amber-700 dark:text-amber-300/90">{alert}</span>
+              <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 dark:bg-amber-500/[0.06] border border-amber-500/20">
+                <span className="text-amber-600 dark:text-amber-400 text-[11px] mt-0.5 shrink-0">&#9650;</span>
+                <span className="text-xs text-amber-800 dark:text-amber-200">{alert}</span>
               </div>
             ))}
           </div>
@@ -255,44 +255,45 @@ function Layer2BCard({ layer }: { layer: LayerStress }) {
     <GlassCard stagger={5} className="plumb-gradient-border before:bg-gradient-to-b before:from-cyan-500/30 before:to-transparent">
       <LayerHeader number="LAYER 2B" label="リスク許容度" sub="蛇口 — 信用取引・MMF" color="text-cyan-600 dark:text-cyan-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
-        <div className="rounded-lg bg-black/[0.03] dark:bg-black/20 p-3 space-y-0.5">
+        <div className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/50 p-3 space-y-0.5">
           {layer.margin_debt_2y != null && <Metric label="信用取引 2Y変化率" value={fmtPct(layer.margin_debt_2y, 1)} />}
-          {layer.margin_debt_1y != null && <Metric label="信用取引 1Y変化率" value={fmtPct(layer.margin_debt_1y, 1)} sub="参考" />}
+          {layer.margin_debt_1y != null && <Metric label="信用取引 1Y変化率" value={fmtPct(layer.margin_debt_1y, 1)} />}
           {layer.components && (layer.components as Record<string, unknown>).mmf_change != null && (
             <Metric label="MMF 3M変化率" value={fmtPctNoSign((layer.components as Record<string, unknown>).mmf_change as number, 1)} sub="逆相関" />
           )}
+          <p className="text-[10px] text-muted-foreground/60 pt-1">※ MMF増加＝資金がリスク資産から退避 → 株式にネガティブ</p>
         </div>
         {layer.it_bubble_comparison != null && (
-          <div className="rounded-lg bg-black/[0.03] dark:bg-black/20 border border-black/[0.06] dark:border-white/[0.03] p-4 space-y-3">
+          <div className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700/50 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">ITバブル比較</p>
-              <span className={`text-sm font-bold tabular-nums font-mono ${itPct >= 80 ? 'text-red-600 dark:text-red-400' : itPct >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 tracking-wider font-medium">ITバブル比較 <span className="text-[10px] opacity-70">(信用取引残高対2Y変化率)</span></p>
+              <span className={`text-base font-bold tabular-nums font-mono ${itPct >= 80 ? 'text-red-700 dark:text-red-300' : itPct >= 60 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
                 {itPct.toFixed(0)}%
               </span>
             </div>
             <div className="relative">
-              <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800/80">
-                <div className="h-full bg-emerald-500/30" style={{ width: '50%' }} />
-                <div className="h-full bg-yellow-500/30" style={{ width: '20%' }} />
-                <div className="h-full bg-orange-500/30" style={{ width: '20%' }} />
-                <div className="h-full bg-red-500/30" style={{ width: '10%' }} />
+              <div className="flex h-3 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800/80">
+                <div className="h-full bg-emerald-500/40 dark:bg-emerald-500/30" style={{ width: '50%' }} />
+                <div className="h-full bg-yellow-500/40 dark:bg-yellow-500/30" style={{ width: '20%' }} />
+                <div className="h-full bg-orange-500/40 dark:bg-orange-500/30" style={{ width: '20%' }} />
+                <div className="h-full bg-red-500/40 dark:bg-red-500/30" style={{ width: '10%' }} />
               </div>
               <div className="absolute top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-zinc-800 dark:bg-white shadow-lg shadow-black/20 dark:shadow-white/20 transition-all duration-1000"
                 style={{ left: `${Math.min(itPct, 100)}%` }} />
             </div>
-            <div className="flex justify-between text-[9px] font-mono">
-              <span className="text-muted-foreground">0</span><span className="text-muted-foreground">50</span><span className="text-amber-500/60">70</span>
-              <span className="text-red-500/60">PEAK {layer.it_bubble_peak?.toFixed(0)}%</span>
+            <div className="flex justify-between text-[10px] font-mono">
+              <span className="text-zinc-500 dark:text-zinc-400">0</span><span className="text-zinc-500 dark:text-zinc-400">50</span><span className="text-amber-600 dark:text-amber-400">70</span>
+              <span className="text-red-600 dark:text-red-400">PEAK {layer.it_bubble_peak?.toFixed(0)}%</span>
             </div>
           </div>
         )}
         {layer.phase && (
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">フェーズ</span>
-            <Badge variant="outline" className="text-[10px] text-cyan-600 dark:text-cyan-400 border-cyan-500/20 font-mono">{layer.phase}</Badge>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">フェーズ</span>
+            <Badge variant="outline" className="text-[11px] text-cyan-700 dark:text-cyan-300 border-cyan-500/25 dark:border-cyan-500/20 font-mono">{layer.phase}</Badge>
           </div>
         )}
-        {layer.data_date && <p className="text-[10px] text-muted-foreground font-mono">UPD {layer.data_date}</p>}
+        {layer.data_date && <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">UPD {layer.data_date}</p>}
       </div>
     </GlassCard>
   );
@@ -303,10 +304,10 @@ function NetLiquidityFlow({ fed }: { fed: { soma_assets: number | null; rrp: num
   const soma = fed.soma_assets ?? 0, rrp = fed.rrp ?? 0, tga = fed.tga ?? 0;
   const net = soma - rrp - tga, max = soma || 1;
   const segments = [
-    { label: 'SOMA', value: soma, pct: 100, color: 'border-blue-500/20 bg-blue-500/[0.06]', accent: 'text-blue-600 dark:text-blue-400', op: '' },
-    { label: 'RRP', value: rrp, pct: (rrp / max) * 100, color: 'border-orange-500/20 bg-orange-500/[0.06]', accent: 'text-orange-600 dark:text-orange-400', op: '−' },
-    { label: 'TGA', value: tga, pct: (tga / max) * 100, color: 'border-amber-500/20 bg-amber-500/[0.06]', accent: 'text-amber-600 dark:text-amber-400', op: '−' },
-    { label: 'NET', value: net, pct: (net / max) * 100, color: 'border-emerald-500/20 bg-emerald-500/[0.06] ring-1 ring-emerald-500/10', accent: 'text-emerald-600 dark:text-emerald-400', op: '=' },
+    { label: 'SOMA', value: soma, pct: 100, color: 'border-blue-500/25 dark:border-blue-500/20 bg-blue-500/10 dark:bg-blue-500/[0.06]', accent: 'text-blue-700 dark:text-blue-300', op: '' },
+    { label: 'RRP', value: rrp, pct: (rrp / max) * 100, color: 'border-orange-500/25 dark:border-orange-500/20 bg-orange-500/10 dark:bg-orange-500/[0.06]', accent: 'text-orange-700 dark:text-orange-300', op: '−' },
+    { label: 'TGA', value: tga, pct: (tga / max) * 100, color: 'border-amber-500/25 dark:border-amber-500/20 bg-amber-500/10 dark:bg-amber-500/[0.06]', accent: 'text-amber-700 dark:text-amber-300', op: '−' },
+    { label: 'NET', value: net, pct: (net / max) * 100, color: 'border-emerald-500/25 dark:border-emerald-500/20 bg-emerald-500/10 dark:bg-emerald-500/[0.06] ring-1 ring-emerald-500/15', accent: 'text-emerald-700 dark:text-emerald-300', op: '=' },
   ];
   return (
     <GlassCard stagger={6}>
@@ -314,20 +315,20 @@ function NetLiquidityFlow({ fed }: { fed: { soma_assets: number | null; rrp: num
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <div className="w-1 h-4 rounded-full bg-blue-500" />
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">純流動性フロー</p>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em]">純流動性フロー</p>
           </div>
-          <p className="text-xs text-muted-foreground font-mono">SOMA − RRP − TGA = Net</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">SOMA − RRP − TGA = Net</p>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {segments.map((s) => (
             <div key={s.label} className={`rounded-xl border p-4 ${s.color} plumb-flow-pipe transition-all duration-300 hover:scale-[1.02]`}>
               <div className="flex items-center gap-1.5 mb-2">
-                {s.op && <span className="text-[10px] text-muted-foreground font-mono">{s.op}</span>}
-                <p className={`text-[10px] font-bold uppercase tracking-wider ${s.accent}`}>{s.label}</p>
+                {s.op && <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">{s.op}</span>}
+                <p className={`text-[11px] font-bold uppercase tracking-wider ${s.accent}`}>{s.label}</p>
               </div>
               <p className={`text-xl font-bold tabular-nums font-mono ${s.accent}`}>{fmtB(s.value)}</p>
-              <div className="mt-3 h-1 rounded-full bg-black/[0.04] dark:bg-white/[0.04] overflow-hidden">
-                <div className="h-full rounded-full bg-current opacity-30 plumb-gauge-bar" style={{ width: `${Math.min(Math.max(s.pct, 0), 100)}%` }} />
+              <div className="mt-3 h-1.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800/60 overflow-hidden">
+                <div className="h-full rounded-full bg-current opacity-40 dark:opacity-30 plumb-gauge-bar" style={{ width: `${Math.min(Math.max(s.pct, 0), 100)}%` }} />
               </div>
             </div>
           ))}
@@ -338,8 +339,8 @@ function NetLiquidityFlow({ fed }: { fed: { soma_assets: number | null; rrp: num
 }
 
 function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
-  const levelColor = credit.level === 'High' ? 'text-red-600 dark:text-red-400' : credit.level === 'Medium' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
-  const levelBg = credit.level === 'High' ? 'bg-red-500/10 border-red-500/20' : credit.level === 'Medium' ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+  const levelColor = credit.level === 'High' ? 'text-red-700 dark:text-red-300' : credit.level === 'Medium' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300';
+  const levelBg = credit.level === 'High' ? 'bg-red-500/12 dark:bg-red-500/10 border-red-500/25 dark:border-red-500/20' : credit.level === 'Medium' ? 'bg-amber-500/12 dark:bg-amber-500/10 border-amber-500/25 dark:border-amber-500/20' : 'bg-emerald-500/12 dark:bg-emerald-500/10 border-emerald-500/25 dark:border-emerald-500/20';
   const sensors = [
     { label: 'HYスプレッド', sub: 'ハイイールド債', value: credit.components.hy_spread?.value, format: fmtPctNoSign, status: credit.components.hy_spread?.status ?? 'normal', info: '> 5% 危険' },
     { label: 'IGスプレッド', sub: '投資適格債', value: credit.components.ig_spread?.value, format: fmtPctNoSign, status: credit.components.ig_spread?.status ?? 'normal', info: '> 1.5% 危険' },
@@ -357,11 +358,11 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
           <div className="flex items-center gap-2">
             <div className="w-1 h-4 rounded-full bg-amber-500" />
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">信用圧力センサー</p>
-              <p className="text-[10px] text-muted-foreground/70">Layer 3 — クレジット・金利・為替の横断圧力</p>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em]">信用圧力センサー</p>
+              <p className="text-[11px] text-muted-foreground/80">Layer 3 — クレジット・金利・為替の横断圧力</p>
             </div>
           </div>
-          <Badge className={`${levelBg} ${levelColor} border text-[10px] font-mono`}>
+          <Badge className={`${levelBg} ${levelColor} border text-[11px] font-mono`}>
             {credit.level === 'High' ? 'HIGH' : credit.level === 'Medium' ? 'MED' : 'LOW'}
           </Badge>
         </div>
@@ -369,15 +370,15 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
           {sensors.map((s) => (
             <Tooltip key={s.label}>
               <TooltipTrigger asChild>
-                <div className="rounded-xl bg-black/[0.03] dark:bg-black/20 border border-black/[0.06] dark:border-white/[0.03] p-4 text-center transition-all duration-200 hover:border-black/[0.12] dark:hover:border-white/[0.08] hover:bg-black/[0.05] dark:hover:bg-black/30 cursor-default">
+                <div className="rounded-xl bg-zinc-100/80 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700/50 p-4 text-center transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-600/60 cursor-default">
                   <div className="flex items-center justify-center gap-1.5 mb-2">
-                    <span className={`w-1.5 h-1.5 rounded-full ${sensorDot(s.status)}`} />
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{s.label}</p>
+                    <span className={`w-2 h-2 rounded-full ${sensorDot(s.status)}`} />
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{s.label}</p>
                   </div>
-                  <p className={`text-xl font-bold tabular-nums font-mono ${s.status === 'danger' ? 'text-red-600 dark:text-red-400' : s.status === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
+                  <p className={`text-2xl font-bold tabular-nums font-mono ${s.status === 'danger' ? 'text-red-700 dark:text-red-300' : s.status === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'}`}>
                     {s.format(s.value)}
                   </p>
-                  <p className="text-[9px] text-muted-foreground mt-1.5">{s.sub}</p>
+                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5">{s.sub}</p>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="bottom"><p className="text-xs">{s.info}</p></TooltipContent>
@@ -387,9 +388,9 @@ function CreditPressurePanel({ credit }: { credit: CreditPressure }) {
         {credit.alerts.length > 0 && (
           <div className="mt-4 space-y-1.5">
             {credit.alerts.map((alert, i) => (
-              <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/[0.04] border border-amber-500/[0.08]">
-                <span className="text-amber-600 dark:text-amber-400 text-[10px] mt-0.5 shrink-0">&#9650;</span>
-                <span className="text-[11px] text-amber-700 dark:text-amber-300/80">{alert}</span>
+              <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 dark:bg-amber-500/[0.06] border border-amber-500/20">
+                <span className="text-amber-600 dark:text-amber-400 text-[11px] mt-0.5 shrink-0">&#9650;</span>
+                <span className="text-xs text-amber-800 dark:text-amber-200">{alert}</span>
               </div>
             ))}
           </div>
@@ -409,11 +410,11 @@ function EventDetectionPanel({ eventsData }: { eventsData: MarketEventsData | nu
         <div className="p-5">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-4 rounded-full bg-emerald-500" />
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">イベント検出</p>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em]">イベント検出</p>
           </div>
-          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/15">
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/[0.08] border border-emerald-500/20">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">異常イベントは検出されていません</span>
+            <span className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">異常イベントは検出されていません</span>
           </div>
         </div>
       </GlassCard>
@@ -421,9 +422,9 @@ function EventDetectionPanel({ eventsData }: { eventsData: MarketEventsData | nu
   }
 
   const severityConfig = {
-    CRITICAL: { bg: 'bg-red-500/[0.08]', border: 'border-red-500/20', text: 'text-red-600 dark:text-red-400', dot: 'bg-red-400 animate-pulse', badge: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20' },
-    ALERT: { bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/15', text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-400', badge: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20' },
-    WARNING: { bg: 'bg-yellow-500/[0.05]', border: 'border-yellow-500/15', text: 'text-yellow-600 dark:text-yellow-400', dot: 'bg-yellow-400', badge: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/20' },
+    CRITICAL: { bg: 'bg-red-500/10 dark:bg-red-500/[0.08]', border: 'border-red-500/25 dark:border-red-500/20', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500 dark:bg-red-400 animate-pulse', badge: 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/25' },
+    ALERT: { bg: 'bg-amber-500/10 dark:bg-amber-500/[0.08]', border: 'border-amber-500/25 dark:border-amber-500/20', text: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500 dark:bg-amber-400', badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/25' },
+    WARNING: { bg: 'bg-yellow-500/10 dark:bg-yellow-500/[0.06]', border: 'border-yellow-500/25 dark:border-yellow-500/20', text: 'text-yellow-700 dark:text-yellow-300', dot: 'bg-yellow-500 dark:bg-yellow-400', badge: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/25' },
   };
   const headerColor = highest_severity === 'CRITICAL' ? 'bg-red-500' : highest_severity === 'ALERT' ? 'bg-amber-500' : 'bg-yellow-500';
 
@@ -434,33 +435,33 @@ function EventDetectionPanel({ eventsData }: { eventsData: MarketEventsData | nu
           <div className="flex items-center gap-2">
             <div className={`w-1 h-4 rounded-full ${headerColor}`} />
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">イベント検出</p>
-              <p className="text-[10px] text-muted-foreground/70">市場ストレスイベントの自動検出</p>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em]">イベント検出</p>
+              <p className="text-[11px] text-muted-foreground/80">市場ストレスイベントの自動検出</p>
             </div>
           </div>
-          <Badge variant="outline" className={`text-[10px] font-mono ${severityConfig[highest_severity as keyof typeof severityConfig]?.badge ?? ''}`}>
+          <Badge variant="outline" className={`text-[11px] font-mono ${severityConfig[highest_severity as keyof typeof severityConfig]?.badge ?? ''}`}>
             {events.length}件検出
           </Badge>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {events.map((ev, i) => {
             const cfg = severityConfig[ev.severity] ?? severityConfig.WARNING;
             return (
               <div key={i} className={`rounded-lg ${cfg.bg} border ${cfg.border} p-4`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-2.5 min-w-0">
-                    <span className={`w-2 h-2 rounded-full mt-1 shrink-0 ${cfg.dot}`} />
+                    <span className={`w-2.5 h-2.5 rounded-full mt-0.5 shrink-0 ${cfg.dot}`} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-bold ${cfg.text}`}>{ev.event_label}</span>
-                        <Badge variant="outline" className={`text-[9px] font-mono ${cfg.badge}`}>{ev.severity}</Badge>
+                        <span className={`text-sm font-bold ${cfg.text}`}>{ev.event_label}</span>
+                        <Badge variant="outline" className={`text-[10px] font-mono ${cfg.badge}`}>{ev.severity}</Badge>
                       </div>
-                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{ev.description}</p>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1.5 leading-relaxed">{ev.description}</p>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold font-mono tabular-nums ${cfg.text}`}>{ev.trigger_value.toFixed(1)}</p>
-                    <p className="text-[9px] text-muted-foreground">閾値: {ev.threshold.toFixed(1)}</p>
+                    <p className={`text-base font-bold font-mono tabular-nums ${cfg.text}`}>{ev.trigger_value.toFixed(1)}</p>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-400">閾値: {ev.threshold.toFixed(1)}</p>
                   </div>
                 </div>
               </div>
@@ -477,19 +478,26 @@ function PolicyRegimeCard({ regimeData }: { regimeData: PolicyRegimeData | null 
   const { regime, regime_label, description, fed_action_room, signals, fed_comment } = regimeData;
 
   const regimeColors: Record<string, { text: string; bg: string; border: string }> = {
-    PIVOT_CONFIRMED: { text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
-    PIVOT_EARLY: { text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-500/8', border: 'border-cyan-500/15' },
-    QE_MODE: { text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-    QT_ACTIVE: { text: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-    QT_EXHAUSTED: { text: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/8', border: 'border-orange-500/15' },
-    NEUTRAL_POLICY: { text: 'text-zinc-600 dark:text-zinc-400', bg: 'bg-zinc-500/8', border: 'border-zinc-500/15' },
+    PIVOT_CONFIRMED: { text: 'text-cyan-700 dark:text-cyan-300', bg: 'bg-cyan-500/10 dark:bg-cyan-500/[0.08]', border: 'border-cyan-500/25 dark:border-cyan-500/20' },
+    PIVOT_EARLY: { text: 'text-cyan-700 dark:text-cyan-300', bg: 'bg-cyan-500/8 dark:bg-cyan-500/[0.06]', border: 'border-cyan-500/20 dark:border-cyan-500/15' },
+    QE_MODE: { text: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/10 dark:bg-emerald-500/[0.08]', border: 'border-emerald-500/25 dark:border-emerald-500/20' },
+    QT_ACTIVE: { text: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-500/10 dark:bg-orange-500/[0.08]', border: 'border-orange-500/25 dark:border-orange-500/20' },
+    QT_EXHAUSTED: { text: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-500/8 dark:bg-orange-500/[0.06]', border: 'border-orange-500/20 dark:border-orange-500/15' },
+    NEUTRAL_POLICY: { text: 'text-zinc-700 dark:text-zinc-300', bg: 'bg-zinc-500/8 dark:bg-zinc-500/[0.06]', border: 'border-zinc-500/20 dark:border-zinc-500/15' },
   };
   const rc = regimeColors[regime] ?? regimeColors.NEUTRAL_POLICY;
 
+  const levelToPct = (item: { level: string; room_pct?: number | null }): number => {
+    if (item.room_pct != null) return Math.min(Math.max(item.room_pct * 100, 0), 100);
+    const map: Record<string, number> = { High: 80, Ample: 80, Available: 70, Medium: 50, Moderate: 50, Low: 20, Limited: 20, Unknown: 5 };
+    return map[item.level] ?? 5;
+  };
+  const levelJa: Record<string, string> = { High: '高', Ample: '十分', Available: 'あり', Medium: '中', Moderate: '中程度', Low: '低', Limited: '限定的', Unknown: '—' };
+  const overallJa: Record<string, string> = { Ample: '十分', Moderate: '中程度', Limited: '限定的', Unknown: '不明' };
   const roomMeters = [
-    { label: '利下げ余地', value: fed_action_room.rate_cut_room },
-    { label: '吸収余地', value: fed_action_room.absorption_room },
-    { label: '財政余地', value: fed_action_room.fiscal_assist_potential },
+    { label: '利下げ余地', value: levelToPct(fed_action_room.rate_cut_room), level: fed_action_room.rate_cut_room.level },
+    { label: '吸収余地', value: levelToPct(fed_action_room.absorption_room), level: fed_action_room.absorption_room.level },
+    { label: '財政余地', value: levelToPct(fed_action_room.fiscal_assist_potential), level: fed_action_room.fiscal_assist_potential.level },
   ];
 
   return (
@@ -499,30 +507,29 @@ function PolicyRegimeCard({ regimeData }: { regimeData: PolicyRegimeData | null 
           <div className="flex items-center gap-2">
             <div className="w-1 h-4 rounded-full bg-indigo-500" />
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">政策レジーム</p>
-              <p className="text-[10px] text-muted-foreground/70">FRBの政策スタンス判定</p>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em]">政策レジーム</p>
+              <p className="text-[11px] text-muted-foreground/80">FRBの政策スタンス判定</p>
             </div>
           </div>
-          <Badge variant="outline" className={`text-[10px] font-mono font-bold ${rc.text} ${rc.border}`}>
+          <Badge variant="outline" className={`text-xs font-mono font-bold ${rc.text} ${rc.border}`}>
             {regime_label}
           </Badge>
         </div>
 
-        <p className="text-xs text-muted-foreground leading-relaxed mb-4">{description}</p>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-4">{description}</p>
 
         {/* Fed Action Room meters */}
         <div className="grid grid-cols-3 gap-3 mb-4">
           {roomMeters.map((m) => {
-            const pct = Math.min(Math.max(m.value * 100, 0), 100);
-            const meterColor = pct >= 60 ? 'bg-emerald-500' : pct >= 30 ? 'bg-amber-500' : 'bg-red-500';
+            const meterColor = m.value >= 60 ? 'bg-emerald-500' : m.value >= 30 ? 'bg-amber-500' : 'bg-red-500';
             return (
-              <div key={m.label} className="rounded-lg bg-black/[0.03] dark:bg-black/20 border border-black/[0.06] dark:border-white/[0.03] p-3">
-                <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-2">{m.label}</p>
+              <div key={m.label} className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700/50 p-3">
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-medium mb-2">{m.label}</p>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                    <div className={`h-full rounded-full ${meterColor} plumb-gauge-bar`} style={{ width: `${pct}%` }} />
+                  <div className="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                    <div className={`h-full rounded-full ${meterColor} plumb-gauge-bar`} style={{ width: `${m.value}%` }} />
                   </div>
-                  <span className="text-[10px] font-mono font-bold tabular-nums text-foreground">{pct.toFixed(0)}%</span>
+                  <span className={`text-xs font-bold ${m.value >= 60 ? 'text-emerald-600 dark:text-emerald-400' : m.value >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{levelJa[m.level] ?? m.level}</span>
                 </div>
               </div>
             );
@@ -530,10 +537,10 @@ function PolicyRegimeCard({ regimeData }: { regimeData: PolicyRegimeData | null 
         </div>
 
         {/* Overall room */}
-        <div className={`rounded-lg ${rc.bg} border ${rc.border} p-3 mb-4`}>
+        <div className={`rounded-lg ${rc.bg} border ${rc.border} p-4 mb-4`}>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">総合対応余地</span>
-            <span className={`text-lg font-bold font-mono tabular-nums ${rc.text}`}>{(fed_action_room.overall_room * 100).toFixed(0)}%</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-medium">総合対応余地</span>
+            <span className={`text-xl font-bold ${rc.text}`}>{overallJa[fed_action_room.overall_room] ?? fed_action_room.overall_room}</span>
           </div>
         </div>
 
@@ -541,9 +548,9 @@ function PolicyRegimeCard({ regimeData }: { regimeData: PolicyRegimeData | null 
         {signals.length > 0 && (
           <div className="space-y-1.5 mb-4">
             {signals.map((sig, i) => (
-              <div key={i} className="flex items-start gap-2 px-3 py-1.5 rounded-md bg-black/[0.02] dark:bg-white/[0.02]">
-                <span className="text-[10px] text-indigo-500 mt-0.5 shrink-0">&#9679;</span>
-                <span className="text-[11px] text-muted-foreground">{sig}</span>
+              <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-md bg-zinc-100/60 dark:bg-zinc-900/30 border border-zinc-200/50 dark:border-zinc-700/30">
+                <span className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5 shrink-0">&#9679;</span>
+                <span className="text-xs text-zinc-600 dark:text-zinc-400">{sig}</span>
               </div>
             ))}
           </div>
@@ -551,8 +558,8 @@ function PolicyRegimeCard({ regimeData }: { regimeData: PolicyRegimeData | null 
 
         {/* Fed comment */}
         {fed_comment && (
-          <div className="rounded-lg bg-black/[0.04] dark:bg-black/30 border border-black/[0.06] dark:border-white/[0.04] p-3">
-            <p className="text-[11px] text-zinc-700 dark:text-zinc-300 leading-relaxed">{fed_comment}</p>
+          <div className="rounded-lg bg-zinc-100/80 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-700/40 p-4">
+            <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">{fed_comment}</p>
           </div>
         )}
       </div>
@@ -571,15 +578,15 @@ function DashboardTab({ data, eventsData, regimeData }: {
     <div className="space-y-4">
       {market_state && l1 && l2a && l2b && <MarketStateHero state={market_state} l1={l1.stress_score} l2a={l2a.stress_score} l2b={l2b.stress_score} />}
       <IndicatorBar indicators={market_indicators} />
-      <PolicyRegimeCard regimeData={regimeData} />
+      <EventDetectionPanel eventsData={eventsData} />
       <div className="grid gap-4 lg:grid-cols-3">
         {l1 && <Layer1Card layer={l1} />}
         {l2a && <Layer2ACard layer={l2a} />}
         {l2b && <Layer2BCard layer={l2b} />}
       </div>
-      {l1?.fed_data && <NetLiquidityFlow fed={l1.fed_data} />}
       {credit_pressure && <CreditPressurePanel credit={credit_pressure} />}
-      <EventDetectionPanel eventsData={eventsData} />
+      {l1?.fed_data && <NetLiquidityFlow fed={l1.fed_data} />}
+      <PolicyRegimeCard regimeData={regimeData} />
       <div className="flex justify-end">
         <p className="text-[10px] text-muted-foreground font-mono">
           {data.timestamp ? `LAST UPDATE ${new Date(data.timestamp).toLocaleString('ja-JP')}` : ''}
@@ -593,12 +600,25 @@ function DashboardTab({ data, eventsData, regimeData }: {
 // TAB 2: History Charts
 // ============================================================
 
+// Date axis helpers for two-tier X axis (MM/DD + Year)
+function getYearMidDates(data: Array<{ date: string }>): string[] {
+  const groups: Record<string, string[]> = {};
+  data.forEach(d => {
+    if (!d.date) return;
+    const y = d.date.substring(0, 4);
+    (groups[y] ??= []).push(d.date);
+  });
+  return Object.values(groups).map(dates => dates[Math.floor(dates.length / 2)]);
+}
+const fmtDateTick = (d: string) => d?.length >= 10 ? `${d.substring(5, 7)}/${d.substring(8, 10)}` : d ?? '';
+const fmtYearTick = (d: string) => d?.substring(0, 4) ?? '';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ChartTooltipContent({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="plumb-glass rounded-lg px-3 py-2 text-xs font-mono shadow-xl">
-      <p className="text-muted-foreground mb-1">{label}</p>
+    <div className="plumb-glass rounded-lg px-3 py-2.5 text-sm font-mono shadow-xl">
+      <p className="text-muted-foreground mb-1.5">{label}</p>
       {payload.map((p: { name: string; value: number | null; color: string }, i: number) => (
         <p key={i} style={{ color: p.color }} className="tabular-nums">
           {p.name}: {p.value != null ? p.value.toLocaleString() : '—'}
@@ -636,44 +656,36 @@ const CRISIS_PRESETS = [
 type ChartType = typeof CHART_TYPES[number]['key'];
 
 function HistoryChartsTab() {
-  const [histData, setHistData] = useState<HistoryChartsData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState('2y');
   const [chartType, setChartType] = useState<ChartType>('net_liquidity');
   const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
   const [showSP500, setShowSP500] = useState(false);
   const [showNASDAQ, setShowNASDAQ] = useState(false);
 
-  const fetchHistory = useCallback(async (p: string, start?: string, end?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getHistoryCharts(p, start, end);
-      setHistData(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'データ取得エラー');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (customRange) {
-      fetchHistory(period, customRange.start, customRange.end);
-    } else {
-      fetchHistory(period);
-    }
-  }, [period, customRange, fetchHistory]);
+  const { data: histData, error: histError, isLoading: loading } = useHistoryCharts(
+    period,
+    customRange?.start,
+    customRange?.end,
+  );
+  const error = histError ? (histError instanceof Error ? histError.message : 'データ取得エラー') : null;
 
   const handlePeriod = (p: string) => { setCustomRange(null); setPeriod(p); };
   const handleCrisis = (start: string, end: string) => { setCustomRange({ start, end }); };
 
-  const axisStyle = { fill: 'var(--color-muted-foreground)', fontSize: 10, fontFamily: 'var(--font-geist-mono)' };
+  const axisStyle = { fill: 'var(--color-muted-foreground)', fontSize: 12, fontFamily: 'var(--font-geist-mono)' };
 
   function renderChart() {
     if (!histData) return null;
     const d = histData.data;
+
+    // Compute year midpoints for year axis labels
+    const baseDataMap: Record<string, Array<{ date: string }>> = {
+      net_liquidity: d.net_liquidity, margin_debt: d.margin_debt,
+      kre: d.bank_sector, spreads: d.credit_spreads, vix: d.market_indicators,
+      layer_scores: d.layer_scores ?? [], divergence: d.layer_divergence ?? [],
+    };
+    const yearMids = getYearMidDates(baseDataMap[chartType] ?? []);
+    const yearTick = { fill: 'var(--color-foreground)', fontSize: 13, fontFamily: 'var(--font-geist-mono)', fontWeight: 600, opacity: 0.5 };
 
     switch (chartType) {
       case 'net_liquidity': {
@@ -688,7 +700,7 @@ function HistoryChartsTab() {
             })()
           : d.net_liquidity;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={nlData}>
               <defs>
                 <linearGradient id="nlFill" x1="0" y1="0" x2="0" y2="1">
@@ -697,7 +709,8 @@ function HistoryChartsTab() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v.toLocaleString()}B`} />
               {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
               <RechartsTooltip content={<ChartTooltipContent />} />
@@ -719,10 +732,11 @@ function HistoryChartsTab() {
             })()
           : d.margin_debt;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={mdData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
               <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
               <RechartsTooltip content={<ChartTooltipContent />} />
@@ -745,7 +759,7 @@ function HistoryChartsTab() {
             })()
           : d.bank_sector;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={kreData}>
               <defs>
                 <linearGradient id="kreFill" x1="0" y1="0" x2="0" y2="1">
@@ -754,7 +768,8 @@ function HistoryChartsTab() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v}`} />
               <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
               <RechartsTooltip content={<ChartTooltipContent />} />
@@ -777,14 +792,15 @@ function HistoryChartsTab() {
             })()
           : d.credit_spreads;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={spData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
               {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
               <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine yAxisId="left" y={5} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: 'HY危険', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+              <ReferenceLine yAxisId="left" y={5} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: 'HY危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
               <Line yAxisId="left" type="monotone" dataKey="hy_spread" stroke="#ef4444" strokeWidth={1.5} dot={false} name="HYスプレッド (%)" connectNulls />
               <Line yAxisId="left" type="monotone" dataKey="ig_spread" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="IGスプレッド (%)" connectNulls />
               {showSP500 && <Line yAxisId="overlay" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
@@ -799,7 +815,7 @@ function HistoryChartsTab() {
           ? d.market_indicators.map((row) => ({ ...row }))
           : d.market_indicators;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={vixData}>
               <defs>
                 <linearGradient id="vixFill" x1="0" y1="0" x2="0" y2="1">
@@ -808,12 +824,13 @@ function HistoryChartsTab() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis yAxisId="left" tick={axisStyle} tickLine={false} />
               {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
               <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine yAxisId="left" y={20} stroke="rgba(251,191,36,0.3)" strokeDasharray="4 4" label={{ value: '警戒', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
-              <ReferenceLine yAxisId="left" y={30} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+              <ReferenceLine yAxisId="left" y={20} stroke="rgba(251,191,36,0.3)" strokeDasharray="4 4" label={{ value: '警戒', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
+              <ReferenceLine yAxisId="left" y={30} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
               <Area yAxisId="left" type="monotone" dataKey="vix" stroke="#fb923c" fill="url(#vixFill)" strokeWidth={1.5} dot={false} name="VIX" connectNulls />
               {showSP500 && <Line yAxisId="overlay" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
               {showNASDAQ && <Line yAxisId="overlay" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
@@ -823,16 +840,17 @@ function HistoryChartsTab() {
       }
       case 'layer_scores': {
         const lsData = d.layer_scores ?? [];
-        if (lsData.length === 0) return <div className="h-[360px] flex items-center justify-center text-xs text-muted-foreground">Layerスコアデータがありません</div>;
+        if (lsData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">Layerスコアデータがありません</div>;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <LineChart data={lsData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis tick={axisStyle} tickLine={false} domain={[0, 100]} />
               <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine y={30} stroke="rgba(16,185,129,0.3)" strokeDasharray="4 4" label={{ value: '安全', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
-              <ReferenceLine y={70} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+              <ReferenceLine y={30} stroke="rgba(16,185,129,0.3)" strokeDasharray="4 4" label={{ value: '安全', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
+              <ReferenceLine y={70} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
               <Line type="monotone" dataKey="layer1" stroke="#3b82f6" strokeWidth={1.5} dot={false} name="L1 政策" connectNulls />
               <Line type="monotone" dataKey="layer2a" stroke="#a855f7" strokeWidth={1.5} dot={false} name="L2A 銀行" connectNulls />
               <Line type="monotone" dataKey="layer2b" stroke="#06b6d4" strokeWidth={1.5} dot={false} name="L2B 市場" connectNulls />
@@ -842,9 +860,9 @@ function HistoryChartsTab() {
       }
       case 'divergence': {
         const divData = d.layer_divergence ?? [];
-        if (divData.length === 0) return <div className="h-[360px] flex items-center justify-center text-xs text-muted-foreground">乖離データがありません</div>;
+        if (divData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">乖離データがありません</div>;
         return (
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={divData}>
               <defs>
                 <linearGradient id="divPos" x1="0" y1="0" x2="0" y2="1">
@@ -857,12 +875,13 @@ function HistoryChartsTab() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tick={axisStyle} tickLine={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
+              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
               <YAxis tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v.toFixed(1)}σ`} />
               <RechartsTooltip content={<ChartTooltipContent />} />
               <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeOpacity={0.3} />
-              <ReferenceLine y={1} stroke="rgba(239,68,68,0.2)" strokeDasharray="4 4" label={{ value: '+1σ 注意', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
-              <ReferenceLine y={-1} stroke="rgba(16,185,129,0.2)" strokeDasharray="4 4" label={{ value: '-1σ 買い候補', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+              <ReferenceLine y={1} stroke="rgba(239,68,68,0.2)" strokeDasharray="4 4" label={{ value: '+1σ 注意', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
+              <ReferenceLine y={-1} stroke="rgba(16,185,129,0.2)" strokeDasharray="4 4" label={{ value: '-1σ 買い候補', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
               <Area type="monotone" dataKey="divergence" stroke="#6366f1" fill="url(#divPos)" strokeWidth={1.5} dot={false} name="乖離 (σ)" connectNulls />
             </ComposedChart>
           </ResponsiveContainer>
@@ -880,7 +899,7 @@ function HistoryChartsTab() {
         <div className="flex items-center gap-1 plumb-glass rounded-lg p-1">
           {PERIODS.map((p) => (
             <button key={p.value} onClick={() => handlePeriod(p.value)}
-              className={`px-3 py-1.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-[11px] font-mono font-bold uppercase tracking-wider transition-colors ${
                 period === p.value && !customRange ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground'
               }`}>{p.label}</button>
           ))}
@@ -888,7 +907,7 @@ function HistoryChartsTab() {
         <div className="flex items-center gap-1">
           {CRISIS_PRESETS.map((c) => (
             <button key={c.label} onClick={() => handleCrisis(c.start, c.end)}
-              className={`px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+              className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
                 customRange?.start === c.start ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20' : 'text-muted-foreground hover:text-foreground border border-transparent'
               }`}>{c.label}</button>
           ))}
@@ -900,21 +919,21 @@ function HistoryChartsTab() {
         <div className="flex items-center gap-1 plumb-glass rounded-lg p-1 overflow-x-auto">
           {CHART_TYPES.map((ct) => (
             <button key={ct.key} onClick={() => setChartType(ct.key)}
-              className={`px-3 py-1.5 rounded-md text-[10px] font-medium whitespace-nowrap transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${
                 chartType === ct.key ? 'bg-black/[0.06] dark:bg-white/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}>{ct.label}</button>
           ))}
         </div>
         {chartType !== 'divergence' && chartType !== 'layer_scores' && (
-          <div className="flex items-center gap-3 text-[10px]">
+          <div className="flex items-center gap-3 text-[11px]">
             <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
               <input type="checkbox" checked={showSP500} onChange={(e) => setShowSP500(e.target.checked)}
-                className="w-3 h-3 rounded border-emerald-500/50 text-emerald-500 focus:ring-emerald-500/30" />
+                className="w-3.5 h-3.5 rounded border-emerald-500/50 text-emerald-500 focus:ring-emerald-500/30" />
               <span className="text-emerald-600 dark:text-emerald-400 font-mono">S&P500</span>
             </label>
             <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
               <input type="checkbox" checked={showNASDAQ} onChange={(e) => setShowNASDAQ(e.target.checked)}
-                className="w-3 h-3 rounded border-purple-500/50 text-purple-500 focus:ring-purple-500/30" />
+                className="w-3.5 h-3.5 rounded border-purple-500/50 text-purple-500 focus:ring-purple-500/30" />
               <span className="text-purple-600 dark:text-purple-400 font-mono">NASDAQ</span>
             </label>
           </div>
@@ -925,12 +944,12 @@ function HistoryChartsTab() {
       <GlassCard>
         <div className="p-5">
           {loading ? (
-            <div className="h-[360px] flex items-center justify-center">
-              <div className="text-xs text-muted-foreground font-mono">Loading...</div>
+            <div className="h-[400px] flex items-center justify-center">
+              <div className="text-sm text-muted-foreground font-mono">Loading...</div>
             </div>
           ) : error ? (
-            <div className="h-[360px] flex items-center justify-center">
-              <div className="text-xs text-red-600 dark:text-red-400">{error}</div>
+            <div className="h-[400px] flex items-center justify-center">
+              <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
             </div>
           ) : (
             <div className="plumb-chart">{renderChart()}</div>
@@ -939,7 +958,7 @@ function HistoryChartsTab() {
       </GlassCard>
 
       {histData && (
-        <p className="text-[10px] text-muted-foreground font-mono text-right">
+        <p className="text-[11px] text-muted-foreground font-mono text-right">
           {histData.start_date} — {histData.end_date}
         </p>
       )}
@@ -961,27 +980,11 @@ const STATE_DOT_MAP: Record<string, string> = {
 };
 
 function BacktestTab() {
-  const [btData, setBtData] = useState<BacktestData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data: btData, error: btError, isLoading: loading } = useBacktestStates(120);
   const [stateFilter, setStateFilter] = useState<string>('ALL');
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const data = await getBacktestStates(120);
-        setBtData(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'データ取得エラー');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
   if (loading) return <div className="h-96 flex items-center justify-center"><Skeleton className="h-8 w-40" /></div>;
-  if (error) return <div className="text-red-600 dark:text-red-400 text-sm text-center py-20">{error}</div>;
+  if (btError) return <div className="text-red-600 dark:text-red-400 text-sm text-center py-20">{btError instanceof Error ? btError.message : 'データ取得エラー'}</div>;
   if (!btData) return null;
 
   const { state_definitions, states, state_stats } = btData;
@@ -1399,38 +1402,15 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 // ============================================================
 
 export default function LiquidityPage() {
-  const [data, setData] = useState<PlumbingSummary | null>(null);
-  const [eventsData, setEventsData] = useState<MarketEventsData | null>(null);
-  const [regimeData, setRegimeData] = useState<PolicyRegimeData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error: summaryError, isLoading, isValidating, mutate } = usePlumbingSummary();
+  const { data: eventsData } = useMarketEvents();
+  const { data: regimeData } = usePolicyRegime();
 
-  const fetchData = useCallback(async (isRefresh = false) => {
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      const [summary, events, regime] = await Promise.all([
-        getPlumbingSummary(),
-        getMarketEvents().catch(() => null),
-        getPolicyRegime().catch(() => null),
-      ]);
-      setData(summary);
-      setEventsData(events);
-      setRegimeData(regime);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'データの取得に失敗しました');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refreshing = isValidating && !isLoading;
+  const handleRefresh = () => mutate();
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  if (loading) return <LoadingSkeleton />;
-  if (error) return <ErrorState error={error} onRetry={() => fetchData()} />;
+  if (isLoading) return <LoadingSkeleton />;
+  if (summaryError) return <ErrorState error={summaryError instanceof Error ? summaryError.message : 'データの取得に失敗しました'} onRetry={handleRefresh} />;
   if (!data) return null;
 
   return (
@@ -1446,7 +1426,7 @@ export default function LiquidityPage() {
         </div>
         <div className="flex items-center gap-4">
           <ScoreLegend />
-          <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing} className="text-xs font-mono">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="text-xs font-mono">
             {refreshing ? (
               <span className="flex items-center gap-1.5">
                 <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -1470,7 +1450,7 @@ export default function LiquidityPage() {
         </TabsList>
 
         <TabsContent value="dashboard">
-          <DashboardTab data={data} eventsData={eventsData} regimeData={regimeData} />
+          <DashboardTab data={data} eventsData={eventsData ?? null} regimeData={regimeData ?? null} />
         </TabsContent>
 
         <TabsContent value="history">

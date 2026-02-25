@@ -6,9 +6,14 @@
 - RS DOWN閾値: 株価カテゴリ別に最適化
 - CHoCH検出: Bearish → Bullish シーケンス確認
 """
+import re
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, Any
+
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+_MODES = {"aggressive", "balanced", "conservative"}
+_PERIODS = {"3mo", "6mo", "1y", "2y"}
 from datetime import datetime, timedelta
 import time
 
@@ -119,6 +124,10 @@ async def get_signal(
     - **mode**: aggressive=攻め, balanced=バランス, conservative=守り
     """
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+    if mode.lower() not in _MODES:
+        raise HTTPException(status_code=400, detail="Invalid mode")
     entry_mode = entry_mode_from_str(mode)
 
     # キャッシュチェック
@@ -190,13 +199,31 @@ async def get_signal(
         return response
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class BatchRequest(BaseModel):
     """バッチリクエスト"""
-    tickers: list[str]
+    tickers: list[str]  # max 50 tickers
     mode: str = "balanced"
+
+    @field_validator("tickers")
+    @classmethod
+    def validate_tickers(cls, v: list[str]) -> list[str]:
+        if len(v) > 50:
+            raise ValueError("Maximum 50 tickers allowed")
+        if len(v) == 0:
+            raise ValueError("At least 1 ticker required")
+        import re
+        pattern = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+        return [t.upper() for t in v if pattern.match(t.upper())]
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v.lower() not in {"aggressive", "balanced", "conservative"}:
+            raise ValueError("mode must be aggressive, balanced, or conservative")
+        return v.lower()
 
 
 class BatchResult(BaseModel):
@@ -289,6 +316,8 @@ async def get_bos_analysis(ticker: str):
         BOS Grade, 直近BOS一覧, CHoCH状態, Entry準備状況
     """
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
 
     try:
         import yfinance as yf
@@ -355,7 +384,7 @@ async def get_bos_analysis(ticker: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/history")
@@ -379,6 +408,12 @@ async def get_signal_history(
         stats: 統計情報
     """
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+    if period not in _PERIODS:
+        raise HTTPException(status_code=400, detail="Invalid period")
+    if mode.lower() not in _MODES:
+        raise HTTPException(status_code=400, detail="Invalid mode")
 
     # キャッシュチェック
     cache_key = f"{ticker}:{period}:{mode}"
@@ -798,7 +833,7 @@ async def get_signal_history(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/regime")
@@ -844,7 +879,7 @@ async def get_regime_for_ticker(ticker: str):
         return response
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}/chart-markers")
@@ -990,4 +1025,4 @@ async def get_chart_markers(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

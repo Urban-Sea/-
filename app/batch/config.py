@@ -23,6 +23,9 @@ load_dotenv(_env_path)
 
 # ===== 環境変数 =====
 SUPABASE_URL = os.environ["SUPABASE_URL"]
+# SECURITY WARNING: service_role キーは RLS をバイパスする最高権限キーです。
+# 将来的には書き込み専用の制限付きロールへの移行を推奨します。
+# 参考: https://supabase.com/docs/guides/auth/row-level-security
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 FRED_API_KEY = os.environ["FRED_API_KEY"]
 
@@ -113,5 +116,5 @@ def get_supabase() -> Client:
     global _supabase_client
     if _supabase_client is None:
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        logger.info(f"Supabase connected: {SUPABASE_URL[:40]}...")
+        logger.info("Supabase connected")
     return _supabase_client

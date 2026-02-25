@@ -1,3 +1,4 @@
+import useSWR from 'swr';
 import type {
   StockMaster,
   SignalResponse,
@@ -17,6 +18,8 @@ import type {
   EmploymentOverview,
   EconomicIndicator,
   WeeklyClaims,
+  EmploymentRiskScore,
+  RiskHistoryResponse,
   StockQuote,
   StockHistoryResponse,
   ExitAnalysisResponse,
@@ -214,6 +217,14 @@ export async function getWeeklyClaims(limit = 30): Promise<{ data: WeeklyClaims[
   return fetchAPI(`/api/employment/weekly-claims?limit=${limit}`);
 }
 
+export async function getEmploymentRiskScore(): Promise<EmploymentRiskScore> {
+  return fetchAPI('/api/employment/risk-score');
+}
+
+export async function getRiskHistory(months = 120): Promise<RiskHistoryResponse> {
+  return fetchAPI(`/api/employment/risk-history?months=${months}`);
+}
+
 // Stock Price API
 export async function getStockQuote(ticker: string): Promise<StockQuote> {
   const response = await fetchAPI<{ ticker: string; quote: StockQuote }>(`/api/stock/${ticker}/quote`);
@@ -307,4 +318,86 @@ export async function getBacktestStates(
   limit: number = 120
 ): Promise<BacktestData> {
   return fetchAPI(`/api/liquidity/backtest-states?limit=${limit}`);
+}
+
+// ============================================================
+// SWR Hooks — client-side cache with stale-while-revalidate
+// ============================================================
+
+export function useRegime() {
+  return useSWR<RegimeResponse>('/api/regime');
+}
+
+export function useLatestMarketState() {
+  return useSWR<LatestMarketState>('/api/market-state/latest');
+}
+
+export function useLiquidityOverview() {
+  return useSWR<LiquidityOverview>('/api/liquidity/overview');
+}
+
+export function usePlumbingSummary() {
+  return useSWR<PlumbingSummary>('/api/liquidity/plumbing-summary');
+}
+
+export function useMarketEvents() {
+  return useSWR<MarketEventsData>('/api/liquidity/events');
+}
+
+export function usePolicyRegime() {
+  return useSWR<PolicyRegimeData>('/api/liquidity/policy-regime');
+}
+
+export function useHistoryCharts(period: string, startDate?: string, endDate?: string) {
+  const params = new URLSearchParams();
+  params.set('period', period);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  return useSWR<HistoryChartsData>(`/api/liquidity/history-charts?${params.toString()}`);
+}
+
+export function useBacktestStates(limit: number = 120) {
+  return useSWR<BacktestData>(`/api/liquidity/backtest-states?limit=${limit}`);
+}
+
+export function useEmploymentRiskScore() {
+  return useSWR<EmploymentRiskScore>('/api/employment/risk-score');
+}
+
+export function useRiskHistory(months: number = 350) {
+  return useSWR<RiskHistoryResponse>(`/api/employment/risk-history?months=${months}`);
+}
+
+export function useHoldings() {
+  return useSWR<HoldingsResponse>('/api/holdings');
+}
+
+export function useTrades(params?: { limit?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const query = searchParams.toString();
+  return useSWR<{ trades: TradeRecord[]; total: number }>(`/api/trades${query ? `?${query}` : ''}`);
+}
+
+export function useTradeStats() {
+  return useSWR<TradeStats>('/api/trades/stats');
+}
+
+export function useStocks(params?: { active_only?: boolean }) {
+  const searchParams = new URLSearchParams();
+  if (params?.active_only !== undefined) searchParams.set('active_only', String(params.active_only));
+  const query = searchParams.toString();
+  return useSWR<{ stocks: StockMaster[]; total: number }>(`/api/stocks${query ? `?${query}` : ''}`);
+}
+
+export function useBatchQuotes(tickers: string[] | null) {
+  // Conditional fetch: only when tickers array is non-empty
+  const key = tickers && tickers.length > 0 ? ['batch-quotes', ...tickers] : null;
+  return useSWR<{ quotes: StockQuote[]; count: number }>(key, {
+    fetcher: () =>
+      fetchAPI<{ quotes: StockQuote[]; count: number }>('/api/stock/batch', {
+        method: 'POST',
+        body: JSON.stringify({ tickers }),
+      }),
+  });
 }

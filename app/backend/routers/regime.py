@@ -89,7 +89,7 @@ async def get_regime():
         return response
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # 後方互換性のためのエイリアス

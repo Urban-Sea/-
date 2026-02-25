@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
 const navItems = [
   { href: '/', label: '統合' },
@@ -25,7 +26,7 @@ export function Header() {
             alt="Open Regime"
             width={140}
             height={80}
-            className="h-9 w-auto"
+            className="h-9 w-auto dark:invert-0"
             priority
           />
         </Link>
@@ -45,6 +46,9 @@ export function Header() {
             </Link>
           ))}
         </nav>
+        <div className="ml-4">
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

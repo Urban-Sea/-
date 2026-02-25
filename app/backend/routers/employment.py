@@ -123,7 +123,7 @@ async def get_employment_overview():
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/indicators")
@@ -146,7 +146,7 @@ async def get_economic_indicators(
         return {"data": result.data, "count": len(result.data)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/weekly-claims")
@@ -163,7 +163,7 @@ async def get_weekly_claims(
         return {"data": result.data, "count": len(result.data)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/revisions/{indicator_id}")
@@ -178,7 +178,7 @@ async def get_indicator_revisions(indicator_id: int):
         return {"data": result.data, "count": len(result.data)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -307,7 +307,7 @@ async def upsert_indicator(data: IndicatorInput):
             }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -1071,7 +1071,14 @@ async def get_risk_score():
     雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
 
     最適化: Phase1(クエリ統合9→5) + Phase3(並列実行) + Phase4(1hキャッシュ)
+    高速パス: バッチ事前計算結果があれば即座に返す
     """
+    # 高速パス: 事前計算結果をチェック
+    from precomputed import get_precomputed
+    precomputed = get_precomputed("risk_score")
+    if precomputed is not None:
+        return precomputed
+
     # Phase 4: キャッシュチェック
     now = datetime.now()
     if _risk_score_cache["data"] and _risk_score_cache["expires"] and _risk_score_cache["expires"] > now:
@@ -1229,7 +1236,7 @@ async def get_risk_score():
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -1571,4 +1578,4 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

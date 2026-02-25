@@ -2,12 +2,18 @@
 /api/trades - 取引履歴CRUD
 設計ドキュメント準拠（BUY/SELLは別レコード）
 """
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+import re
+from fastapi import APIRouter, HTTPException, Query, Depends
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import main
+from auth import require_auth
 
 router = APIRouter()
+
+# --- 入力バリデーション ---
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+_ACTIONS = {"BUY", "SELL"}
 
 
 class TradeRecord(BaseModel):
@@ -51,6 +57,36 @@ class TradeCreate(BaseModel):
     holding_days: Optional[int] = None
     lessons_learned: Optional[str] = None
 
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, v: str) -> str:
+        v = v.upper()
+        if not _TICKER_RE.match(v):
+            raise ValueError("Invalid ticker format")
+        return v
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        v = v.upper()
+        if v not in _ACTIONS:
+            raise ValueError("action must be BUY or SELL")
+        return v
+
+    @field_validator("shares")
+    @classmethod
+    def validate_shares(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("shares must be positive")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("price must be positive")
+        return v
+
 
 class TradesResponse(BaseModel):
     """取引一覧レスポンス"""
@@ -74,29 +110,32 @@ class TradeStats(BaseModel):
 
 @router.get("", response_model=TradesResponse)
 async def get_trades(
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
     ticker: Optional[str] = Query(None, description="銘柄でフィルタ"),
     action: Optional[str] = Query(None, description="BUY/SELLでフィルタ"),
     limit: int = Query(100, ge=1, le=500, description="取得件数"),
 ):
     """
-    取引履歴を取得
+    取引履歴を取得（認証済みユーザーのデータのみ）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("trades").select("*")
-
-        if user_id:
-            query = query.eq("user_id", user_id)
+        query = supabase.table("trades").select("*").eq("user_id", user_email)
 
         if ticker:
-            query = query.eq("ticker", ticker.upper())
+            t = ticker.upper()
+            if not _TICKER_RE.match(t):
+                raise HTTPException(status_code=400, detail="Invalid ticker format")
+            query = query.eq("ticker", t)
 
         if action:
-            query = query.eq("action", action.upper())
+            a = action.upper()
+            if a not in _ACTIONS:
+                raise HTTPException(status_code=400, detail="action must be BUY or SELL")
+            query = query.eq("action", a)
 
         result = query.order("trade_date", desc=True).limit(limit).execute()
 
@@ -107,28 +146,30 @@ async def get_trades(
             total=len(trades)
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/stats", response_model=TradeStats)
 async def get_trade_stats(
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    取引統計を取得
+    取引統計を取得（認証済みユーザーのデータのみ）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("trades").select("*")
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.execute()
+        result = (
+            supabase.table("trades")
+            .select("*")
+            .eq("user_id", user_email)
+            .execute()
+        )
         trades = result.data
 
         buys = [t for t in trades if t.get("action") == "BUY"]
@@ -164,28 +205,30 @@ async def get_trade_stats(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{trade_id}", response_model=TradeRecord)
 async def get_trade(
     trade_id: str,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    特定の取引を取得
+    特定の取引を取得（所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("trades").select("*").eq("id", trade_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.single().execute()
+        result = (
+            supabase.table("trades")
+            .select("*")
+            .eq("id", trade_id)
+            .eq("user_id", user_email)
+            .single()
+            .execute()
+        )
 
         if not result.data:
             raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
@@ -195,16 +238,16 @@ async def get_trade(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=TradeRecord)
 async def create_trade(
     trade: TradeCreate,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    新規取引を記録（BUYまたはSELL）
+    新規取引を記録（認証済みユーザーに紐付け）
     """
     supabase = main.get_supabase()
     if not supabase:
@@ -212,8 +255,9 @@ async def create_trade(
 
     try:
         data = {
-            "ticker": trade.ticker.upper(),
-            "action": trade.action.upper(),
+            "user_id": user_email,
+            "ticker": trade.ticker,
+            "action": trade.action,
             "shares": trade.shares,
             "price": trade.price,
             "fees": trade.fees,
@@ -226,14 +270,11 @@ async def create_trade(
         }
 
         # SELL時は損益情報も含める
-        if trade.action.upper() == "SELL":
+        if trade.action == "SELL":
             data["profit_loss"] = trade.profit_loss
             data["profit_loss_pct"] = trade.profit_loss_pct
             data["holding_days"] = trade.holding_days
             data["lessons_learned"] = trade.lessons_learned
-
-        if user_id:
-            data["user_id"] = user_id
 
         result = supabase.table("trades").insert(data).execute()
 
@@ -245,35 +286,37 @@ async def create_trade(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/sell-from-holding")
 async def sell_from_holding(
     holding_id: str = Query(..., description="保有銘柄ID"),
-    shares: float = Query(..., description="売却株数"),
-    price: float = Query(..., description="売却単価"),
+    shares: float = Query(..., gt=0, description="売却株数"),
+    price: float = Query(..., gt=0, description="売却単価"),
     trade_date: str = Query(..., description="売却日"),
-    fees: float = Query(0, description="手数料"),
-    reason: Optional[str] = Query(None, description="売却理由"),
-    lessons_learned: Optional[str] = Query(None, description="学び"),
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    fees: float = Query(0, ge=0, description="手数料"),
+    reason: Optional[str] = Query(None, max_length=500, description="売却理由"),
+    lessons_learned: Optional[str] = Query(None, max_length=500, description="学び"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    保有銘柄から売却（損益自動計算）
+    保有銘柄から売却（損益自動計算、所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # 保有銘柄を取得
-        query = supabase.table("holdings").select("*").eq("id", holding_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        holding = query.single().execute()
+        # 所有権を検証しつつ保有銘柄を取得
+        holding = (
+            supabase.table("holdings")
+            .select("*")
+            .eq("id", holding_id)
+            .eq("user_id", user_email)
+            .single()
+            .execute()
+        )
 
         if not holding.data:
             raise HTTPException(status_code=404, detail="Holding not found")
@@ -300,6 +343,7 @@ async def sell_from_holding(
 
         # SELL取引を記録
         trade_data = {
+            "user_id": user_email,
             "ticker": ticker,
             "action": "SELL",
             "shares": shares,
@@ -315,21 +359,18 @@ async def sell_from_holding(
             "holding_days": holding_days,
         }
 
-        if user_id:
-            trade_data["user_id"] = user_id
-
         trade_result = supabase.table("trades").insert(trade_data).execute()
 
         # 保有株数を減らす（全売却の場合は削除）
         new_shares = h["shares"] - shares
 
         if new_shares <= 0:
-            # 全売却 → 保有を削除
-            supabase.table("holdings").delete().eq("id", holding_id).execute()
+            # 全売却 → 保有を削除（所有権検証付き）
+            supabase.table("holdings").delete().eq("id", holding_id).eq("user_id", user_email).execute()
             holding_status = "deleted"
         else:
-            # 部分売却 → 株数更新
-            supabase.table("holdings").update({"shares": new_shares}).eq("id", holding_id).execute()
+            # 部分売却 → 株数更新（所有権検証付き）
+            supabase.table("holdings").update({"shares": new_shares}).eq("id", holding_id).eq("user_id", user_email).execute()
             holding_status = "updated"
 
         return {
@@ -344,28 +385,29 @@ async def sell_from_holding(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{trade_id}")
 async def delete_trade(
     trade_id: str,
-    user_id: Optional[str] = Query(None, description="ユーザーID（UUID）"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    取引を削除
+    取引を削除（所有権検証あり）
     """
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        query = supabase.table("trades").delete().eq("id", trade_id)
-
-        if user_id:
-            query = query.eq("user_id", user_id)
-
-        result = query.execute()
+        result = (
+            supabase.table("trades")
+            .delete()
+            .eq("id", trade_id)
+            .eq("user_id", user_email)
+            .execute()
+        )
 
         if not result.data:
             raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
@@ -375,4 +417,4 @@ async def delete_trade(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
