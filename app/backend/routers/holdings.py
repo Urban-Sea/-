@@ -127,7 +127,7 @@ async def get_holdings(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Holdings error: {type(e).__name__}: {e}")
 
 
 @router.get("/{ticker}", response_model=HoldingRecord)
