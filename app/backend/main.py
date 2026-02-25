@@ -62,6 +62,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "https://open-regime.pages.dev",  # Cloudflare Pages
+        "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev",  # CF Worker proxy
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "open-regime-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-01",
+  "vars": {
+    "ORIGIN": "https://empathetic-hope-production.up.railway.app",
+    "ALLOWED_ORIGIN": "https://open-regime.pages.dev"
+  }
+}
