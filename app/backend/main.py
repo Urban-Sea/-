@@ -113,6 +113,8 @@ async def health_check():
         role = json.loads(base64.b64decode(payload)).get("role", "unknown")
     except Exception:
         pass
+    # SUPABASE を含む環境変数名をリスト（値は非表示）
+    sb_vars = [k for k in os.environ if "SUPABASE" in k.upper()]
     return {
         "status": "healthy",
         "supabase": "connected" if supabase else "disconnected",
@@ -122,6 +124,7 @@ async def health_check():
         "env_anon_len": len(raw_anon),
         "active_key_type": kt,
         "jwt_role": role,
+        "supabase_env_vars": sb_vars,
     }
 
 
