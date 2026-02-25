@@ -8,10 +8,28 @@ on:
       - 'app/frontend/**'
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      worker: ${{ steps.filter.outputs.worker }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            worker:
+              - 'app/worker/**'
+            frontend:
+              - 'app/frontend/**'
+
   deploy-worker:
     name: Deploy Cloudflare Worker
+    needs: changes
+    if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
-    if: contains(join(github.event.commits.*.modified, ','), 'app/worker/') || contains(join(github.event.commits.*.added, ','), 'app/worker/')
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +50,9 @@ jobs:
 
   deploy-pages:
     name: Deploy Cloudflare Pages
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    if: contains(join(github.event.commits.*.modified, ','), 'app/frontend/') || contains(join(github.event.commits.*.added, ','), 'app/frontend/')
     steps:
       - uses: actions/checkout@v4
 

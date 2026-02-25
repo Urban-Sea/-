@@ -1,7 +1,4 @@
-/**
- * Cache TTL configuration per API endpoint.
- * Returns TTL in seconds, or 0 for no-cache endpoints.
- */
+/** Cache TTL configuration per API endpoint. Returns TTL in seconds, or 0 for no-cache. */
 
 interface CacheRule {
   pattern: RegExp;
