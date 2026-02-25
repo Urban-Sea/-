@@ -1008,9 +1008,7 @@ export default function HoldingsPage() {
     }
   }, [mutateAll]);
 
-  const loading = holdingsLoading || tradesLoading;
-
-  if (loading) return <LoadingSkeleton />;
+  if (holdingsLoading) return <LoadingSkeleton />;
 
   if (holdingsError) {
     return (
@@ -1081,7 +1079,11 @@ export default function HoldingsPage() {
 
         {/* Trades Tab */}
         <TabsContent value="trades" className="mt-4">
-          <TradesTab trades={trades} />
+          {tradesLoading ? (
+            <GlassCard><div className="p-8 text-center"><Skeleton className="h-4 w-32 mx-auto" /></div></GlassCard>
+          ) : (
+            <TradesTab trades={trades} />
+          )}
         </TabsContent>
 
         {/* Stats Tab */}
@@ -1090,7 +1092,9 @@ export default function HoldingsPage() {
             <StatsTab stats={stats} />
           ) : (
             <GlassCard>
-              <div className="p-8 text-center text-muted-foreground text-sm">統計データがありません</div>
+              <div className="p-8 text-center text-muted-foreground text-sm">
+                {tradesLoading ? <Skeleton className="h-4 w-32 mx-auto" /> : '統計データがありません'}
+              </div>
             </GlassCard>
           )}
         </TabsContent>
