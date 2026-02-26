@@ -13,7 +13,7 @@ function corsHeaders(origin: string, allowedOrigin: string): Record<string, stri
   return {
     'Access-Control-Allow-Origin': responseOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, CF-Access-Authenticated-User-Email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };

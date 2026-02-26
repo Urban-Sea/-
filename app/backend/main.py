@@ -69,7 +69,7 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "CF-Access-Authenticated-User-Email"],
+    allow_headers=["Content-Type", "Authorization", "X-User-Email"],
 )
 
 

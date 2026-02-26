@@ -46,7 +46,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'CF-Access-Authenticated-User-Email': email } : {}),
+      ...(email ? { 'X-User-Email': email } : {}),
       ...options?.headers,
     },
   });

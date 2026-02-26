@@ -11,7 +11,7 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'CF-Access-Authenticated-User-Email': email } : {}),
+      ...(email ? { 'X-User-Email': email } : {}),
     },
   });
 
