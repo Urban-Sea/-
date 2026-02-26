@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { GlossaryButton } from '@/components/onboarding/GlossaryPanel';
+import { UserMenu } from './UserMenu';
 
 const navItems = [
   { href: '/', label: '統合システム' },
@@ -19,7 +21,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
-      <div className="flex h-14 items-center justify-center px-4">
+      <div className="flex h-14 items-center px-4">
         <Link href="/" className="mr-8 flex items-center gap-2 shrink-0">
           <Image
             src="/logo.png"
@@ -30,7 +32,7 @@ export function Header() {
             priority
           />
         </Link>
-        <nav className="flex items-center space-x-1">
+        <nav className="flex items-center space-x-1 flex-1 justify-center">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -46,8 +48,10 @@ export function Header() {
             </Link>
           ))}
         </nav>
-        <div className="ml-4">
+        <div className="flex items-center gap-1 shrink-0">
+          <GlossaryButton />
           <ThemeToggle />
+          <UserMenu />
         </div>
       </div>
     </header>

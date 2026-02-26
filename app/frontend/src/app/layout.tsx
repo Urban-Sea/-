@@ -3,7 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "@/components/layout/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { UserProvider } from "@/components/providers/UserProvider";
 import { SWRProvider } from "@/lib/swr";
+import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,14 +39,17 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
       >
         <ThemeProvider>
-          <SWRProvider>
-            <TooltipProvider>
-              <Header />
-              <main className="w-full py-6">
-                {children}
-              </main>
-            </TooltipProvider>
-          </SWRProvider>
+          <UserProvider>
+            <SWRProvider>
+              <TooltipProvider>
+                <Header />
+                <WelcomeModal />
+                <main className="w-full py-6">
+                  {children}
+                </main>
+              </TooltipProvider>
+            </SWRProvider>
+          </UserProvider>
         </ThemeProvider>
       </body>
     </html>
