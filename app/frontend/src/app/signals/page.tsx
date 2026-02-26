@@ -560,16 +560,16 @@ function SignalsPage() {
                 <div className="flex items-center gap-4">
                   <TickerIcon ticker={signal.ticker} size={72} />
                   <div>
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-2xl font-extrabold tracking-tight text-foreground">{signal.ticker}</span>
                       {/^\d/.test(signal.ticker) && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/20 font-mono">JP</span>
                       )}
-                      {(() => {
-                        const name = signal.name ?? stocks.find(s => s.ticker === signal.ticker)?.name;
-                        return name ? <span className="text-xs text-muted-foreground max-w-[200px] truncate">{name}</span> : null;
-                      })()}
                     </div>
+                    {(() => {
+                      const name = signal.name ?? stocks.find(s => s.ticker === signal.ticker)?.name;
+                      return name ? <div className="text-sm text-muted-foreground truncate max-w-[260px]">{name}</div> : null;
+                    })()}
                     <div className="flex items-baseline gap-2 mt-0.5">
                       <span className="text-xl font-bold font-mono text-foreground">{/^\d/.test(signal.ticker) ? '¥' : '$'}{signal.price.toFixed(2)}</span>
                       <span className={`text-sm font-semibold ${signal.price_change_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>

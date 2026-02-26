@@ -33,8 +33,11 @@ export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: numbe
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const color = TICKER_COLORS[hashTicker(ticker) % TICKER_COLORS.length];
-  const abbr = ticker.length <= 2 ? ticker : ticker.slice(0, 2);
-  const fontSize = size <= 24 ? 9 : size <= 32 ? 12 : 16;
+  const isJP = /^\d+$/.test(ticker);
+  const abbr = isJP ? ticker : (ticker.length <= 2 ? ticker : ticker.slice(0, 2));
+  const fontSize = isJP
+    ? (size <= 24 ? 7 : size <= 32 ? 9 : size <= 48 ? 12 : 14)
+    : (size <= 24 ? 9 : size <= 32 ? 12 : 16);
   const logoUrl = `${LOGO_CDN}/${ticker.toUpperCase()}.png`;
 
   if (!logoFailed) {
