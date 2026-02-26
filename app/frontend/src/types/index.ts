@@ -40,6 +40,10 @@ export interface SignalResponse {
     down_threshold: number;
   };
   regime: string;
+  benchmark_ticker?: string;
+  benchmark_price?: number;
+  benchmark_ema_long?: number;
+  ema_short_slope?: number;
   mode: string;
   entry_allowed: boolean;
   position_size_pct: number;

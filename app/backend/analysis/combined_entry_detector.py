@@ -95,6 +95,12 @@ class EntryAnalysis:
     # V10: 株価カテゴリ情報
     price_category: str = "$0-5"    # $0-5 / $5-15 / $15-35 / $35-60 / $60-100 / $100-200 / $200+
 
+    # ベンチマーク情報
+    benchmark_ticker: str = "SPY"
+    benchmark_price: float = 0.0
+    benchmark_ema_long: float = 0.0
+    ema_short_slope: float = 0.0
+
 
 class CombinedEntryDetector:
     """Combined Entry + 運用モード判定（マルチアセット対応、V9 Regime対応）"""
@@ -237,7 +243,8 @@ class CombinedEntryDetector:
         price_change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
 
         # V9/V10: 現在のRegimeを検出し、閾値を取得
-        current_regime = self._detect_current_regime(benchmark_df)
+        regime_result = self._detect_current_regime(benchmark_df)
+        current_regime = regime_result.regime if regime_result else "BULL"
         ema_threshold, rs_down_threshold, price_category = self._get_regime_thresholds(
             current_regime, price
         )
@@ -294,17 +301,21 @@ class CombinedEntryDetector:
             ema_threshold_used=ema_threshold,
             rs_down_threshold_used=rs_down_threshold,
             price_category=price_category,
+            benchmark_ticker=regime_result.benchmark_ticker if regime_result else "SPY",
+            benchmark_price=round(regime_result.benchmark_close, 2) if regime_result else 0.0,
+            benchmark_ema_long=round(regime_result.benchmark_ema_long, 2) if regime_result else 0.0,
+            ema_short_slope=round(regime_result.ema_short_slope, 4) if regime_result else 0.0,
         )
 
-    def _detect_current_regime(self, benchmark_df: Optional[pd.DataFrame]) -> str:
+    def _detect_current_regime(self, benchmark_df: Optional[pd.DataFrame]):
         """
         V9: 現在のMarket Regimeを検出
 
         Returns:
-            str: BULL / WEAKENING / BEAR / RECOVERY
+            RegimeResult or None
         """
         if not self.use_v9_regime or self._regime_detector is None:
-            return "BULL"  # V9無効時はデフォルトBULL
+            return None
 
         try:
             result = self._regime_detector.detect(
@@ -312,9 +323,9 @@ class CombinedEntryDetector:
                 jp_benchmark=self.jp_benchmark,
                 benchmark_df=benchmark_df
             )
-            return result.regime
+            return result
         except Exception:
-            return "BULL"
+            return None
 
     def _get_regime_thresholds(self, regime: str, price: float = None) -> tuple:
         """

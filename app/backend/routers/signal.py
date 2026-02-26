@@ -93,6 +93,10 @@ class SignalResponse(BaseModel):
 
     # Regime情報
     regime: str  # BULL, WEAKENING, BEAR, RECOVERY
+    benchmark_ticker: str = "SPY"
+    benchmark_price: float = 0.0
+    benchmark_ema_long: float = 0.0
+    ema_short_slope: float = 0.0
 
     # モード別判定
     mode: str
@@ -211,6 +215,10 @@ async def get_signal(
             conditions=conditions,
             relative_strength=relative_strength,
             regime=result.regime,
+            benchmark_ticker=result.benchmark_ticker,
+            benchmark_price=result.benchmark_price,
+            benchmark_ema_long=result.benchmark_ema_long,
+            ema_short_slope=result.ema_short_slope,
             mode=result.mode,
             entry_allowed=result.entry_allowed,
             position_size_pct=result.position_size_pct,

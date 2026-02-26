@@ -773,18 +773,28 @@ function SignalsPage() {
                     <StatusChip label={modeLabels[mode].label} color="blue" />
                   </div>
 
-                  {/* Regime Info */}
-                  {regime && (
-                    <div className="flex items-center gap-4 mb-5 px-4 py-3 plumb-glass rounded-lg text-sm flex-wrap">
-                      <Metric label="市場" value="">
-                        <span className={`text-sm font-bold ${getRegimeColor(regime.regime)}`}>{regime.regime}</span>
-                      </Metric>
-                      <span className="w-px h-4 bg-border" />
-                      <span className="text-muted-foreground">SPY: <span className="text-foreground font-mono font-semibold">${regime.benchmark_price.toFixed(2)}</span></span>
-                      <span className="text-muted-foreground">200EMA: <span className="text-foreground font-mono font-semibold">${regime.benchmark_ema_long.toFixed(2)}</span></span>
-                      <span className="text-muted-foreground">傾き: <span className={`font-mono font-semibold ${regime.ema_short_slope >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{regime.ema_short_slope >= 0 ? '+' : ''}{regime.ema_short_slope.toFixed(3)}</span></span>
-                    </div>
-                  )}
+                  {/* Regime Info — signal がある時はシグナルのベンチマークを使用 */}
+                  {(signal || regime) && (() => {
+                    const regimeLabel = signal?.regime ?? regime?.regime ?? '';
+                    const bmTicker = signal?.benchmark_ticker ?? regime?.benchmark_ticker ?? 'SPY';
+                    const bmPrice = signal?.benchmark_price ?? regime?.benchmark_price ?? 0;
+                    const bmEma = signal?.benchmark_ema_long ?? regime?.benchmark_ema_long ?? 0;
+                    const slope = signal?.ema_short_slope ?? regime?.ema_short_slope ?? 0;
+                    const bmIsJP = bmTicker === '^N225' || bmTicker === 'N225';
+                    const bmName = bmIsJP ? '日経225' : bmTicker;
+                    const bmCcy = bmIsJP ? '¥' : '$';
+                    return (
+                      <div className="flex items-center gap-4 mb-5 px-4 py-3 plumb-glass rounded-lg text-sm flex-wrap">
+                        <Metric label="市場" value="">
+                          <span className={`text-sm font-bold ${getRegimeColor(regimeLabel)}`}>{regimeLabel}</span>
+                        </Metric>
+                        <span className="w-px h-4 bg-border" />
+                        <span className="text-muted-foreground">{bmName}: <span className="text-foreground font-mono font-semibold">{bmCcy}{bmPrice.toFixed(2)}</span></span>
+                        <span className="text-muted-foreground">200EMA: <span className="text-foreground font-mono font-semibold">{bmCcy}{bmEma.toFixed(2)}</span></span>
+                        <span className="text-muted-foreground">傾き: <span className={`font-mono font-semibold ${slope >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{slope >= 0 ? '+' : ''}{slope.toFixed(3)}</span></span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Verdict Hero */}
                   <div className={`relative text-center py-8 rounded-xl mb-5 border overflow-hidden ${
