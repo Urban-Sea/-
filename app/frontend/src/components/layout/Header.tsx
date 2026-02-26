@@ -14,6 +14,7 @@ const navItems = [
   { href: '/employment', label: '米国景気警戒システム' },
   { href: '/signals', label: '個別シグナル分析' },
   { href: '/holdings', label: '保有・取引管理' },
+  { href: '/about', label: '概要' },
 ];
 
 export function Header() {
