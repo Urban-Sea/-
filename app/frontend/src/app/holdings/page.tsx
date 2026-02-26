@@ -390,6 +390,31 @@ function SectorBreakdown({ holdings, quotes, fxRate }: {
 // Holdings Table
 // ============================================================
 
+type SortKey = 'ticker' | 'shares' | 'avg_price' | 'price' | 'market_value' | 'pnl';
+type SortDir = 'asc' | 'desc';
+
+function SortableHeader({ label, sortKey: key, currentKey, currentDir, onSort, align }: {
+  label: string; sortKey: SortKey; currentKey: SortKey; currentDir: SortDir;
+  onSort: (k: SortKey) => void; align?: 'right';
+}) {
+  const active = currentKey === key;
+  return (
+    <TableHead
+      className={`text-[10px] uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors ${align === 'right' ? 'text-right' : ''}`}
+      onClick={() => onSort(key)}
+    >
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {active ? (
+          <span className="text-blue-500">{currentDir === 'asc' ? '▲' : '▼'}</span>
+        ) : (
+          <span className="text-muted-foreground/40">⇅</span>
+        )}
+      </span>
+    </TableHead>
+  );
+}
+
 function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell, onDelete }: {
   holdings: HoldingRecord[];
   quotes: Map<string, StockQuote>;
@@ -399,6 +424,45 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
   onSell: (h: HoldingRecord) => void;
   onDelete: (h: HoldingRecord) => void;
 }) {
+  const [sortKey, setSortKey] = useState<SortKey>('pnl');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const handleSort = useCallback((key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  }, [sortKey]);
+
+  const sorted = useMemo(() => {
+    return [...holdings].sort((a, b) => {
+      let va: number | string = 0;
+      let vb: number | string = 0;
+      const qA = quotes.get(a.ticker);
+      const qB = quotes.get(b.ticker);
+      const priceA = qA?.price ?? a.avg_price;
+      const priceB = qB?.price ?? b.avg_price;
+
+      switch (sortKey) {
+        case 'ticker': va = a.ticker; vb = b.ticker; break;
+        case 'shares': va = a.shares; vb = b.shares; break;
+        case 'avg_price': va = a.avg_price; vb = b.avg_price; break;
+        case 'price': va = priceA; vb = priceB; break;
+        case 'market_value': va = a.shares * priceA; vb = b.shares * priceB; break;
+        case 'pnl':
+          va = a.shares * priceA - a.shares * a.avg_price;
+          vb = b.shares * priceB - b.shares * b.avg_price;
+          break;
+      }
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
+    });
+  }, [holdings, quotes, sortKey, sortDir]);
+
   if (holdings.length === 0) {
     return (
       <GlassCard stagger={5}>
@@ -416,19 +480,19 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[10px] uppercase tracking-wider">ティッカー</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wider">株数</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wider">平均取得</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wider">現在値</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wider">評価額</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wider">含み損益</TableHead>
+              <SortableHeader label="ティッカー" sortKey="ticker" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortableHeader label="株数" sortKey="shares" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortableHeader label="平均取得" sortKey="avg_price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortableHeader label="現在値" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortableHeader label="評価額" sortKey="market_value" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortableHeader label="含み損益" sortKey="pnl" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
               <TableHead className="text-[10px] uppercase tracking-wider">口座</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">セクター</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">アクション</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {holdings.map((h) => {
+            {sorted.map((h) => {
               const quote = quotes.get(h.ticker);
               const currentPrice = quote?.price ?? h.avg_price;
               const marketValue = h.shares * currentPrice;
