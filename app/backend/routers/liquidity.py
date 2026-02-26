@@ -526,7 +526,7 @@ async def upsert_margin_debt(data: MarginDebtInput):
 
 @router.get("/fed-balance-sheet")
 async def get_fed_balance_sheet(
-    limit: int = Query(30, description="取得件数"),
+    limit: int = Query(30, ge=1, le=500, description="取得件数"),
 ):
     """FRBバランスシート履歴"""
     supabase = main.get_supabase()
@@ -542,7 +542,7 @@ async def get_fed_balance_sheet(
 
 @router.get("/interest-rates")
 async def get_interest_rates(
-    limit: int = Query(30, description="取得件数"),
+    limit: int = Query(30, ge=1, le=500, description="取得件数"),
 ):
     """金利履歴"""
     supabase = main.get_supabase()
@@ -558,7 +558,7 @@ async def get_interest_rates(
 
 @router.get("/credit-spreads")
 async def get_credit_spreads(
-    limit: int = Query(30, description="取得件数"),
+    limit: int = Query(30, ge=1, le=500, description="取得件数"),
 ):
     """クレジットスプレッド履歴"""
     supabase = main.get_supabase()
@@ -574,7 +574,7 @@ async def get_credit_spreads(
 
 @router.get("/market-indicators")
 async def get_market_indicators(
-    limit: int = Query(30, description="取得件数"),
+    limit: int = Query(30, ge=1, le=500, description="取得件数"),
 ):
     """市場指標履歴"""
     supabase = main.get_supabase()
@@ -1009,7 +1009,7 @@ CRISIS_EVENTS = [
 
 @router.get("/backtest-states")
 async def get_backtest_states(
-    limit: int = Query(120, description="月数（最大）"),
+    limit: int = Query(120, ge=1, le=600, description="月数（最大）"),
 ):
     """
     バックテスト：月次の状態判定 + 統計

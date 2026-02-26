@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from supabase import create_client, Client
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -14,9 +15,25 @@ from slowapi.errors import RateLimitExceeded
 
 from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist
 
+_IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
 # レート制限 (60 req/min per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
+
+class SecurityHeaderMiddleware(BaseHTTPMiddleware):
+    """全レスポンスにセキュリティヘッダーを付与"""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if _IS_PRODUCTION:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
 
 # Supabase client (global)
 supabase: Client = None
@@ -58,15 +75,20 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS設定
+# セキュリティヘッダーミドルウェア（CORS より先に登録 = レスポンス処理は後）
+app.add_middleware(SecurityHeaderMiddleware)
+
+# CORS設定（本番では localhost を除外）
+_cors_origins = [
+    "https://open-regime.pages.dev",  # Cloudflare Pages
+    "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev",  # CF Worker proxy
+]
+if not _IS_PRODUCTION:
+    _cors_origins += ["http://localhost:3000", "http://localhost:3001"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://open-regime.pages.dev",  # Cloudflare Pages
-        "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev",  # CF Worker proxy
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-User-Email"],
@@ -100,14 +122,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """詳細ヘルスチェック"""
-    raw_key = (os.getenv("SUPABASE_KEY") or "").strip()
-    raw_anon = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
-    kt = "service_role" if raw_key else ("anon" if raw_anon else "none")
+    """詳細ヘルスチェック（内部情報は返さない）"""
     return {
         "status": "healthy",
         "supabase": "connected" if supabase else "disconnected",
-        "active_key_type": kt,
     }
 
 

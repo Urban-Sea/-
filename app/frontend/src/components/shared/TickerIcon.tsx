@@ -38,9 +38,11 @@ export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: numbe
   const fontSize = isJP
     ? (size <= 24 ? 7 : size <= 32 ? 9 : size <= 48 ? 12 : 14)
     : (size <= 24 ? 9 : size <= 32 ? 12 : 16);
-  const logoUrl = `${LOGO_CDN}/${ticker.toUpperCase()}.png`;
+  // Validate ticker before constructing CDN URL (prevent path traversal)
+  const safeTicker = /^[A-Z0-9.\-]{1,10}$/i.test(ticker) ? ticker.toUpperCase() : '';
+  const logoUrl = safeTicker ? `${LOGO_CDN}/${safeTicker}.png` : '';
 
-  if (!logoFailed) {
+  if (!logoFailed && safeTicker) {
     return (
       <div
         className="inline-flex items-center justify-center rounded-lg shrink-0 overflow-hidden"

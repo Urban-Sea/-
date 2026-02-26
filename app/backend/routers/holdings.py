@@ -132,7 +132,7 @@ async def get_holdings(
 
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -194,7 +194,7 @@ async def get_portfolio_history(
 
     except Exception as e:
         logger.exception("Portfolio history error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================
@@ -365,7 +365,7 @@ async def get_holding(
         raise
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=HoldingRecord)
@@ -409,7 +409,7 @@ async def create_holding(
         raise
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{holding_id}", response_model=HoldingRecord)
@@ -466,7 +466,7 @@ async def update_holding(
         raise
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{holding_id}")
@@ -499,7 +499,7 @@ async def delete_holding(
         raise
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{holding_id}/add-shares")
@@ -559,4 +559,4 @@ async def add_shares(
         raise
     except Exception as e:
         logger.exception("Holdings API error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

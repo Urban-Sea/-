@@ -129,7 +129,7 @@ async def get_employment_overview():
 @router.get("/indicators")
 async def get_economic_indicators(
     indicator: Optional[str] = Query(None, description="指標名でフィルタ: NFP, GDP, CPI等"),
-    limit: int = Query(12, description="取得件数"),
+    limit: int = Query(12, ge=1, le=500, description="取得件数"),
 ):
     """経済指標履歴"""
     supabase = main.get_supabase()
@@ -151,7 +151,7 @@ async def get_economic_indicators(
 
 @router.get("/weekly-claims")
 async def get_weekly_claims(
-    limit: int = Query(12, description="取得件数"),
+    limit: int = Query(12, ge=1, le=500, description="取得件数"),
 ):
     """週次失業保険履歴"""
     supabase = main.get_supabase()
