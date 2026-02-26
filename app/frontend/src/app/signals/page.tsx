@@ -289,6 +289,9 @@ function SignalsPage() {
     }
   };
 
+  const isJP = /^\d/.test(ticker);
+  const ccy = isJP ? '¥' : '$';
+
   const chartData = history.map((d, i) => {
     const ema8 = calculateEMA(history.slice(0, i + 1).map(h => h.close), 8);
     const ema21 = calculateEMA(history.slice(0, i + 1).map(h => h.close), 21);
@@ -814,7 +817,7 @@ function SignalsPage() {
                       {exitLoading ? '分析中...' : '保有分析'}
                     </button>
                     {signal && (
-                      <span className="text-xs text-muted-foreground">現在価格: <span className="font-mono font-semibold text-foreground">${signal.price.toFixed(2)}</span></span>
+                      <span className="text-xs text-muted-foreground">現在価格: <span className="font-mono font-semibold text-foreground">{ccy}{signal.price.toFixed(2)}</span></span>
                     )}
                   </div>
 
@@ -859,11 +862,11 @@ function SignalsPage() {
                           <div className="flex gap-6">
                             <div className="text-center">
                               <div className="text-xs text-muted-foreground uppercase font-medium">エントリー</div>
-                              <div className="text-sm font-semibold font-mono text-foreground">${exitAnalysis.entry_price.toFixed(2)}</div>
+                              <div className="text-sm font-semibold font-mono text-foreground">{ccy}{exitAnalysis.entry_price.toFixed(2)}</div>
                             </div>
                             <div className="text-center">
                               <div className="text-xs text-muted-foreground uppercase font-medium">現在価格</div>
-                              <div className="text-sm font-semibold font-mono text-foreground">${exitAnalysis.current_price.toFixed(2)}</div>
+                              <div className="text-sm font-semibold font-mono text-foreground">{ccy}{exitAnalysis.current_price.toFixed(2)}</div>
                             </div>
                             <div className="text-center">
                               <div className="text-xs text-muted-foreground uppercase font-medium">含み損益</div>
@@ -892,7 +895,7 @@ function SignalsPage() {
                             ].map((e) => (
                               <div key={e.label} className="text-center">
                                 <div className="text-xs text-muted-foreground font-medium">{e.label}</div>
-                                <div className="text-sm font-semibold font-mono mt-0.5 text-foreground">${(e.val ?? 0).toFixed(2)}</div>
+                                <div className="text-sm font-semibold font-mono mt-0.5 text-foreground">{ccy}{(e.val ?? 0).toFixed(2)}</div>
                                 <div className={`text-xs font-bold mt-0.5 ${e.above ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                                   {e.above ? '上' : '下'}
                                 </div>
@@ -905,7 +908,7 @@ function SignalsPage() {
                           <div className="flex items-center justify-between">
                             <div>
                               <div className="text-xs text-muted-foreground font-medium">構造ストップ</div>
-                              <div className="text-lg font-bold text-red-600 dark:text-red-400 font-mono">${(exitAnalysis.structure_stop ?? 0).toFixed(2)}</div>
+                              <div className="text-lg font-bold text-red-600 dark:text-red-400 font-mono">{ccy}{(exitAnalysis.structure_stop ?? 0).toFixed(2)}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-xs text-muted-foreground font-medium">ストップまでの距離</div>
@@ -948,7 +951,7 @@ function SignalsPage() {
                             {exitAnalysis.targets.map((t, i) => (
                               <div key={i} className={`plumb-glass rounded-lg px-4 py-3 text-center min-w-[100px] plumb-animate-in plumb-stagger-${Math.min(i + 1, 8)}`}>
                                 <div className="text-xs text-muted-foreground uppercase font-medium">{t.type}</div>
-                                <div className="text-base font-bold font-mono mt-0.5 text-foreground">${t.price.toFixed(2)}</div>
+                                <div className="text-base font-bold font-mono mt-0.5 text-foreground">{ccy}{t.price.toFixed(2)}</div>
                                 <div className="text-sm text-emerald-600 dark:text-emerald-400 font-mono font-semibold">+{t.pct.toFixed(1)}%</div>
                                 {t.exit_pct > 0 && (
                                   <div className="text-xs text-muted-foreground mt-1">売却 {t.exit_pct}%</div>
@@ -1071,7 +1074,7 @@ function SignalsPage() {
                             };
                             const style = getTypeStyle();
                             const dateRange = s.days > 1 ? `${s.date} ~ ${s.end_date}` : s.date;
-                            const priceRange = s.days > 1 && s.end_price ? `$${s.price.toFixed(2)} → $${s.end_price.toFixed(2)}` : `$${s.price.toFixed(2)}`;
+                            const priceRange = s.days > 1 && s.end_price ? `${ccy}${s.price.toFixed(2)} → ${ccy}${s.end_price.toFixed(2)}` : `${ccy}${s.price.toFixed(2)}`;
                             return (
                               <div key={i} className="relative py-3 border-b border-border last:border-b-0">
                                 <div className={`absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full border-2 ${style.dot}`} />
@@ -1097,7 +1100,7 @@ function SignalsPage() {
                               <div className="flex items-center gap-2.5 mb-1 flex-wrap">
                                 <span className="text-xs text-muted-foreground font-mono">{s.date}</span>
                                 <StatusChip label="買いシグナル" color="green" />
-                                <span className="text-sm font-semibold font-mono text-foreground">${s.price.toFixed(2)}</span>
+                                <span className="text-sm font-semibold font-mono text-foreground">{ccy}{s.price.toFixed(2)}</span>
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 買いシグナル（RS: {s.rs_diff >= 0 ? 'UP' : 'DOWN'}）EMA収束 {s.ema_convergence}%
