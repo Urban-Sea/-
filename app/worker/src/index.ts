@@ -3,6 +3,7 @@ import { getCacheTtl } from './cache-config';
 interface Env {
   ORIGIN: string;
   ALLOWED_ORIGIN: string;
+  PROXY_SECRET: string;
 }
 
 function corsHeaders(origin: string, allowedOrigin: string): Record<string, string> {
@@ -60,6 +61,10 @@ export default {
     const proxyHeaders = new Headers(request.headers);
     // Remove host header so Railway gets the correct one
     proxyHeaders.delete('Host');
+    // Attach shared secret to prove request came from this Worker
+    if (env.PROXY_SECRET) {
+      proxyHeaders.set('X-Proxy-Secret', env.PROXY_SECRET);
+    }
 
     let proxyResponse: Response;
     try {

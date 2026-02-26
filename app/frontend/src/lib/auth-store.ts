@@ -1,7 +1,7 @@
 /**
  * Module-level store for the authenticated user's email.
  * Set by UserProvider on mount; read by fetchAPI / swrFetcher to attach
- * the CF-Access-Authenticated-User-Email header to every API call.
+ * the X-User-Email header to every API call.
  */
 
 let _email: string | null = null;

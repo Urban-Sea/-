@@ -179,7 +179,7 @@ async def add_ticker(
             tickers = wl["tickers"] or []
             if ticker not in tickers:
                 tickers.append(ticker)
-                supabase.table("user_watchlists").update({"tickers": tickers}).eq("id", wl["id"]).execute()
+                supabase.table("user_watchlists").update({"tickers": tickers}).eq("id", wl["id"]).eq("user_id", user_email).execute()
             return {"tickers": tickers}
         else:
             supabase.table("user_watchlists").insert({
@@ -218,7 +218,7 @@ async def remove_ticker(
         if result.data:
             wl = result.data[0]
             tickers = [t for t in (wl["tickers"] or []) if t != ticker]
-            supabase.table("user_watchlists").update({"tickers": tickers}).eq("id", wl["id"]).execute()
+            supabase.table("user_watchlists").update({"tickers": tickers}).eq("id", wl["id"]).eq("user_id", user_email).execute()
             return {"tickers": tickers}
         return {"tickers": []}
     except Exception as e:
