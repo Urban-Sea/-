@@ -306,9 +306,9 @@ function SignalsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-cyan-500" />
-            <h1 className="text-2xl font-bold tracking-tight">シグナル分析</h1>
+            <h1 className="text-2xl font-bold tracking-tight">銘柄分析</h1>
           </div>
-          <p className="text-xs text-muted-foreground pl-3.5">統合エントリーシステム・チャート・保有管理</p>
+          <p className="text-xs text-muted-foreground pl-3.5">エントリー判定・Exit分析・シグナル履歴</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-muted-foreground uppercase tracking-[0.2em] font-medium">運用モード</span>

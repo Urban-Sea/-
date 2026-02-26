@@ -1433,9 +1433,9 @@ export default function HoldingsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-emerald-500 to-blue-500" />
-            <h1 className="text-2xl font-bold tracking-tight">保有・取引管理</h1>
+            <h1 className="text-2xl font-bold tracking-tight">ポートフォリオ</h1>
           </div>
-          <p className="text-xs text-muted-foreground pl-3.5">ポートフォリオ管理 & 取引記録</p>
+          <p className="text-xs text-muted-foreground pl-3.5">保有管理・取引記録・統計</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setAddModalOpen(true)}>

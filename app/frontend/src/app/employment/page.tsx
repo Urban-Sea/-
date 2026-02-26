@@ -991,7 +991,7 @@ export default function EmploymentPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-orange-500" />
-            <h1 className="text-2xl font-bold tracking-tight">米国景気警戒システム</h1>
+            <h1 className="text-2xl font-bold tracking-tight">米国景気リスク評価モニター</h1>
           </div>
           <p className="text-xs text-muted-foreground pl-3.5">雇用・消費・構造指標による5段階リセッションリスク評価</p>
         </div>

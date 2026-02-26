@@ -744,7 +744,7 @@ export default function IntegratedDashboardPage() {
           <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-emerald-500" />
           <h1 className="text-2xl font-bold tracking-tight">統合分析ダッシュボード</h1>
         </div>
-        <p className="text-xs text-muted-foreground pl-3.5">流動性配管 × 景気警戒 の統合分析</p>
+        <p className="text-xs text-muted-foreground pl-3.5">流動性・景気リスクの統合モニタリング</p>
       </div>
 
       <Tabs defaultValue="dashboard" className="plumb-tabs">

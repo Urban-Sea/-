@@ -1310,7 +1310,7 @@ export default function LiquidityPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-purple-500" />
-            <h1 className="text-2xl font-bold tracking-tight">流動性配管システム</h1>
+            <h1 className="text-2xl font-bold tracking-tight">米国金融流動性モニター</h1>
           </div>
           <p className="text-xs text-muted-foreground pl-3.5">FRB・銀行・信用取引の3層流動性モニタリング</p>
         </div>
