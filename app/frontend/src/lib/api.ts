@@ -37,7 +37,7 @@ import type {
 
 import { getAuthEmail } from './auth-store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
