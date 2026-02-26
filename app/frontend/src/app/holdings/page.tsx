@@ -98,6 +98,12 @@ function accountLabel(type?: string): string {
 function pnlClass(v: number): string {
   return v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 }
+function formatPrice(v: number, country: 'US' | 'JP'): string {
+  return country === 'JP' ? formatJPY(v) : formatUSD(v);
+}
+function toUsd(value: number, country: 'US' | 'JP', fxRate: number): number {
+  return country === 'JP' ? value / (fxRate > 0 ? fxRate : 150) : value;
+}
 
 // ============================================================
 // FX Bar
@@ -137,22 +143,30 @@ function PortfolioHero({ holdings, quotes, fxRate }: {
   holdings: HoldingRecord[]; quotes: Map<string, StockQuote>; fxRate: number;
 }) {
   const totals = useMemo(() => {
-    let valUsd = 0, costUsd = 0, costJpy = 0;
+    let valUsd = 0, costUsd = 0, valJpy = 0, costJpy = 0, fxPnl = 0;
     for (const h of holdings) {
+      const country = inferCountry(h.ticker);
       const price = quotes.get(h.ticker)?.price ?? h.avg_price;
-      valUsd += h.shares * price;
-      costUsd += h.shares * h.avg_price;
-      costJpy += h.shares * h.avg_price * (h.fx_rate || fxRate);
+      const mv = h.shares * price;
+      const cost = h.shares * h.avg_price;
+
+      if (country === 'JP') {
+        valUsd += mv / fxRate;
+        costUsd += cost / fxRate;
+        valJpy += mv;
+        costJpy += cost;
+      } else {
+        valUsd += mv;
+        costUsd += cost;
+        valJpy += mv * fxRate;
+        costJpy += cost * (h.fx_rate || fxRate);
+        fxPnl += h.shares * h.avg_price * (fxRate - (h.fx_rate || fxRate));
+      }
     }
-    const valJpy = valUsd * fxRate;
     const pnlUsd = valUsd - costUsd;
     const pnlPctUsd = costUsd > 0 ? (pnlUsd / costUsd) * 100 : 0;
     const pnlJpy = valJpy - costJpy;
     const pnlPctJpy = costJpy > 0 ? (pnlJpy / costJpy) * 100 : 0;
-    const fxPnl = holdings.reduce((sum, h) => {
-      const entryFx = h.fx_rate || fxRate;
-      return sum + h.shares * h.avg_price * (fxRate - entryFx);
-    }, 0);
     return { valUsd, valJpy, costUsd, costJpy, pnlUsd, pnlPctUsd, pnlJpy, pnlPctJpy, fxPnl };
   }, [holdings, quotes, fxRate]);
 
@@ -188,12 +202,13 @@ function AccountBreakdown({ holdings, quotes, fxRate }: {
   const calc = useCallback((items: HoldingRecord[]) => {
     let val = 0, cost = 0;
     for (const h of items) {
+      const country = inferCountry(h.ticker);
       const price = quotes.get(h.ticker)?.price ?? h.avg_price;
-      val += h.shares * price;
-      cost += h.shares * h.avg_price;
+      val += toUsd(h.shares * price, country, fxRate);
+      cost += toUsd(h.shares * h.avg_price, country, fxRate);
     }
     return { val, cost, pnl: val - cost, pct: cost > 0 ? ((val - cost) / cost) * 100 : 0, count: items.length };
-  }, [quotes]);
+  }, [quotes, fxRate]);
 
   const nisa = useMemo(() => calc(holdings.filter(h => h.account_type === 'nisa')), [holdings, calc]);
   const tokutei = useMemo(() => calc(holdings.filter(h => h.account_type !== 'nisa')), [holdings, calc]);
@@ -244,8 +259,8 @@ function inferCountry(ticker: string): 'US' | 'JP' {
 const COUNTRY_COLORS: Record<string, string> = { US: '#3b82f6', JP: '#ef4444' };
 const COUNTRY_LABELS: Record<string, string> = { US: '米国株', JP: '日本株' };
 
-function PortfolioCharts({ holdings, quotes }: {
-  holdings: HoldingRecord[]; quotes: Map<string, StockQuote>;
+function PortfolioCharts({ holdings, quotes, fxRate }: {
+  holdings: HoldingRecord[]; quotes: Map<string, StockQuote>; fxRate: number;
 }) {
   const { sectorSegments, countrySegments, stockSegments, totalValUsd } = useMemo(() => {
     const sectorMap = new Map<string, number>();
@@ -254,17 +269,17 @@ function PortfolioCharts({ holdings, quotes }: {
 
     let totalVal = 0;
     for (const h of holdings) {
+      const country = inferCountry(h.ticker);
       const price = quotes.get(h.ticker)?.price ?? h.avg_price;
-      const mv = h.shares * price;
-      totalVal += mv;
+      const mvUsd = toUsd(h.shares * price, country, fxRate);
+      totalVal += mvUsd;
 
       const sector = h.sector || 'Other';
-      sectorMap.set(sector, (sectorMap.get(sector) || 0) + mv);
+      sectorMap.set(sector, (sectorMap.get(sector) || 0) + mvUsd);
 
-      const country = inferCountry(h.ticker);
-      countryMap.set(country, (countryMap.get(country) || 0) + mv);
+      countryMap.set(country, (countryMap.get(country) || 0) + mvUsd);
 
-      stockMap.set(h.ticker, (stockMap.get(h.ticker) || 0) + mv);
+      stockMap.set(h.ticker, (stockMap.get(h.ticker) || 0) + mvUsd);
     }
 
     const sectorSegs: DonutSegment[] = Array.from(sectorMap.entries())
@@ -352,17 +367,18 @@ function SectorBreakdown({ holdings, quotes, fxRate }: {
     const map = new Map<string, { val: number; cost: number; count: number }>();
     for (const h of holdings) {
       const sector = h.sector || 'Other';
+      const country = inferCountry(h.ticker);
       const price = quotes.get(h.ticker)?.price ?? h.avg_price;
       const prev = map.get(sector) || { val: 0, cost: 0, count: 0 };
-      prev.val += h.shares * price;
-      prev.cost += h.shares * h.avg_price;
+      prev.val += toUsd(h.shares * price, country, fxRate);
+      prev.cost += toUsd(h.shares * h.avg_price, country, fxRate);
       prev.count += 1;
       map.set(sector, prev);
     }
     return Array.from(map.entries())
       .map(([name, d]) => ({ name, ...d, pnl: d.val - d.cost }))
       .sort((a, b) => b.val - a.val);
-  }, [holdings, quotes]);
+  }, [holdings, quotes, fxRate]);
 
   if (sectors.length === 0) return null;
 
@@ -448,12 +464,12 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
       switch (sortKey) {
         case 'ticker': va = a.ticker; vb = b.ticker; break;
         case 'shares': va = a.shares; vb = b.shares; break;
-        case 'avg_price': va = a.avg_price; vb = b.avg_price; break;
-        case 'price': va = priceA; vb = priceB; break;
-        case 'market_value': va = a.shares * priceA; vb = b.shares * priceB; break;
+        case 'avg_price': va = toUsd(a.avg_price, inferCountry(a.ticker), fxRate); vb = toUsd(b.avg_price, inferCountry(b.ticker), fxRate); break;
+        case 'price': va = toUsd(priceA, inferCountry(a.ticker), fxRate); vb = toUsd(priceB, inferCountry(b.ticker), fxRate); break;
+        case 'market_value': va = toUsd(a.shares * priceA, inferCountry(a.ticker), fxRate); vb = toUsd(b.shares * priceB, inferCountry(b.ticker), fxRate); break;
         case 'pnl':
-          va = a.shares * priceA - a.shares * a.avg_price;
-          vb = b.shares * priceB - b.shares * b.avg_price;
+          va = toUsd(a.shares * priceA - a.shares * a.avg_price, inferCountry(a.ticker), fxRate);
+          vb = toUsd(b.shares * priceB - b.shares * b.avg_price, inferCountry(b.ticker), fxRate);
           break;
       }
       if (typeof va === 'string' && typeof vb === 'string') {
@@ -494,6 +510,7 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
           <TableBody>
             {sorted.map((h) => {
               const quote = quotes.get(h.ticker);
+              const country = inferCountry(h.ticker);
               const currentPrice = quote?.price ?? h.avg_price;
               const marketValue = h.shares * currentPrice;
               const costBasis = h.shares * h.avg_price;
@@ -501,32 +518,37 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
               const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
               const sc = sectorColor(h.sector);
               const ac = ACCOUNT_COLORS[h.account_type || 'tokutei'] || ACCOUNT_COLORS.tokutei;
+              const fmt = country === 'JP' ? formatJPY : formatUSD;
+              const fmtSub = country === 'JP' ? (v: number) => formatUSD(v / fxRate) : (v: number) => formatJPY(v * fxRate);
 
               return (
                 <TableRow key={h.id} className="group">
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <TickerIcon ticker={h.ticker} size={28} />
-                      <span className="font-bold font-mono">{h.ticker}</span>
+                      <div className="flex flex-col">
+                        <span className="font-bold font-mono">{h.ticker}</span>
+                        {quote?.name && <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{quote.name}</span>}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{h.shares.toFixed(2)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{formatUSD(h.avg_price)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{fmt(h.avg_price)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
                     {quotesLoading && !quote ? (
                       <Skeleton className="h-4 w-16 ml-auto" />
                     ) : quote ? (
-                      formatUSD(currentPrice)
+                      fmt(currentPrice)
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <span className="font-mono tabular-nums">{formatUSD(marketValue)}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono block">{formatJPY(marketValue * fxRate)}</span>
+                    <span className="font-mono tabular-nums">{fmt(marketValue)}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono block">{fmtSub(marketValue)}</span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <span className={`font-mono tabular-nums font-medium ${pnlClass(pnl)}`}>{formatUSD(pnl)}</span>
+                    <span className={`font-mono tabular-nums font-medium ${pnlClass(pnl)}`}>{fmt(pnl)}</span>
                     <span className={`text-[10px] font-mono block ${pnlClass(pnl)}`}>{formatPct(pnlPct)}</span>
                   </TableCell>
                   <TableCell>
@@ -581,6 +603,9 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
 function AddHoldingModal({ open, onClose, onAdd }: {
   open: boolean; onClose: () => void; onAdd: (data: Partial<HoldingRecord>) => void;
 }) {
+  const [tickerValue, setTickerValue] = useState('');
+  const isJP = inferCountry(tickerValue.toUpperCase()) === 'JP';
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -591,9 +616,10 @@ function AddHoldingModal({ open, onClose, onAdd }: {
       entry_date: fd.get('entry_date') as string || undefined,
       account_type: (fd.get('account_type') as 'nisa' | 'tokutei') || 'tokutei',
       sector: (fd.get('sector') as string) || 'Other',
-      fx_rate: parseFloat(fd.get('fx_rate') as string) || 150.0,
+      fx_rate: isJP ? undefined : (parseFloat(fd.get('fx_rate') as string) || 150.0),
       thesis: (fd.get('thesis') as string) || undefined,
     });
+    setTickerValue('');
     onClose();
   };
 
@@ -608,15 +634,15 @@ function AddHoldingModal({ open, onClose, onAdd }: {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[11px] text-muted-foreground uppercase tracking-wider">ティッカー *</label>
-              <Input name="ticker" required placeholder="AAPL" className="h-8 text-sm font-mono uppercase" />
+              <Input name="ticker" required placeholder="AAPL" className="h-8 text-sm font-mono uppercase" value={tickerValue} onChange={(e) => setTickerValue(e.target.value)} />
             </div>
             <div className="space-y-1">
               <label className="text-[11px] text-muted-foreground uppercase tracking-wider">Entry日</label>
               <Input name="entry_date" type="date" className="h-8 text-sm" />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wider">平均取得価格 *</label>
-              <Input name="avg_price" type="number" step="0.01" required placeholder="150.00" className="h-8 text-sm font-mono" />
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wider">平均取得価格 ({isJP ? '¥' : '$'}) *</label>
+              <Input name="avg_price" type="number" step="0.01" required placeholder={isJP ? '2500' : '150.00'} className="h-8 text-sm font-mono" />
             </div>
             <div className="space-y-1">
               <label className="text-[11px] text-muted-foreground uppercase tracking-wider">株数 *</label>
@@ -629,10 +655,12 @@ function AddHoldingModal({ open, onClose, onAdd }: {
                 <option value="nisa">NISA</option>
               </select>
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wider">取得為替</label>
-              <Input name="fx_rate" type="number" step="0.01" defaultValue="150.00" className="h-8 text-sm font-mono" />
-            </div>
+            {!isJP && (
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground uppercase tracking-wider">取得為替</label>
+                <Input name="fx_rate" type="number" step="0.01" defaultValue="150.00" className="h-8 text-sm font-mono" />
+              </div>
+            )}
             <div className="col-span-2 space-y-1">
               <label className="text-[11px] text-muted-foreground uppercase tracking-wider">セクター</label>
               <select name="sector" defaultValue="Other" className="w-full h-8 rounded-md border border-input bg-transparent px-3 text-sm dark:bg-input/30">
@@ -799,14 +827,14 @@ function SellHoldingModal({ holding, currentPrice, onClose, onSuccess }: {
         <DialogHeader>
           <DialogTitle className="text-orange-600 dark:text-orange-400">{holding.ticker} を売却</DialogTitle>
           <DialogDescription>
-            保有: {holding.shares}株 @ {formatUSD(holding.avg_price)}
+            保有: {holding.shares}株 @ {formatPrice(holding.avg_price, inferCountry(holding.ticker))}
           </DialogDescription>
         </DialogHeader>
 
         {/* P&L Preview */}
         <div className={`rounded-lg p-3 text-center ${previewPnl >= 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">見積P&L</p>
-          <p className={`text-xl font-bold font-mono ${pnlClass(previewPnl)}`}>{formatUSD(previewPnl)}</p>
+          <p className={`text-xl font-bold font-mono ${pnlClass(previewPnl)}`}>{formatPrice(previewPnl, inferCountry(holding.ticker))}</p>
           <p className={`text-xs font-mono ${pnlClass(previewPct)}`}>{formatPct(previewPct)}</p>
         </div>
 
@@ -1467,7 +1495,7 @@ export default function HoldingsPage() {
           <FxBar fxRate={fxRate} isLive={!!fxData?.rate} onFxRateChange={setFxRate} />
           <PortfolioHero holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <AccountBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
-          <PortfolioCharts holdings={holdings} quotes={quotes} />
+          <PortfolioCharts holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <SectorBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <CashBalanceSection fxRate={fxRate} />
           <HoldingsTable

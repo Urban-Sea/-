@@ -406,6 +406,7 @@ export interface EmploymentRiskScore {
 // Stock quote types
 export interface StockQuote {
   ticker: string;
+  name?: string | null;
   price: number;
   change: number;
   change_pct: number;

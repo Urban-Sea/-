@@ -145,6 +145,7 @@ def _fetch_single_quote(ticker: str) -> dict:
                 "change": round(change, 2),
                 "change_pct": round(change_pct, 2),
                 "volume": info.get("volume") or 0,
+                "name": info.get("shortName") or info.get("longName") or None,
             }
             set_cache(cache_key, quote)  # L1
             _db_cache_set(ticker, quote)  # L2
