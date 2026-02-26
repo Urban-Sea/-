@@ -271,6 +271,7 @@ export interface PortfolioHistoryPoint {
   cash_usd: number;
   total_assets_usd: number;
   holdings_count: number;
+  fx_rate_usdjpy: number;
 }
 
 export interface PortfolioHistoryResponse {
@@ -281,6 +282,7 @@ export interface PortfolioHistoryResponse {
     unrealized_pnl_usd: number;
     total_cash_usd: number;
     total_assets_usd: number;
+    fx_rate_usdjpy: number;
   };
 }
 

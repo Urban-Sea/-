@@ -158,7 +158,7 @@ async def get_portfolio_history(
 
         result = (
             supabase.table("portfolio_snapshots")
-            .select("snapshot_date, total_market_value_usd, total_cost_usd, unrealized_pnl_usd, cash_usd, total_assets_usd, holdings_count")
+            .select("snapshot_date, total_market_value_usd, total_cost_usd, unrealized_pnl_usd, cash_usd, total_assets_usd, holdings_count, fx_rate_usdjpy")
             .eq("user_id", user_email)
             .gte("snapshot_date", cutoff)
             .order("snapshot_date", desc=False)
@@ -178,6 +178,7 @@ async def get_portfolio_history(
                     "cash_usd": float(s["cash_usd"]),
                     "total_assets_usd": float(s["total_assets_usd"]),
                     "holdings_count": s["holdings_count"],
+                    "fx_rate_usdjpy": float(s.get("fx_rate_usdjpy") or 150.0),
                 }
                 for s in snapshots
             ],
@@ -187,6 +188,7 @@ async def get_portfolio_history(
                 "unrealized_pnl_usd": float(latest["unrealized_pnl_usd"]) if latest else 0,
                 "total_cash_usd": float(latest["cash_usd"]) if latest else 0,
                 "total_assets_usd": float(latest["total_assets_usd"]) if latest else 0,
+                "fx_rate_usdjpy": float(latest.get("fx_rate_usdjpy") or 150.0) if latest else 150.0,
             },
         }
 

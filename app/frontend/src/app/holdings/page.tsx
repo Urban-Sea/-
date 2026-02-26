@@ -938,6 +938,7 @@ function StatsTab({ stats }: { stats: TradeStats }) {
 
 function AssetTrendsTab() {
   const { data, error, isLoading } = usePortfolioHistory(60);
+  const [currency, setCurrency] = useState<'USD' | 'JPY'>('JPY');
 
   if (isLoading) {
     return (
@@ -974,41 +975,73 @@ function AssetTrendsTab() {
     );
   }
 
+  const fx = summary?.fx_rate_usdjpy ?? 150;
+  const isJpy = currency === 'JPY';
+  const conv = (usd: number, rate: number) => isJpy ? usd * rate : usd;
+  const fmt = isJpy ? formatJPY : formatUSD;
+
   const series: ChartSeries[] = [
     {
-      data: history.map((p) => ({ x: p.date, y: p.total_assets_usd })),
+      data: history.map((p) => ({ x: p.date, y: conv(p.total_assets_usd, p.fx_rate_usdjpy) })),
       type: 'area',
       color: '#06b6d4',
-      label: '総資産 (時価+現金)',
+      label: isJpy ? '総資産 (円)' : '総資産 (USD)',
     },
     {
-      data: history.map((p) => ({ x: p.date, y: p.total_market_value_usd })),
+      data: history.map((p) => ({ x: p.date, y: conv(p.total_market_value_usd, p.fx_rate_usdjpy) })),
       type: 'line',
       color: '#3b82f6',
-      label: 'ポートフォリオ時価',
+      label: isJpy ? 'ポートフォリオ時価 (円)' : 'ポートフォリオ時価',
     },
     {
-      data: history.map((p) => ({ x: p.date, y: p.total_cost_usd })),
+      data: history.map((p) => ({ x: p.date, y: conv(p.total_cost_usd, p.fx_rate_usdjpy) })),
       type: 'line',
       color: '#71717a',
-      label: '取得原価',
+      label: isJpy ? '取得原価 (円)' : '取得原価',
       dashed: true,
     },
     {
-      data: history.map((p) => ({ x: p.date, y: p.unrealized_pnl_usd })),
+      data: history.map((p) => ({ x: p.date, y: conv(p.unrealized_pnl_usd, p.fx_rate_usdjpy) })),
       type: 'line',
       color: '#10b981',
-      label: '含み損益',
+      label: isJpy ? '含み損益 (円)' : '含み損益',
       yAxisSide: 'right' as const,
     },
   ];
 
   const summaryItems = [
-    { label: '総資産', value: formatUSD(summary?.total_assets_usd ?? 0), color: 'text-cyan-600 dark:text-cyan-400' },
-    { label: 'ポートフォリオ時価', value: formatUSD(summary?.total_market_value_usd ?? 0), color: '' },
-    { label: '含み損益', value: formatUSD(summary?.unrealized_pnl_usd ?? 0), color: pnlClass(summary?.unrealized_pnl_usd ?? 0) },
-    { label: '現金残高 (USD)', value: formatUSD(summary?.total_cash_usd ?? 0), color: 'text-zinc-500 dark:text-zinc-400' },
+    {
+      label: '総資産',
+      value: fmt(conv(summary?.total_assets_usd ?? 0, fx)),
+      sub: isJpy ? formatUSD(summary?.total_assets_usd ?? 0) : formatJPY((summary?.total_assets_usd ?? 0) * fx),
+      color: 'text-cyan-600 dark:text-cyan-400',
+    },
+    {
+      label: 'ポートフォリオ時価',
+      value: fmt(conv(summary?.total_market_value_usd ?? 0, fx)),
+      sub: isJpy ? formatUSD(summary?.total_market_value_usd ?? 0) : formatJPY((summary?.total_market_value_usd ?? 0) * fx),
+      color: '',
+    },
+    {
+      label: '含み損益',
+      value: fmt(conv(summary?.unrealized_pnl_usd ?? 0, fx)),
+      sub: isJpy ? formatUSD(summary?.unrealized_pnl_usd ?? 0) : formatJPY((summary?.unrealized_pnl_usd ?? 0) * fx),
+      color: pnlClass(summary?.unrealized_pnl_usd ?? 0),
+    },
+    {
+      label: '現金残高',
+      value: fmt(conv(summary?.total_cash_usd ?? 0, fx)),
+      sub: isJpy ? formatUSD(summary?.total_cash_usd ?? 0) : formatJPY((summary?.total_cash_usd ?? 0) * fx),
+      color: 'text-zinc-500 dark:text-zinc-400',
+    },
   ];
+
+  const yFmtLeft = isJpy
+    ? (v: number) => v >= 1_000_000 ? `¥${(v / 10_000).toFixed(0)}万` : `¥${Math.round(v).toLocaleString()}`
+    : (v: number) => `$${(v / 1000).toFixed(1)}K`;
+  const yFmtRight = isJpy
+    ? (v: number) => v >= 1_000_000 ? `¥${(v / 10_000).toFixed(0)}万` : `¥${Math.round(v).toLocaleString()}`
+    : (v: number) => `$${v.toFixed(0)}`;
 
   return (
     <div className="space-y-4 plumb-animate-in">
@@ -1018,6 +1051,7 @@ function AssetTrendsTab() {
           <div key={item.label} className="plumb-glass rounded-lg px-4 py-3.5 plumb-glass-hover">
             <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">{item.label}</span>
             <span className={`text-lg font-bold tabular-nums font-mono ${item.color}`}>{item.value}</span>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block mt-0.5 font-mono">{item.sub}</span>
           </div>
         ))}
       </div>
@@ -1025,11 +1059,27 @@ function AssetTrendsTab() {
       {/* Chart */}
       <GlassCard>
         <div className="p-4">
-          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">資産推移チャート (日次スナップショット)</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">資産推移チャート</h3>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setCurrency('JPY')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                }`}
+              >¥ JPY</button>
+              <button
+                onClick={() => setCurrency('USD')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  !isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                }`}
+              >$ USD</button>
+            </div>
+          </div>
           <EconChartCanvas
             series={series}
-            yAxisFormat={(v) => `$${(v / 1000).toFixed(1)}K`}
-            yAxisRightFormat={(v) => `$${v.toFixed(0)}`}
+            yAxisFormat={yFmtLeft}
+            yAxisRightFormat={yFmtRight}
             height={420}
           />
         </div>
