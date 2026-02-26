@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
+import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
 import { useUser } from '@/components/providers/UserProvider';
@@ -155,7 +156,7 @@ function SignalsPage() {
     }
   }, [email]);
 
-  const addQuickTicker = async (t: string) => {
+  const addQuickTicker = useCallback(async (t: string) => {
     const tick = t.trim().toUpperCase();
     if (!tick) return;
     if (quickTickers.includes(tick)) return;
@@ -168,9 +169,9 @@ function SignalsPage() {
     } else {
       localStorage.setItem('quickTickers', JSON.stringify(newList));
     }
-  };
+  }, [quickTickers, email, mutateWl]);
 
-  const removeQuickTicker = async (t: string) => {
+  const removeQuickTicker = useCallback(async (t: string) => {
     const newList = quickTickers.filter(x => x !== t);
     setQuickTickers(newList);
     if (email) {
@@ -178,7 +179,7 @@ function SignalsPage() {
     } else {
       localStorage.setItem('quickTickers', JSON.stringify(newList));
     }
-  };
+  }, [quickTickers, email, mutateWl]);
 
   const handleAnalyze = async (t?: string) => {
     const targetTicker = t || ticker;
@@ -440,18 +441,19 @@ function SignalsPage() {
 
       {/* ── Error ── */}
       {error && (
-        <div className="plumb-animate-in rounded-xl border border-red-500/30 bg-red-500/5 px-5 py-3 text-red-400 text-sm">
-          {error}
-        </div>
+        <GlassCard>
+          <div className="plumb-animate-in flex items-center justify-between px-5 py-3 border border-red-500/30 bg-red-500/5 rounded-xl">
+            <span className="text-red-400 text-sm">{error}</span>
+            <button onClick={() => setError(null)} className="p-1 rounded hover:bg-red-500/10 text-red-400 transition-colors" title="閉じる">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </GlassCard>
       )}
 
       {/* ── Loading ── */}
-      {(loading || batchLoading) && (
-        <div className="flex justify-center items-center py-12 gap-3 text-muted-foreground">
-          <div className="w-6 h-6 border-2 border-zinc-300 dark:border-zinc-700 border-t-blue-500 rounded-full animate-spin" />
-          <span className="text-sm">{batchLoading ? '一括分析中...' : '分析中...'}</span>
-        </div>
-      )}
+      {loading && !batchLoading && <SignalsLoadingSkeleton />}
+      {batchLoading && <BatchLoadingSkeleton />}
 
       {/* ── Market Regime Bar (Batch) ── */}
       {regime && !loading && batchResults && (
@@ -635,7 +637,7 @@ function SignalsPage() {
                   </div>
                 </div>
                 {/* Period */}
-                <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
+                <div className="flex gap-0.5 flex-wrap plumb-glass rounded-lg p-1">
                   {periods.map((p) => (
                     <button
                       key={p.value}
@@ -763,7 +765,7 @@ function SignalsPage() {
                   {/* Details */}
                   {showDetails && (
                     <div className="mt-4 space-y-4 plumb-animate-in">
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <ConditionCard label="統合判定" value={signal.combined_ready ? 'READY' : 'NOT READY'} isPositive={signal.combined_ready} sub="CHoCH + EMA収束" />
                         <ConditionCard label="弱気CHoCH" value={signal.conditions.bearish_choch?.found ? 'FOUND' : 'NONE'} isPositive={signal.conditions.bearish_choch?.found || false} sub={signal.conditions.bearish_choch?.date?.slice(0, 10) || ''} />
                         <ConditionCard label="強気CHoCH" value={signal.conditions.bullish_choch?.found ? 'FOUND' : 'NONE'} isPositive={signal.conditions.bullish_choch?.found || false} sub={signal.conditions.bullish_choch?.date?.slice(0, 10) || ''} />
@@ -887,7 +889,7 @@ function SignalsPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="plumb-glass rounded-xl p-5">
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">EMAステータス</div>
-                          <div className="grid grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {[
                               { label: 'EMA 8', val: exitAnalysis.ema_status?.ema_8, above: exitAnalysis.ema_status?.above_ema_8 },
                               { label: 'EMA 13', val: exitAnalysis.ema_status?.ema_13, above: exitAnalysis.ema_status?.above_ema_13 },
@@ -1177,7 +1179,7 @@ function SignalsPage() {
                 </DocSection>
 
                 <DocSection title="バックテスト結果（23銘柄 / 4年間）">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="plumb-glass rounded-lg p-5 text-center">
                       <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">標準</div>
                       <div className="text-base font-bold text-blue-600 dark:text-blue-400">+7.54%</div>
@@ -1200,6 +1202,82 @@ function SignalsPage() {
           </Tabs>
         </div>
       )}
+    </div>
+  );
+}
+
+function SignalsLoadingSkeleton() {
+  return (
+    <div className="space-y-4 plumb-animate-in">
+      {/* Chart skeleton */}
+      <GlassCard>
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <Skeleton className="h-6 w-32" />
+            <div className="flex gap-2">
+              <Skeleton className="h-8 w-20" />
+              <Skeleton className="h-8 w-20" />
+            </div>
+          </div>
+          <Skeleton className="h-[450px] w-full rounded-lg" />
+        </div>
+      </GlassCard>
+      {/* Tabs skeleton */}
+      <GlassCard>
+        <div className="p-5">
+          <div className="flex gap-2 mb-5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-28 rounded-md" />
+            ))}
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-20 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+function BatchLoadingSkeleton() {
+  return (
+    <div className="space-y-4 plumb-animate-in">
+      <GlassCard>
+        <div className="px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-6 w-24" />
+          </div>
+          <div className="flex gap-5">
+            <Skeleton className="h-10 w-16" />
+            <Skeleton className="h-10 w-16" />
+          </div>
+        </div>
+      </GlassCard>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <GlassCard key={i}>
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="h-5 w-20" />
+              </div>
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <div className="flex gap-2">
+                <Skeleton className="h-6 w-16 rounded" />
+                <Skeleton className="h-6 w-16 rounded" />
+              </div>
+            </div>
+          </GlassCard>
+        ))}
+      </div>
     </div>
   );
 }

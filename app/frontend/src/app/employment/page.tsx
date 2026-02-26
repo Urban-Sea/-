@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -646,51 +646,53 @@ const ECON_CHART_TYPES: { key: EconChartType; label: string }[] = [
 ];
 
 function useChartData(data: EmploymentRiskScore) {
-  const nfpChron = [...data.nfp_history].reverse();
-  const claimsChron = [...data.claims_history].reverse();
+  return useMemo(() => {
+    const nfpChron = [...data.nfp_history].reverse();
+    const claimsChron = [...data.claims_history].reverse();
 
-  const sentimentChron = (data.consumer_history || [])
-    .filter((d) => d.indicator === 'UMCSENT' && d.current_value != null)
-    .sort((a, b) => a.reference_period.localeCompare(b.reference_period));
+    const sentimentChron = (data.consumer_history || [])
+      .filter((d) => d.indicator === 'UMCSENT' && d.current_value != null)
+      .sort((a, b) => a.reference_period.localeCompare(b.reference_period));
 
-  const incomeChron = (data.consumer_history || [])
-    .filter((d) => d.indicator === 'W875RX1' && d.current_value != null)
-    .sort((a, b) => a.reference_period.localeCompare(b.reference_period))
-    .map((d, i, arr) => ({
-      ...d,
-      yoy: i >= 12 && arr[i - 12].current_value
-        ? parseFloat((((d.current_value! - arr[i - 12].current_value!) / Math.abs(arr[i - 12].current_value!)) * 100).toFixed(2))
-        : null,
-    }));
+    const incomeChron = (data.consumer_history || [])
+      .filter((d) => d.indicator === 'W875RX1' && d.current_value != null)
+      .sort((a, b) => a.reference_period.localeCompare(b.reference_period))
+      .map((d, i, arr) => ({
+        ...d,
+        yoy: i >= 12 && arr[i - 12].current_value
+          ? parseFloat((((d.current_value! - arr[i - 12].current_value!) / Math.abs(arr[i - 12].current_value!)) * 100).toFixed(2))
+          : null,
+      }));
 
-  const sahmChartData = (() => {
-    const u3Values = nfpChron.filter((d) => d.u3_rate != null).map((d) => ({ period: d.reference_period, u3: d.u3_rate as number }));
-    if (u3Values.length < 3) return [];
-    const result: Array<{ period: string; sahm_value: number }> = [];
-    for (let i = 2; i < u3Values.length; i++) {
-      const avg3m = (u3Values[i].u3 + u3Values[i - 1].u3 + u3Values[i - 2].u3) / 3;
-      const startIdx = Math.max(0, i - 11);
-      let minAvg3m = avg3m;
-      for (let j = startIdx; j <= i; j++) {
-        if (j >= 2) {
-          const a = (u3Values[j].u3 + u3Values[j - 1].u3 + u3Values[j - 2].u3) / 3;
-          minAvg3m = Math.min(minAvg3m, a);
+    const sahmChartData = (() => {
+      const u3Values = nfpChron.filter((d) => d.u3_rate != null).map((d) => ({ period: d.reference_period, u3: d.u3_rate as number }));
+      if (u3Values.length < 3) return [];
+      const result: Array<{ period: string; sahm_value: number }> = [];
+      for (let i = 2; i < u3Values.length; i++) {
+        const avg3m = (u3Values[i].u3 + u3Values[i - 1].u3 + u3Values[i - 2].u3) / 3;
+        const startIdx = Math.max(0, i - 11);
+        let minAvg3m = avg3m;
+        for (let j = startIdx; j <= i; j++) {
+          if (j >= 2) {
+            const a = (u3Values[j].u3 + u3Values[j - 1].u3 + u3Values[j - 2].u3) / 3;
+            minAvg3m = Math.min(minAvg3m, a);
+          }
         }
+        result.push({ period: u3Values[i].period, sahm_value: parseFloat((avg3m - minAvg3m).toFixed(2)) });
       }
-      result.push({ period: u3Values[i].period, sahm_value: parseFloat((avg3m - minAvg3m).toFixed(2)) });
-    }
-    return result;
-  })();
+      return result;
+    })();
 
-  const nfpWithAvg = nfpChron.map((d, i) => {
-    let avg3m: number | null = null;
-    if (i >= 2 && nfpChron[i].nfp_change != null && nfpChron[i - 1].nfp_change != null && nfpChron[i - 2].nfp_change != null) {
-      avg3m = Math.round(((nfpChron[i].nfp_change as number) + (nfpChron[i - 1].nfp_change as number) + (nfpChron[i - 2].nfp_change as number)) / 3);
-    }
-    return { ...d, nfp_3m_avg: avg3m };
-  });
+    const nfpWithAvg = nfpChron.map((d, i) => {
+      let avg3m: number | null = null;
+      if (i >= 2 && nfpChron[i].nfp_change != null && nfpChron[i - 1].nfp_change != null && nfpChron[i - 2].nfp_change != null) {
+        avg3m = Math.round(((nfpChron[i].nfp_change as number) + (nfpChron[i - 1].nfp_change as number) + (nfpChron[i - 2].nfp_change as number)) / 3);
+      }
+      return { ...d, nfp_3m_avg: avg3m };
+    });
 
-  return { nfpChron, claimsChron, sentimentChron, incomeChron, sahmChartData, nfpWithAvg };
+    return { nfpChron, claimsChron, sentimentChron, incomeChron, sahmChartData, nfpWithAvg };
+  }, [data]);
 }
 
 function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChartData>): {

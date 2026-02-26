@@ -538,7 +538,7 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
                     </span>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <a href={`/signals?ticker=${encodeURIComponent(h.ticker)}&tab=entry`} className="p-1 rounded hover:bg-purple-500/10 text-purple-600 dark:text-purple-400" title="シグナル分析">
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" /></svg>
                       </a>
@@ -1249,7 +1249,7 @@ function CashBalanceSection({ fxRate }: { fxRate: number }) {
                     <span className="ml-auto text-sm font-mono font-bold tabular-nums">
                       {b.currency === 'USD' ? formatUSD(b.amount) : formatJPY(b.amount)}
                     </span>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <button onClick={() => setEditId(b.id)} className="p-1 rounded hover:bg-blue-500/10 text-blue-600 dark:text-blue-400" title="編集">
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" /></svg>
                       </button>

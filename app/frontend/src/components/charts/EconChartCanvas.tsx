@@ -103,7 +103,14 @@ export default function EconChartCanvas({
 
     const hasRightAxis = series.some((s) => s.yAxisSide === 'right');
     const hasEvents = eventMarkers && eventMarkers.length > 0;
-    const padding = { top: 32, right: hasRightAxis ? 68 : 16, bottom: hasEvents ? 58 : 44, left: 68 };
+    const isMobile = width < 500;
+    const padding = {
+      top: 32,
+      right: hasRightAxis ? (isMobile ? 52 : 68) : 16,
+      bottom: hasEvents ? 58 : 44,
+      left: isMobile ? 48 : 68,
+    };
+    const axisFont = isMobile ? '9px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
     const scrollbarH = 6;
     const chartHeight = h - padding.top - padding.bottom - scrollbarH - 4;
     const chartWidth = width - padding.left - padding.right;
@@ -172,7 +179,7 @@ export default function EconChartCanvas({
 
     // Grid lines
     const gridLines = 6;
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.font = axisFont;
     for (let i = 0; i <= gridLines; i++) {
       const y = padding.top + (chartHeight / gridLines) * i;
       ctx.strokeStyle = gridColor;
@@ -214,7 +221,7 @@ export default function EconChartCanvas({
 
         if (rl.label) {
           ctx.fillStyle = rl.color;
-          ctx.font = '10px -apple-system, sans-serif';
+          ctx.font = axisFont;
           ctx.textAlign = 'right';
           ctx.fillText(rl.label, width - padding.right - 4, y - 4);
         }
@@ -313,7 +320,7 @@ export default function EconChartCanvas({
     if (primarySeries) {
       const sliced = primarySeries.data.slice(start, end);
       ctx.fillStyle = textColor;
-      ctx.font = '10px -apple-system, sans-serif';
+      ctx.font = axisFont;
       ctx.textAlign = 'center';
       const labelStep = Math.max(1, Math.ceil(sliced.length / 10));
       for (let i = 0; i < sliced.length; i++) {
@@ -354,7 +361,7 @@ export default function EconChartCanvas({
       const nearestIdx = Math.round((mx - padding.left) / pointSpacing);
       if (nearestIdx >= 0 && nearestIdx < visibleCount) {
         let tooltipY = padding.top + 14;
-        ctx.font = '10px -apple-system, sans-serif';
+        ctx.font = axisFont;
         // Date label
         const primarySliced = series[0]?.data.slice(start, end);
         if (primarySliced?.[nearestIdx]) {
@@ -405,7 +412,7 @@ export default function EconChartCanvas({
       ctx.setLineDash([]);
       legendX += 18;
       ctx.fillStyle = legendColor;
-      ctx.font = '10px -apple-system, sans-serif';
+      ctx.font = axisFont;
       ctx.fillText(s.label, legendX, legendY + 4);
       legendX += ctx.measureText(s.label).width + 12;
     }
