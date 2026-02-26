@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Open Regime - Trading Dashboard",
   description: "V10シグナル分析・マーケットレジーム・保有管理",
-  manifest: "/manifest.webmanifest",
+
 };
 
 export const viewport: Viewport = {
