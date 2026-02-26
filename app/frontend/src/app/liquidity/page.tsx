@@ -203,7 +203,7 @@ function Layer2ACard({ layer }: { layer: LayerStress }) {
   const c = layer.components as Record<string, unknown> | undefined;
   return (
     <GlassCard stagger={4} className="plumb-gradient-border before:bg-gradient-to-b before:from-purple-500/30 before:to-transparent">
-      <LayerHeader number="LAYER 2A" label="銀行システム" sub="配管 — 準備預金・KRE・SRF" color="text-purple-600 dark:text-purple-400" score={layer.stress_score} />
+      <LayerHeader number="LAYER 2A" label="銀行システム" sub="銀行間流動性 — 準備預金・KRE・SRF" color="text-purple-600 dark:text-purple-400" score={layer.stress_score} />
       <div className="px-5 pb-5 space-y-3">
         <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{layer.interpretation}</p>
         {c && (
@@ -1112,11 +1112,11 @@ function SystemDocsTab() {
   return (
     <div className="space-y-3 plumb-animate-in">
       <DocSection title="システム概要 ─ 3層流動性モデル" defaultOpen={true}>
-        <p>FRBの金融システムを「配管」に見立てた3層モデルで市場の流動性を監視します。</p>
+        <p>FRBの金融システムを3層モデルで分類し、市場の流動性を監視します。</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
           {[
             { layer: 'Layer 1', name: '政策流動性（元栓）', desc: 'FRBバランスシートのNet Liquidity（SOMA - RRP - TGA）をZ-scoreで評価。政策レベルの流動性供給を測定。', color: 'border-blue-500/20 text-blue-600 dark:text-blue-400' },
-            { layer: 'Layer 2A', name: '銀行システム（配管）', desc: '準備預金、KRE（地銀ETF）、SRF利用、IGスプレッドの加重スコア。銀行間の資金伝達を監視。', color: 'border-purple-500/20 text-purple-600 dark:text-purple-400' },
+            { layer: 'Layer 2A', name: '銀行システム（銀行間流動性）', desc: '準備預金、KRE（地銀ETF）、SRF利用、IGスプレッドの加重スコア。銀行間の資金伝達を監視。', color: 'border-purple-500/20 text-purple-600 dark:text-purple-400' },
             { layer: 'Layer 2B', name: 'リスク許容度（蛇口）', desc: '信用取引残高2年変化率（80%）+ MMF変化率（20%）。市場参加者のリスクテイク度を測定。', color: 'border-cyan-500/20 text-cyan-600 dark:text-cyan-400' },
           ].map((l) => (
             <div key={l.layer} className={`rounded-lg border ${l.color} p-3`}>

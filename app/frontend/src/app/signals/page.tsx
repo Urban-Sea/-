@@ -25,7 +25,7 @@ const modeLabels: Record<Mode, { label: string; desc: string }> = {
 };
 
 const defaultQuickTickers = ['NVDA', 'TSLA', 'META', 'PLTR', 'COIN', 'IONQ', 'SOUN', 'RKLB'];
-const JP_QUICK_TICKERS = [
+const defaultJpTickers = [
   { ticker: '7203', name: 'トヨタ' },
   { ticker: '9984', name: 'ソフトバンクG' },
   { ticker: '6758', name: 'ソニーG' },
@@ -87,8 +87,12 @@ function SignalsPage() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [exitLoading, setExitLoading] = useState(false);
   const [quickTickers, setQuickTickers] = useState<string[]>(defaultQuickTickers);
+  const [jpTickers, setJpTickers] = useState<Array<{ ticker: string; name: string }>>(defaultJpTickers);
   const [showAddTicker, setShowAddTicker] = useState(false);
+  const [showAddJpTicker, setShowAddJpTicker] = useState(false);
   const [newTickerInput, setNewTickerInput] = useState('');
+  const [newJpTickerInput, setNewJpTickerInput] = useState('');
+  const [newJpNameInput, setNewJpNameInput] = useState('');
 
   // Watchlist: backend sync (authenticated) or localStorage fallback
   const { email } = useUser();
@@ -148,13 +152,17 @@ function SignalsPage() {
     if (email) return; // skip — backend is the source of truth
     const saved = localStorage.getItem('quickTickers');
     if (saved) {
-      try {
-        setQuickTickers(JSON.parse(saved));
-      } catch {
-        // ignore parse errors
-      }
+      try { setQuickTickers(JSON.parse(saved)); } catch { /* ignore */ }
     }
   }, [email]);
+
+  // Load JP tickers from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('jpQuickTickers');
+    if (saved) {
+      try { setJpTickers(JSON.parse(saved)); } catch { /* ignore */ }
+    }
+  }, []);
 
   const addQuickTicker = useCallback(async (t: string) => {
     const tick = t.trim().toUpperCase();
@@ -180,6 +188,24 @@ function SignalsPage() {
       localStorage.setItem('quickTickers', JSON.stringify(newList));
     }
   }, [quickTickers, email, mutateWl]);
+
+  const addJpTicker = useCallback((code: string, name: string) => {
+    const tick = code.trim();
+    if (!tick) return;
+    if (jpTickers.some(t => t.ticker === tick)) return;
+    const newList = [...jpTickers, { ticker: tick, name: name.trim() || tick }];
+    setJpTickers(newList);
+    setNewJpTickerInput('');
+    setNewJpNameInput('');
+    setShowAddJpTicker(false);
+    localStorage.setItem('jpQuickTickers', JSON.stringify(newList));
+  }, [jpTickers]);
+
+  const removeJpTicker = useCallback((tick: string) => {
+    const newList = jpTickers.filter(t => t.ticker !== tick);
+    setJpTickers(newList);
+    localStorage.setItem('jpQuickTickers', JSON.stringify(newList));
+  }, [jpTickers]);
 
   const handleAnalyze = async (t?: string) => {
     const targetTicker = t || ticker;
@@ -425,16 +451,51 @@ function SignalsPage() {
           {/* Row 3: JP Quick Tickers */}
           <div className="flex gap-1.5 flex-wrap items-center pt-2 border-t border-border/50">
             <span className="text-xs text-red-400/70 uppercase tracking-wider mr-1 font-medium">JP</span>
-            {JP_QUICK_TICKERS.map((t) => (
+            {jpTickers.map((t) => (
               <span
                 key={t.ticker}
-                onClick={() => handleAnalyze(t.ticker)}
-                className="px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer"
+                className="group relative flex items-center gap-1.5 px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer"
               >
-                <span className="font-mono">{t.ticker}</span>
-                <span className="ml-1 text-[10px] text-muted-foreground">{t.name}</span>
+                <span className="font-mono" onClick={() => handleAnalyze(t.ticker)}>{t.ticker}</span>
+                <span className="ml-0.5 text-[10px] text-muted-foreground" onClick={() => handleAnalyze(t.ticker)}>{t.name}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeJpTicker(t.ticker); }}
+                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 font-bold text-xs ml-0.5"
+                >
+                  ×
+                </button>
               </span>
             ))}
+            {showAddJpTicker ? (
+              <span className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={newJpTickerInput}
+                  onChange={(e) => setNewJpTickerInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addJpTicker(newJpTickerInput, newJpNameInput)}
+                  placeholder="7203"
+                  className="plumb-glass rounded px-2.5 py-1.5 text-xs w-16 focus:outline-none focus:ring-1 focus:ring-red-500/50 text-foreground font-mono"
+                  autoFocus
+                />
+                <input
+                  type="text"
+                  value={newJpNameInput}
+                  onChange={(e) => setNewJpNameInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addJpTicker(newJpTickerInput, newJpNameInput)}
+                  placeholder="名前"
+                  className="plumb-glass rounded px-2.5 py-1.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-red-500/50 text-foreground"
+                />
+                <button onClick={() => addJpTicker(newJpTickerInput, newJpNameInput)} className="px-2.5 py-1.5 bg-red-500/20 text-red-700 dark:text-red-400 rounded text-xs font-bold hover:bg-red-500/30">OK</button>
+                <button onClick={() => { setShowAddJpTicker(false); setNewJpTickerInput(''); setNewJpNameInput(''); }} className="px-2.5 py-1.5 border border-red-500/30 text-red-500 dark:text-red-400 rounded text-xs font-bold hover:bg-red-500/10">×</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setShowAddJpTicker(true)}
+                className="px-2.5 py-1.5 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-500 dark:text-zinc-600 text-xs font-semibold hover:border-red-500/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              >
+                + 追加
+              </button>
+            )}
           </div>
         </div>
       </GlassCard>

@@ -12,29 +12,29 @@ import {
 /* ── Feature card data ── */
 const features = [
   {
-    mono: 'PLUMBING SYSTEM',
-    title: '流動性配管モニター',
-    desc: 'FRBの資金供給（L1）、銀行セクター（L2A）、市場レバレッジ（L2B）の3層で金融市場の「配管」の健全性をリアルタイム監視。',
+    mono: 'LIQUIDITY MONITOR',
+    title: '米国金融流動性モニター',
+    desc: 'FRBの資金供給（L1）、銀行セクター（L2A）、市場レバレッジ（L2B）の3層で金融市場の流動性をリアルタイム監視。',
     color: 'blue' as const,
     href: '/liquidity',
   },
   {
     mono: 'ECONOMIC ALERT',
-    title: '米国景気警戒スコア',
+    title: '米国景気リスク評価',
     desc: '雇用（50点）・消費者（25点）・構造（25点）の3カテゴリで100点満点のリスクスコアを算出。5段階フェーズで景気状況を判定。',
     color: 'green' as const,
     href: '/employment',
   },
   {
     mono: 'SIGNAL ANALYSIS',
-    title: '個別シグナル分析',
+    title: '銘柄分析',
     desc: 'EMA・市場構造・レジーム判定を組み合わせた複合エントリーシグナル。米国株・日本株に対応。',
     color: 'purple' as const,
     href: '/signals',
   },
   {
     mono: 'PORTFOLIO MGMT',
-    title: '保有・取引管理',
+    title: 'ポートフォリオ',
     desc: 'ポートフォリオの保有状況、取引履歴、損益推移を管理。セクター別・国別のアロケーション分析。',
     color: 'amber' as const,
     href: '/holdings',

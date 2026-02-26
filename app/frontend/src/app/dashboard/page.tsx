@@ -80,7 +80,7 @@ function getIntegratedInsight(stateCode: string, phaseCode: string): { main: str
   const isHealthy = stateCode === 'HEALTHY' || stateCode === 'FINANCIAL_RALLY';
   const isSafe = phaseCode === 'EXPANSION';
 
-  if (isShock && isCrisis) return { main: '両システムが危険シグナル', sub: 'フルキャッシュ推奨 — 配管・景気ともに深刻な状態です', color: 'red' };
+  if (isShock && isCrisis) return { main: '両システムが危険シグナル', sub: 'フルキャッシュ推奨 — 流動性・景気ともに深刻な状態です', color: 'red' };
   if (isShock || isCrisis) return { main: '一方のシステムが危険シグナル', sub: '大幅なリスク縮小を検討してください', color: 'red' };
   if (isTight && isCaution) return { main: '両システムが警戒シグナル', sub: '新規投資を控え、守り重視の姿勢が適切です', color: 'orange' };
   if (isTight || isCaution) return { main: '一方のシステムが警戒シグナル', sub: '慎重な姿勢を維持しましょう', color: 'yellow' };
@@ -245,7 +245,7 @@ function IntegratedHero({ stateCode, phaseCode, stateLabel: stLabel, phaseLabel:
           {/* Right: Dual badges */}
           <div className="flex flex-col gap-3 shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono text-muted-foreground uppercase w-8">配管</span>
+              <span className="text-[10px] font-mono text-muted-foreground uppercase w-8">流動性</span>
               <Badge variant="outline" className={`${colorClasses(stateColor).text} ${colorClasses(stateColor).border} text-xs font-mono`}>
                 {stLabel}
               </Badge>
@@ -277,8 +277,8 @@ function PlumbingCard({ plumbing, events }: { plumbing: PlumbingSummary; events:
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400 font-mono">PLUMBING SYSTEM</p>
-            <h3 className="text-base font-bold">流動性配管システム</h3>
-            <p className="text-xs text-muted-foreground">金融市場の「配管」の健全性を監視</p>
+            <h3 className="text-base font-bold">米国金融流動性モニター</h3>
+            <p className="text-xs text-muted-foreground">金融市場の流動性の健全性を監視</p>
           </div>
           {state && (
             <Badge variant="outline" className={`${sc.text} ${sc.border} text-xs font-mono`}>
@@ -429,7 +429,7 @@ function StatePhaseMatrix({ currentRow, currentCol }: { currentRow: number; curr
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr>
-                <th className="text-left py-2 px-2 text-muted-foreground font-mono text-[10px] w-28">配管 State ↓</th>
+                <th className="text-left py-2 px-2 text-muted-foreground font-mono text-[10px] w-28">流動性 State ↓</th>
                 {PHASE_LABELS.map((p, i) => (
                   <th key={i} className={`text-center py-2 px-1 font-mono text-[10px] ${i === currentCol ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-muted-foreground'}`}>
                     {p}
@@ -460,7 +460,7 @@ function StatePhaseMatrix({ currentRow, currentCol }: { currentRow: number; curr
         </div>
 
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
-          青枠 = 現在のポジション｜行 = 金融配管の状態｜列 = 景気フェーズ
+          青枠 = 現在のポジション｜行 = 金融流動性の状態｜列 = 景気フェーズ
         </p>
       </div>
     </GlassCard>
@@ -497,10 +497,10 @@ function InsightCardsSection({ cards }: { cards: InsightCard[] }) {
 /** Navigation Cards — links to all other pages */
 function NavigationCards() {
   const pages = [
-    { href: '/liquidity', title: '流動性配管システム', sub: 'FRB・銀行・市場レバレッジの3層ストレスを分析', icon: '🔧', color: 'blue' },
-    { href: '/employment', title: '米国景気警戒システム', sub: '雇用・消費者・構造の3軸で景気リスクを評価', icon: '📊', color: 'green' },
-    { href: '/signals', title: '個別シグナル分析', sub: 'テクニカル指標で個別銘柄のエントリー判定', icon: '📈', color: 'purple' },
-    { href: '/holdings', title: '保有・取引管理', sub: 'ポートフォリオの保有状況と取引履歴を管理', icon: '💼', color: 'amber' },
+    { href: '/liquidity', title: '米国金融流動性モニター', sub: 'FRB・銀行・市場レバレッジの3層ストレスを分析', icon: '🔧', color: 'blue' },
+    { href: '/employment', title: '米国景気リスク評価モニター', sub: '雇用・消費者・構造の3軸で景気リスクを評価', icon: '📊', color: 'green' },
+    { href: '/signals', title: '銘柄分析', sub: 'エントリー判定・Exit分析・シグナル履歴', icon: '📈', color: 'purple' },
+    { href: '/holdings', title: 'ポートフォリオ', sub: '保有管理・取引記録・統計', icon: '💼', color: 'amber' },
   ];
 
   const iconColorMap: Record<string, string> = {
@@ -593,8 +593,8 @@ function SystemGuideTab() {
         <p>このダッシュボードは、<strong>2つの独立したシステム</strong>を1画面で統合して表示しています。</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-3">
           <div className="plumb-glass rounded-lg p-3">
-            <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">流動性配管システム</p>
-            <p className="text-xs">金融市場の「配管」（FRB資金、銀行、レバレッジ）が正常に機能しているかを監視します。短期的な市場の健全性を表します。</p>
+            <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">米国金融流動性モニター</p>
+            <p className="text-xs">金融市場の流動性（FRB資金、銀行、レバレッジ）が正常に機能しているかを監視します。短期的な市場の健全性を表します。</p>
           </div>
           <div className="plumb-glass rounded-lg p-3">
             <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">米国景気警戒システム</p>
@@ -608,11 +608,11 @@ function SystemGuideTab() {
           <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-500" /> <span className="text-xs">警戒 — 守り重視</span></span>
           <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500" /> <span className="text-xs">危険 — リスク縮小</span></span>
         </div>
-        <p><strong>マトリクスの読み方：</strong>行（配管の状態）と列（景気のフェーズ）の交差点が、現在の投資環境を示します。青い枠が「今ここ」の位置です。</p>
+        <p><strong>マトリクスの読み方：</strong>行（流動性の状態）と列（景気のフェーズ）の交差点が、現在の投資環境を示します。青い枠が「今ここ」の位置です。</p>
       </DocSection>
 
-      <DocSection title="流動性配管システムとは">
-        <p>金融市場を「配管」に例えると、お金がスムーズに流れているかどうかを3つのレイヤーで監視しています。</p>
+      <DocSection title="米国金融流動性モニターとは">
+        <p>金融市場でお金がスムーズに流れているかどうかを3つのレイヤーで監視しています。</p>
         <DocTable
           headers={['レイヤー', '何を見ているか', 'スコアの意味']}
           rows={[
@@ -621,7 +621,7 @@ function SystemGuideTab() {
             ['L2B 市場流動性', 'マージンデット（信用取引残高）の2年変化率', '投資家のレバレッジ水準'],
           ]}
         />
-        <p className="mt-2"><strong>配管の状態（State）：</strong></p>
+        <p className="mt-2"><strong>流動性の状態（State）：</strong></p>
         <DocTable
           headers={['状態', '意味', '投資への影響']}
           rows={[
@@ -659,9 +659,9 @@ function SystemGuideTab() {
       </DocSection>
 
       <DocSection title="マトリクスの読み方">
-        <p>投資判断マトリクスは、<strong>配管State（行）</strong>と<strong>景気Phase（列）</strong>の掛け合わせで、推奨される投資姿勢を示します。</p>
+        <p>投資判断マトリクスは、<strong>流動性State（行）</strong>と<strong>景気Phase（列）</strong>の掛け合わせで、推奨される投資姿勢を示します。</p>
         <div className="plumb-glass rounded-lg p-3 my-3 space-y-2">
-          <p className="text-xs"><strong>行（縦軸）= 金融市場の状態</strong> — 短期的な「配管」の健全さ。FRBの動き、銀行の健全性、レバレッジの水準を反映します。</p>
+          <p className="text-xs"><strong>行（縦軸）= 金融市場の状態</strong> — 短期的な流動性の健全さ。FRBの動き、銀行の健全性、レバレッジの水準を反映します。</p>
           <p className="text-xs"><strong>列（横軸）= 実体経済の状態</strong> — 中長期的な景気動向。雇用、消費、経済構造の健全性を反映します。</p>
         </div>
         <p><strong>読み方の例：</strong></p>
@@ -680,9 +680,9 @@ function SystemGuideTab() {
         <div className="space-y-3 my-3">
           {[
             { year: '2008年9月', event: 'リーマン・ショック', state: '流動性ショック', phase: '危機',
-              detail: '配管の全レイヤーが危険水準を突破。景気スコアも80超に。マトリクスは「フルキャッシュ」を示していました。' },
+              detail: '全レイヤーが危険水準を突破。景気スコアも80超に。マトリクスは「フルキャッシュ」を示していました。' },
             { year: '2020年3月', event: 'コロナ・ショック', state: '流動性ショック', phase: '警戒期→危機',
-              detail: '突然の流動性枯渇により配管が一気に悪化。ただしFRBの迅速な緩和により、配管は早期に回復しました。' },
+              detail: '突然の流動性枯渇により金融流動性が一気に悪化。ただしFRBの迅速な緩和により早期に回復しました。' },
             { year: '2022年', event: 'FRB利上げサイクル', state: '政策引き締め', phase: '注意期',
               detail: 'L1が徐々に上昇（FRBがQTを実施）。景気スコアは40前後で推移。マトリクスは「選別投資〜新規控え」を示していました。' },
             { year: '2023年3月', event: 'SVB破綻', state: '信用収縮', phase: '注意期',
@@ -698,7 +698,7 @@ function SystemGuideTab() {
             </div>
           ))}
         </div>
-        <p className="text-xs mt-2"><strong>学び：</strong>配管の悪化は急激（日〜週単位）、景気の悪化は緩やか（月〜四半期単位）。両方が同時に悪化した場合が最も危険です。</p>
+        <p className="text-xs mt-2"><strong>学び：</strong>流動性の悪化は急激（日〜週単位）、景気の悪化は緩やか（月〜四半期単位）。両方が同時に悪化した場合が最も危険です。</p>
       </DocSection>
 
       <DocSection title="注意事項">
