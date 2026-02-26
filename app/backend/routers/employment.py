@@ -1408,11 +1408,22 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 .order("reference_period", desc=False).limit(1000).execute()
 
         def fetch_market():
-            """Phase 2-3: 日付フィルタで1回取得 (ページネーション除去)"""
-            return supabase.table("market_indicators") \
-                .select("date,sp500,russell2000") \
-                .gte("date", start_date) \
-                .order("date", desc=False).limit(1000).execute()
+            """Phase 2-3: S&P500は日次→ページネーションで全行取得"""
+            all_rows = []
+            page_size = 1000
+            offset = 0
+            while True:
+                result = supabase.table("market_indicators") \
+                    .select("date,sp500,russell2000") \
+                    .gte("date", start_date) \
+                    .order("date", desc=False) \
+                    .range(offset, offset + page_size - 1).execute()
+                rows = result.data or []
+                all_rows.extend(rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+            return type('R', (), {'data': all_rows})()
 
         # Phase 3: 4クエリを並列実行
         nfp_fut = loop.run_in_executor(_executor, fetch_nfp)
