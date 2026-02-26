@@ -35,14 +35,18 @@ import type {
   WatchlistsResponse,
 } from '@/types';
 
+import { getAuthEmail } from './auth-store';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
+  const email = getAuthEmail();
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(email ? { 'CF-Access-Authenticated-User-Email': email } : {}),
       ...options?.headers,
     },
   });

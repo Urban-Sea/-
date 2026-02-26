@@ -1,13 +1,18 @@
 'use client';
 
 import { SWRConfig } from 'swr';
+import { getAuthEmail } from './auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
 
 async function swrFetcher<T>(endpoint: string): Promise<T> {
   const url = `${API_URL}${endpoint}`;
+  const email = getAuthEmail();
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(email ? { 'CF-Access-Authenticated-User-Email': email } : {}),
+    },
   });
 
   if (!response.ok) {

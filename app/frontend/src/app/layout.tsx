@@ -39,8 +39,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
       >
         <ThemeProvider>
-          <UserProvider>
-            <SWRProvider>
+          <SWRProvider>
+            <UserProvider>
               <TooltipProvider>
                 <Header />
                 <WelcomeModal />
@@ -48,8 +48,8 @@ export default function RootLayout({
                   {children}
                 </main>
               </TooltipProvider>
-            </SWRProvider>
-          </UserProvider>
+            </UserProvider>
+          </SWRProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { setAuthEmail } from '@/lib/auth-store';
 
 interface UserContextType {
   email: string | null;
@@ -29,15 +30,28 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return res.json();
       })
       .then(data => {
-        setEmail(data.email || null);
+        const userEmail = data.email || null;
+        setAuthEmail(userEmail);
+        setEmail(userEmail);
       })
       .catch(() => {
+        setAuthEmail(null);
         setEmail(null);
       })
       .finally(() => setIsLoading(false));
   }, []);
 
   const initial = email ? email.charAt(0).toUpperCase() : '?';
+
+  // Block rendering until auth identity is resolved.
+  // This prevents SWR hooks from firing before email is available.
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-pulse text-muted-foreground text-sm">認証中...</div>
+      </div>
+    );
+  }
 
   return (
     <UserContext.Provider value={{ email, initial, isLoading }}>
