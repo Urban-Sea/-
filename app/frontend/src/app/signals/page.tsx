@@ -717,6 +717,7 @@ function SignalsPage() {
                 {chartType === 'candlestick' ? (
                   <CandlestickChart
                     data={chartData}
+                    ticker={ticker}
                     showEMA={chartOptions.has('ema')}
                     showBOS={chartOptions.has('bos')}
                     showCHoCH={chartOptions.has('choch')}
@@ -728,6 +729,7 @@ function SignalsPage() {
                 ) : (
                   <LineChartCanvas
                     data={chartData}
+                    ticker={ticker}
                     showEMA={chartOptions.has('ema')}
                   />
                 )}

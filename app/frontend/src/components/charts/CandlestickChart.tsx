@@ -17,6 +17,7 @@ interface CandleData {
 
 interface CandlestickChartProps {
   data: CandleData[];
+  ticker?: string;
   showEMA?: boolean;
   showBOS?: boolean;
   showCHoCH?: boolean;
@@ -31,6 +32,7 @@ const DEFAULT_VISIBLE = 120;
 
 export default function CandlestickChart({
   data,
+  ticker,
   showEMA = true,
   showBOS = false,
   showCHoCH = false,
@@ -96,7 +98,9 @@ export default function CandlestickChart({
       dateIndexMap.set(d.date, i);
     });
 
+    const ccy = ticker && /^\d/.test(ticker) ? '¥' : '$';
     const formatPrice = (val: number) => {
+      if (ccy === '¥') return '¥' + Math.round(val).toLocaleString();
       if (val >= 1000) return '$' + val.toFixed(0);
       return '$' + val.toFixed(2);
     };
@@ -434,7 +438,7 @@ export default function CandlestickChart({
       roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [data, showEMA, showBOS, showCHoCH, showFVG, bosMarkers, chochMarkers, fvgMarkers, isDark]);
+  }, [data, ticker, showEMA, showBOS, showCHoCH, showFVG, bosMarkers, chochMarkers, fvgMarkers, isDark]);
 
   // Draw on data/options change
   useEffect(() => {

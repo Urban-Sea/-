@@ -13,6 +13,7 @@ interface LineData {
 
 interface LineChartCanvasProps {
   data: LineData[];
+  ticker?: string;
   showEMA?: boolean;
 }
 
@@ -21,6 +22,7 @@ const DEFAULT_VISIBLE = 120;
 
 export default function LineChartCanvas({
   data,
+  ticker,
   showEMA = true,
 }: LineChartCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,7 +68,9 @@ export default function LineChartCanvas({
     const totalChartHeight = height - padding.top - padding.bottom - scrollbarH - 4;
     const priceChartHeight = totalChartHeight;
 
+    const ccy = ticker && /^\d/.test(ticker) ? '¥' : '$';
     const formatPrice = (val: number) => {
+      if (ccy === '¥') return '¥' + Math.round(val).toLocaleString();
       if (val >= 1000) return '$' + val.toFixed(0);
       return '$' + val.toFixed(2);
     };
@@ -267,7 +271,7 @@ export default function LineChartCanvas({
       roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [data, showEMA, isDark]);
+  }, [data, ticker, showEMA, isDark]);
 
   // Draw on data/options change
   useEffect(() => {
