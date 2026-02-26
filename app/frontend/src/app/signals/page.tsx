@@ -296,42 +296,39 @@ function SignalsPage() {
   });
 
   return (
-    <div className="space-y-4 w-full px-4 lg:px-6">
+    <div className="space-y-4 pb-10">
       {/* ── Page Header ── */}
-      <div className="plumb-animate-in">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 via-cyan-400 to-purple-500" />
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">シグナル分析</h1>
-            </div>
-            <p className="text-xs text-muted-foreground pl-3.5">統合エントリーシステム・チャート・保有管理</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 plumb-animate-in">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-cyan-500" />
+            <h1 className="text-2xl font-bold tracking-tight">シグナル分析</h1>
           </div>
-          {/* Mode Selector */}
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">運用モード</span>
-            <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
-              {(Object.keys(modeLabels) as Mode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                    mode === m
-                      ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
-                      : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                  }`}
-                >
-                  {modeLabels[m].label}
-                </button>
-              ))}
-            </div>
+          <p className="text-xs text-muted-foreground pl-3.5">統合エントリーシステム・チャート・保有管理</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-[0.2em] font-medium">運用モード</span>
+          <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
+            {(Object.keys(modeLabels) as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  mode === m
+                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                    : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                }`}
+              >
+                {modeLabels[m].label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
       {/* ── Search Section ── */}
       <GlassCard stagger={1}>
-        <div className="p-4 space-y-3">
+        <div className="p-5 space-y-4">
           {/* Row 1: Input + Actions */}
           <div className="flex gap-2 items-center flex-wrap">
             <div className="relative">
@@ -484,7 +481,7 @@ function SignalsPage() {
 
       {/* ── Batch Results ── */}
       {batchResults && !batchLoading && (
-        <div className="space-y-3 plumb-animate-in">
+        <div className="space-y-4 plumb-animate-in">
           {/* Summary */}
           <GlassCard>
             <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-3">
@@ -506,7 +503,7 @@ function SignalsPage() {
                 <div
                   key={r.ticker}
                   onClick={() => { setBatchResults(null); handleAnalyze(r.ticker); }}
-                  className={`plumb-glass plumb-glass-hover rounded-xl p-4 cursor-pointer plumb-animate-in plumb-stagger-${Math.min(idx + 1, 8)} ${
+                  className={`plumb-glass plumb-glass-hover rounded-xl p-5 cursor-pointer plumb-animate-in plumb-stagger-${Math.min(idx + 1, 8)} ${
                     r.error ? 'border-red-500/30' : r.entry_allowed ? 'border-l-2 border-l-emerald-500' : ''
                   }`}
                 >
@@ -553,9 +550,8 @@ function SignalsPage() {
       {signal && !loading && (
         <div className="space-y-4 plumb-animate-in">
           {/* Hero Card */}
-          <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden plumb-animate-scale">
-            <div className="absolute inset-0 bg-zinc-100/50 dark:bg-zinc-500/[0.02]" />
-            <div className="relative p-5 md:p-6">
+          <GlassCard stagger={1}>
+            <div className="p-5 md:p-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
                   <TickerIcon ticker={signal.ticker} size={72} />
@@ -592,11 +588,11 @@ function SignalsPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </GlassCard>
 
           {/* ── Chart Section ── */}
           <GlassCard stagger={2}>
-            <div className="p-4">
+            <div className="p-5">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Chart Type */}
@@ -886,7 +882,7 @@ function SignalsPage() {
 
                       {/* EMA Status & Structure Stop */}
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="plumb-glass rounded-xl p-4">
+                        <div className="plumb-glass rounded-xl p-5">
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">EMAステータス</div>
                           <div className="grid grid-cols-3 gap-3">
                             {[
@@ -904,7 +900,7 @@ function SignalsPage() {
                             ))}
                           </div>
                         </div>
-                        <div className="plumb-glass rounded-xl p-4">
+                        <div className="plumb-glass rounded-xl p-5">
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">ストップライン</div>
                           <div className="flex items-center justify-between">
                             <div>
@@ -925,7 +921,7 @@ function SignalsPage() {
                       </div>
 
                       {/* Exit Layers */}
-                      <div className="plumb-glass rounded-xl p-4">
+                      <div className="plumb-glass rounded-xl p-5">
                         <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">レイヤー判定</div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {exitAnalysis.layers.map((layer, idx) => (
@@ -946,7 +942,7 @@ function SignalsPage() {
 
                       {/* Targets */}
                       {exitAnalysis.targets.length > 0 && (
-                        <div className="plumb-glass rounded-xl p-4">
+                        <div className="plumb-glass rounded-xl p-5">
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">利確ターゲット</div>
                           <div className="flex gap-3 flex-wrap">
                             {exitAnalysis.targets.map((t, i) => (
@@ -1128,7 +1124,7 @@ function SignalsPage() {
 
             {/* ── Tab: System ── */}
             <TabsContent value="system">
-              <div className="space-y-3 plumb-animate-in">
+              <div className="space-y-4 plumb-animate-in">
                 <DocSection title="統合エントリーシステム 概要" defaultOpen>
                   <p>
                     統合エントリーシステムは、CHoCH（トレンド転換）、EMA収束、相対強度（RS）の3条件を統合し、
@@ -1138,15 +1134,15 @@ function SignalsPage() {
 
                 <DocSection title="エントリー条件">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="plumb-glass rounded-lg p-4">
+                    <div className="plumb-glass rounded-lg p-5">
                       <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-2">1. 弱気CHoCH</h4>
                       <p className="text-xs leading-relaxed text-muted-foreground">直近10個の転換点から弱気CHoCHを検出。下落トレンドの転換を確認。</p>
                     </div>
-                    <div className="plumb-glass rounded-lg p-4">
+                    <div className="plumb-glass rounded-lg p-5">
                       <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-2">2. 強気CHoCH</h4>
                       <p className="text-xs leading-relaxed text-muted-foreground">弱気CHoCH後の強気CHoCHを検出。上昇トレンドへの転換を確認。</p>
                     </div>
-                    <div className="plumb-glass rounded-lg p-4">
+                    <div className="plumb-glass rounded-lg p-5">
                       <h4 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mb-2">3. EMA収束</h4>
                       <p className="text-xs leading-relaxed text-muted-foreground">8EMA と 21EMA が 1.5ATR 以内に収束。エントリーポイントの確認。</p>
                     </div>
@@ -1179,17 +1175,17 @@ function SignalsPage() {
 
                 <DocSection title="バックテスト結果（23銘柄 / 4年間）">
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="plumb-glass rounded-lg p-4 text-center">
+                    <div className="plumb-glass rounded-lg p-5 text-center">
                       <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">標準</div>
                       <div className="text-base font-bold text-blue-600 dark:text-blue-400">+7.54%</div>
                       <div className="text-xs text-muted-foreground">PF 3.61</div>
                     </div>
-                    <div className="plumb-glass rounded-lg p-4 text-center">
+                    <div className="plumb-glass rounded-lg p-5 text-center">
                       <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">積極型</div>
                       <div className="text-base font-bold text-orange-600 dark:text-orange-400">+6.63%</div>
                       <div className="text-xs text-muted-foreground">PF 3.15</div>
                     </div>
-                    <div className="plumb-glass rounded-lg p-4 text-center">
+                    <div className="plumb-glass rounded-lg p-5 text-center">
                       <div className="text-xs text-muted-foreground uppercase mb-1 font-medium">慎重型</div>
                       <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">+6.96%</div>
                       <div className="text-xs text-muted-foreground">PF 3.64</div>
@@ -1210,7 +1206,7 @@ function ConditionCard({ label, value, isPositive, sub }: {
 }) {
   return (
     <div className="plumb-gradient-border rounded-xl">
-      <div className="plumb-glass rounded-xl p-4 text-center">
+      <div className="plumb-glass rounded-xl p-5 text-center">
         <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">{label}</div>
         <div className={`text-xl font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
           {value}
