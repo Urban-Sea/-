@@ -93,7 +93,6 @@ function EconomicPhaseHero({ data }: { data: EmploymentRiskScore }) {
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">総合</p>
               <p className="text-[10px] text-muted-foreground font-mono">{data.total_score}/100</p>
             </div>
-            <div className="w-px h-16 bg-border/50" />
             {categories.map((cat) => {
               const pct = Math.round((cat.score / cat.max_score) * 100);
               const catColor = cat.name === '雇用' ? 'text-blue-600 dark:text-blue-400'

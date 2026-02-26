@@ -740,8 +740,11 @@ export default function IntegratedDashboardPage() {
     <div className="space-y-5">
       {/* Page header */}
       <div className="plumb-animate-in">
-        <h1 className="text-2xl font-bold tracking-tight">統合分析ダッシュボード</h1>
-        <p className="text-sm text-muted-foreground mt-1">流動性配管 × 景気警戒 の統合分析</p>
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 to-emerald-500" />
+          <h1 className="text-2xl font-bold tracking-tight">統合分析ダッシュボード</h1>
+        </div>
+        <p className="text-xs text-muted-foreground pl-3.5">流動性配管 × 景気警戒 の統合分析</p>
       </div>
 
       <Tabs defaultValue="dashboard" className="plumb-tabs">
