@@ -101,6 +101,13 @@ export default function AboutPage() {
             金融市場の流動性と米国景気動向をリアルタイムで統合分析し、
             投資環境の可視化をサポートする分析ダッシュボード
           </p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            統合ダッシュボードを見る
+            <span aria-hidden="true">&rarr;</span>
+          </Link>
         </div>
       </div>
 
