@@ -502,6 +502,7 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
               <SortableHeader label="現在値" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
               <SortableHeader label="評価額" sortKey="market_value" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
               <SortableHeader label="含み損益" sortKey="pnl" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <TableHead className="text-right text-[10px] uppercase tracking-wider">為替損益</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">口座</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">セクター</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">アクション</TableHead>
@@ -532,7 +533,7 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{h.shares.toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{Number.isInteger(h.shares) ? h.shares : h.shares.toFixed(2)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{fmt(h.avg_price)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
                     {quotesLoading && !quote ? (
@@ -550,6 +551,18 @@ function HoldingsTable({ holdings, quotes, quotesLoading, fxRate, onEdit, onSell
                   <TableCell className="text-right">
                     <span className={`font-mono tabular-nums font-medium ${pnlClass(pnl)}`}>{fmt(pnl)}</span>
                     <span className={`text-[10px] font-mono block ${pnlClass(pnl)}`}>{formatPct(pnlPct)}</span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {country === 'JP' ? (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    ) : (() => {
+                      const fxPnl = h.shares * h.avg_price * (fxRate - (h.fx_rate || fxRate));
+                      return (
+                        <>
+                          <span className={`font-mono tabular-nums text-xs ${pnlClass(fxPnl)}`}>{formatJPY(fxPnl)}</span>
+                        </>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <StatusChip label={accountLabel(h.account_type)} color={ac.chipColor} />
