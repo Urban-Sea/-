@@ -40,6 +40,7 @@ interface EconChartCanvasProps {
   yAxisRightFormat?: (v: number) => string;
   xAxisFormat?: (d: string) => string;
   height?: number;
+  initialShowAll?: boolean;
 }
 
 const MIN_VISIBLE = 10;
@@ -54,6 +55,7 @@ export default function EconChartCanvas({
   yAxisRightFormat,
   xAxisFormat = (d) => d.length >= 7 ? `${d.substring(0, 4)}/${d.substring(5, 7)}` : d,
   height = 400,
+  initialShowAll = false,
 }: EconChartCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { theme } = useTheme();
@@ -69,9 +71,13 @@ export default function EconChartCanvas({
   // Initialize viewport
   useEffect(() => {
     if (totalLen === 0) return;
-    const visible = Math.min(totalLen, DEFAULT_VISIBLE);
-    viewRef.current = { start: totalLen - visible, end: totalLen };
-  }, [totalLen]);
+    if (initialShowAll) {
+      viewRef.current = { start: 0, end: totalLen };
+    } else {
+      const visible = Math.min(totalLen, DEFAULT_VISIBLE);
+      viewRef.current = { start: totalLen - visible, end: totalLen };
+    }
+  }, [totalLen, initialShowAll]);
 
   const draw = useCallback(() => {
     if (totalLen === 0) return;
@@ -511,10 +517,14 @@ export default function EconChartCanvas({
 
   // Public method: reset zoom
   const resetZoom = useCallback(() => {
-    const visible = Math.min(totalLen, DEFAULT_VISIBLE);
-    viewRef.current = { start: totalLen - visible, end: totalLen };
+    if (initialShowAll) {
+      viewRef.current = { start: 0, end: totalLen };
+    } else {
+      const visible = Math.min(totalLen, DEFAULT_VISIBLE);
+      viewRef.current = { start: totalLen - visible, end: totalLen };
+    }
     draw();
-  }, [totalLen, draw]);
+  }, [totalLen, initialShowAll, draw]);
 
   // Set viewport to specific date range
   const setViewport = useCallback((startDate: string, endDate: string) => {

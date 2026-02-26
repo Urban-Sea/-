@@ -2,6 +2,7 @@
 /api/exit - Exit判定API
 5層Exit Systemに基づくExit判定を提供
 """
+import re
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
@@ -9,8 +10,16 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from analysis.asset_class import AssetClass, normalize_ticker_yfinance
 
 router = APIRouter()
+
+
+def _detect_asset_class(ticker: str) -> AssetClass:
+    """ティッカー形式から資産クラスを自動判定"""
+    if re.match(r'^\d+(\.T)?$', ticker, re.IGNORECASE):
+        return AssetClass.JP_STOCK
+    return AssetClass.US_STOCK
 
 
 class ExitLayerStatus(BaseModel):
@@ -124,8 +133,11 @@ async def analyze_exit(
     - L5: Time Stop（新高値なし日数）
     """
     try:
-        # 株価データ取得
-        stock = yf.Ticker(ticker.upper())
+        # 株価データ取得（日本株対応: 7203 → 7203.T）
+        ticker_upper = ticker.upper()
+        asset_class = _detect_asset_class(ticker_upper)
+        yf_ticker = normalize_ticker_yfinance(ticker_upper, asset_class)
+        stock = yf.Ticker(yf_ticker)
         df = stock.history(period="6mo")
 
         if df.empty:
@@ -343,7 +355,10 @@ async def quick_exit_check(
     8%の固定ストップロス判定
     """
     try:
-        stock = yf.Ticker(ticker.upper())
+        ticker_upper = ticker.upper()
+        asset_class = _detect_asset_class(ticker_upper)
+        yf_ticker = normalize_ticker_yfinance(ticker_upper, asset_class)
+        stock = yf.Ticker(yf_ticker)
         info = stock.info
         current_price = info.get("regularMarketPrice") or info.get("previousClose")
 

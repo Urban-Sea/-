@@ -236,15 +236,20 @@ function AccountBreakdown({ holdings, quotes, fxRate }: {
 // Portfolio Charts (3 donut charts)
 // ============================================================
 
+function inferCountry(ticker: string): 'US' | 'JP' {
+  if (/^\d+$/.test(ticker) || /^\d+\.T$/i.test(ticker)) return 'JP';
+  return 'US';
+}
+
+const COUNTRY_COLORS: Record<string, string> = { US: '#3b82f6', JP: '#ef4444' };
+const COUNTRY_LABELS: Record<string, string> = { US: '米国株', JP: '日本株' };
+
 function PortfolioCharts({ holdings, quotes }: {
   holdings: HoldingRecord[]; quotes: Map<string, StockQuote>;
 }) {
-  const { sectorSegments, accountSegments, stockSegments, totalValUsd } = useMemo(() => {
-    // Sector aggregation
+  const { sectorSegments, countrySegments, stockSegments, totalValUsd } = useMemo(() => {
     const sectorMap = new Map<string, number>();
-    // Account aggregation
-    let nisaVal = 0, tokuteiVal = 0;
-    // Stock aggregation
+    const countryMap = new Map<string, number>();
     const stockMap = new Map<string, number>();
 
     let totalVal = 0;
@@ -256,8 +261,8 @@ function PortfolioCharts({ holdings, quotes }: {
       const sector = h.sector || 'Other';
       sectorMap.set(sector, (sectorMap.get(sector) || 0) + mv);
 
-      if (h.account_type === 'nisa') nisaVal += mv;
-      else tokuteiVal += mv;
+      const country = inferCountry(h.ticker);
+      countryMap.set(country, (countryMap.get(country) || 0) + mv);
 
       stockMap.set(h.ticker, (stockMap.get(h.ticker) || 0) + mv);
     }
@@ -270,9 +275,13 @@ function PortfolioCharts({ holdings, quotes }: {
         color: DONUT_SECTOR_COLORS[label] || DONUT_SECTOR_COLORS['Other'],
       }));
 
-    const accountSegs: DonutSegment[] = [];
-    if (nisaVal > 0) accountSegs.push({ label: 'NISA', value: nisaVal, color: '#10b981' });
-    if (tokuteiVal > 0) accountSegs.push({ label: '特定', value: tokuteiVal, color: '#f97316' });
+    const countrySegs: DonutSegment[] = Array.from(countryMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, value]) => ({
+        label: COUNTRY_LABELS[key] || key,
+        value,
+        color: COUNTRY_COLORS[key] || '#71717a',
+      }));
 
     const stockSegs: DonutSegment[] = Array.from(stockMap.entries())
       .sort((a, b) => b[1] - a[1])
@@ -282,7 +291,7 @@ function PortfolioCharts({ holdings, quotes }: {
         color: STOCK_PALETTE[i % STOCK_PALETTE.length],
       }));
 
-    return { sectorSegments: sectorSegs, accountSegments: accountSegs, stockSegments: stockSegs, totalValUsd: totalVal };
+    return { sectorSegments: sectorSegs, countrySegments: countrySegs, stockSegments: stockSegs, totalValUsd: totalVal };
   }, [holdings, quotes]);
 
   if (holdings.length === 0) return null;
@@ -295,10 +304,10 @@ function PortfolioCharts({ holdings, quotes }: {
       centerLabel: '総評価額',
     },
     {
-      title: '口座配分',
-      segments: accountSegments,
-      centerValue: String(accountSegments.length),
-      centerLabel: '口座タイプ',
+      title: '国別配分',
+      segments: countrySegments,
+      centerValue: String(countrySegments.length),
+      centerLabel: '市場',
     },
     {
       title: '銘柄別配分',

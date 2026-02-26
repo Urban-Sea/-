@@ -20,6 +20,7 @@ import asyncio
 import time
 
 import main as app_main
+from analysis.asset_class import AssetClass, normalize_ticker_yfinance
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,13 @@ router = APIRouter()
 
 # --- 入力バリデーション ---
 _TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
+
+
+def _to_yf(ticker: str) -> str:
+    """ティッカーをyfinance形式に正規化（日本株: 7203 → 7203.T）"""
+    if re.match(r'^\d+(\.T)?$', ticker, re.IGNORECASE):
+        return normalize_ticker_yfinance(ticker, AssetClass.JP_STOCK)
+    return ticker
 _ALLOWED_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
 _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
@@ -122,7 +130,8 @@ def _fetch_single_quote(ticker: str) -> dict:
 
     # L3: yfinance API
     try:
-        stock = yf.Ticker(ticker)
+        yf_ticker = _to_yf(ticker)
+        stock = yf.Ticker(yf_ticker)
         info = stock.info
         current_price = info.get("regularMarketPrice") or info.get("currentPrice")
         prev_close = info.get("previousClose")
@@ -131,7 +140,7 @@ def _fetch_single_quote(ticker: str) -> dict:
             change = current_price - prev_close if prev_close else 0
             change_pct = (change / prev_close * 100) if prev_close else 0
             quote = {
-                "ticker": ticker,
+                "ticker": ticker,  # ユーザー入力のティッカーを返す
                 "price": round(current_price, 2),
                 "change": round(change, 2),
                 "change_pct": round(change_pct, 2),
@@ -211,7 +220,8 @@ async def get_stock_info(ticker: str):
         return StockInfo(**cached)
 
     try:
-        stock = yf.Ticker(ticker)
+        yf_ticker = _to_yf(ticker)
+        stock = yf.Ticker(yf_ticker)
         info = stock.info
 
         if not info or "symbol" not in info:
@@ -286,7 +296,8 @@ async def get_stock_quote(ticker: str):
         return StockQuote(**cached)
 
     try:
-        stock = yf.Ticker(ticker.upper())
+        yf_ticker = _to_yf(ticker)
+        stock = yf.Ticker(yf_ticker)
         info = stock.info
 
         current_price = info.get("regularMarketPrice") or info.get("currentPrice")
@@ -349,7 +360,8 @@ async def get_stock_history(
         return StockHistory(**cached)
 
     try:
-        stock = yf.Ticker(ticker.upper())
+        yf_ticker = _to_yf(ticker)
+        stock = yf.Ticker(yf_ticker)
         df = stock.history(period=period, interval=interval)
 
         if df.empty:
@@ -406,7 +418,8 @@ async def get_stock_ema(
         raise HTTPException(status_code=400, detail="Invalid EMA periods")
 
     try:
-        stock = yf.Ticker(ticker)
+        yf_ticker = _to_yf(ticker)
+        stock = yf.Ticker(yf_ticker)
         df = stock.history(period="6mo")
 
         if df.empty:

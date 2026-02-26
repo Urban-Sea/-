@@ -21,8 +21,16 @@ import time
 from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
 from analysis.bos_detector import BOSDetector
 from analysis.regime_detector import RegimeDetector
+from analysis.asset_class import AssetClass, normalize_ticker_yfinance, get_config
 
 router = APIRouter()
+
+
+def _detect_asset_class(ticker: str) -> AssetClass:
+    """ティッカー形式から資産クラスを自動判定"""
+    if re.match(r'^\d+(\.T)?$', ticker, re.IGNORECASE):
+        return AssetClass.JP_STOCK
+    return AssetClass.US_STOCK
 
 # インメモリキャッシュ（5分TTL）
 _signal_cache: dict = {}  # key: "ticker:mode" → {"data": ..., "expires": ...}
@@ -130,6 +138,10 @@ async def get_signal(
         raise HTTPException(status_code=400, detail="Invalid mode")
     entry_mode = entry_mode_from_str(mode)
 
+    # 資産クラス自動判定 + yfinance用ティッカー正規化
+    asset_class = _detect_asset_class(ticker)
+    yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
+
     # キャッシュチェック
     cache_key = f"{ticker}:{mode}"
     now = datetime.now()
@@ -139,11 +151,12 @@ async def get_signal(
     try:
         # CombinedEntryDetector V10を使用
         detector = CombinedEntryDetector(
+            asset_class=asset_class,
             use_v9_regime=True,
             use_v10_price_category=True
         )
 
-        result: EntryAnalysis = detector.analyze(ticker, entry_mode)
+        result: EntryAnalysis = detector.analyze(yf_ticker, entry_mode)
 
         # レスポンス構築
         conditions = SignalConditions(
@@ -179,7 +192,7 @@ async def get_signal(
         }
 
         response = SignalResponse(
-            ticker=result.ticker,
+            ticker=ticker,  # ユーザー入力のティッカーを返す（yfinance正規化前）
             timestamp=datetime.now().isoformat(),
             price=result.price,
             price_change_pct=result.price_change_pct,
@@ -266,17 +279,20 @@ async def analyze_batch(request: BatchRequest):
     for ticker in request.tickers:
         ticker = ticker.upper()
         try:
+            asset_class = _detect_asset_class(ticker)
+            yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
             detector = CombinedEntryDetector(
+                asset_class=asset_class,
                 use_v9_regime=True,
                 use_v10_price_category=True
             )
-            result = detector.analyze(ticker, entry_mode)
+            result = detector.analyze(yf_ticker, entry_mode)
 
             if result.entry_allowed:
                 entry_ready_count += 1
 
             results.append(BatchResult(
-                ticker=result.ticker,
+                ticker=ticker,
                 price=result.price,
                 price_change_pct=result.price_change_pct,
                 combined_ready=result.combined_ready,
@@ -319,12 +335,15 @@ async def get_bos_analysis(ticker: str):
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker format")
 
+    asset_class = _detect_asset_class(ticker)
+    yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
+
     try:
         import pandas as pd
         from cache_utils import fetch_ohlcv_cached
 
         # 株価データ取得（L2 DBキャッシュ付き）
-        df = fetch_ohlcv_cached(ticker, "6mo")
+        df = fetch_ohlcv_cached(yf_ticker, "6mo")
 
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
@@ -414,6 +433,10 @@ async def get_signal_history(
     if mode.lower() not in _MODES:
         raise HTTPException(status_code=400, detail="Invalid mode")
 
+    asset_class = _detect_asset_class(ticker)
+    yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
+    benchmark_ticker = get_config(asset_class).regime.benchmark_ticker
+
     # キャッシュチェック
     cache_key = f"{ticker}:{period}:{mode}"
     now = datetime.now()
@@ -427,7 +450,7 @@ async def get_signal_history(
 
         # 株価データ取得（L2 DBキャッシュ付き）
         actual_period = "2y" if period == "1y" else period
-        df = fetch_ohlcv_cached(ticker, actual_period)
+        df = fetch_ohlcv_cached(yf_ticker, actual_period)
 
         if df is None or df.empty or len(df) < 50:
             raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
@@ -463,10 +486,10 @@ async def get_signal_history(
         # EMA distance (ATR-normalized) — V10準拠
         df['EMA_distance_atr'] = abs(df['EMA_8'] - df['EMA_21']) / df['ATR']
 
-        # SPYデータ取得（RS計算 + V10 Regime判定の両方で使用）
+        # ベンチマークデータ取得（RS計算 + V10 Regime判定の両方で使用）
         spy_regime_map = {}  # date -> regime string
         try:
-            spy_raw = fetch_ohlcv_cached("SPY", actual_period)
+            spy_raw = fetch_ohlcv_cached(benchmark_ticker, actual_period)
             if spy_raw is not None and not spy_raw.empty:
                 if 'Date' in spy_raw.columns and hasattr(spy_raw['Date'].iloc[0], 'strftime'):
                     spy_raw['Date_str'] = spy_raw['Date'].dt.strftime('%Y-%m-%d')
@@ -900,6 +923,8 @@ async def get_chart_markers(
         BOS/CHoCH/FVGマーカー（日付付き）
     """
     ticker = ticker.upper()
+    asset_class = _detect_asset_class(ticker)
+    yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
 
     # キャッシュチェック
     cache_key = f"{ticker}:{period}"
@@ -912,7 +937,7 @@ async def get_chart_markers(
         from cache_utils import fetch_ohlcv_cached
 
         # 株価データ取得（L2 DBキャッシュ付き）
-        df = fetch_ohlcv_cached(ticker, period)
+        df = fetch_ohlcv_cached(yf_ticker, period)
 
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")

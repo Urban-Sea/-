@@ -24,6 +24,7 @@ const modeLabels: Record<Mode, { label: string; desc: string }> = {
 };
 
 const defaultQuickTickers = ['NVDA', 'TSLA', 'META', 'PLTR', 'COIN', 'IONQ', 'SOUN', 'RKLB'];
+const JP_QUICK_TICKERS = ['7203', '9984', '6758', '8306', '6861', '7974', '9983', '4063'];
 const periods: { value: Period; label: string }[] = [
   { value: '1d', label: '1日' },
   { value: '5d', label: '5日' },
@@ -327,7 +328,7 @@ function SignalsPage() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="ティッカー (例: NVDA)"
+                placeholder="ティッカー (例: NVDA, 7203)"
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
@@ -409,6 +410,20 @@ function SignalsPage() {
                 + 追加
               </button>
             )}
+          </div>
+
+          {/* Row 3: JP Quick Tickers */}
+          <div className="flex gap-1.5 flex-wrap items-center pt-2 border-t border-border/50">
+            <span className="text-xs text-red-400/70 uppercase tracking-wider mr-1 font-medium">JP</span>
+            {JP_QUICK_TICKERS.map((t) => (
+              <span
+                key={t}
+                onClick={() => handleAnalyze(t)}
+                className="px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer font-mono"
+              >
+                {t}
+              </span>
+            ))}
           </div>
         </div>
       </GlassCard>
@@ -534,6 +549,9 @@ function SignalsPage() {
                   <div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-extrabold tracking-tight text-foreground">{signal.ticker}</span>
+                      {/^\d/.test(signal.ticker) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/20 font-mono">JP</span>
+                      )}
                       {(() => {
                         const stock = stocks.find(s => s.ticker === signal.ticker);
                         return stock?.name ? <span className="text-xs text-muted-foreground max-w-[200px] truncate">{stock.name}</span> : null;
@@ -663,11 +681,11 @@ function SignalsPage() {
 
           {/* ── Analysis Tabs ── */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="plumb-tabs">
-            <TabsList variant="line">
-              <TabsTrigger value="entry">エントリー判定</TabsTrigger>
-              <TabsTrigger value="holding">保有分析</TabsTrigger>
-              <TabsTrigger value="history">過去シグナル</TabsTrigger>
-              <TabsTrigger value="system">システム解説</TabsTrigger>
+            <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
+              <TabsTrigger value="entry" className="text-[11px] font-mono uppercase tracking-wider">エントリー判定</TabsTrigger>
+              <TabsTrigger value="holding" className="text-[11px] font-mono uppercase tracking-wider">保有分析</TabsTrigger>
+              <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider">過去シグナル</TabsTrigger>
+              <TabsTrigger value="system" className="text-[11px] font-mono uppercase tracking-wider">システム解説</TabsTrigger>
             </TabsList>
 
             {/* ── Tab: Entry ── */}

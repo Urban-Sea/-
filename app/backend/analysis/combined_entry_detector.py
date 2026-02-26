@@ -134,34 +134,46 @@ class CombinedEntryDetector:
         "$200+":    -2.0,    # 超大型株: 厳格化（SPY連動強い）
     }
 
+    # 日本株(JPY)用: USDブラケットを150倍相当にマッピング
+    V10_RS_DOWN_THRESHOLD_JP = {
+        "¥0-750":      -30.0,   # 超小型株
+        "¥750-2250":   -2.0,    # 小型株
+        "¥2250-5250":  -2.0,    # 中小型株
+        "¥5250-9000":  -5.0,    # 中型株
+        "¥9000-15000": -15.0,   # 中大型株
+        "¥15000-30000":-15.0,   # 大型株
+        "¥30000+":     -2.0,    # 超大型株
+    }
+
     # 株価カテゴリの境界値
     PRICE_BRACKETS = [5, 15, 35, 60, 100, 200]
+    PRICE_BRACKETS_JP = [750, 2250, 5250, 9000, 15000, 30000]
 
     @staticmethod
-    def categorize_price(price: float) -> str:
+    def categorize_price(price: float, currency: str = "USD") -> str:
         """
         株価を7段階のカテゴリに分類
 
         Args:
             price: 株価
+            currency: 通貨（"USD" or "JPY"）
 
         Returns:
-            str: 株価カテゴリ（"$0-5", "$5-15", "$15-35", "$35-60", "$60-100", "$100-200", "$200+"）
+            str: 株価カテゴリ
         """
-        if price <= 5:
-            return "$0-5"
-        elif price <= 15:
-            return "$5-15"
-        elif price <= 35:
-            return "$15-35"
-        elif price <= 60:
-            return "$35-60"
-        elif price <= 100:
-            return "$60-100"
-        elif price <= 200:
-            return "$100-200"
+        if currency == "JPY":
+            brackets = [750, 2250, 5250, 9000, 15000, 30000]
+            labels = ["¥0-750", "¥750-2250", "¥2250-5250", "¥5250-9000",
+                      "¥9000-15000", "¥15000-30000", "¥30000+"]
         else:
-            return "$200+"
+            brackets = [5, 15, 35, 60, 100, 200]
+            labels = ["$0-5", "$5-15", "$15-35", "$35-60",
+                      "$60-100", "$100-200", "$200+"]
+
+        for i, threshold in enumerate(brackets):
+            if price <= threshold:
+                return labels[i]
+        return labels[-1]
 
     def __init__(
         self,
@@ -322,14 +334,16 @@ class CombinedEntryDetector:
             ema_threshold = self.EMA_CONVERGENCE_THRESHOLD
 
         # RS DOWN閾値: V10 株価カテゴリ別 or V9 Regime別
+        currency = get_config(self.asset_class).gate.currency
         if self.use_v10_price_category and price is not None:
-            price_category = self.categorize_price(price)
-            rs_down_threshold = self.V10_RS_DOWN_THRESHOLD.get(price_category, -3.0)
+            price_category = self.categorize_price(price, currency)
+            threshold_table = self.V10_RS_DOWN_THRESHOLD_JP if currency == "JPY" else self.V10_RS_DOWN_THRESHOLD
+            rs_down_threshold = threshold_table.get(price_category, -3.0)
         elif self.use_v9_regime:
-            price_category = self.categorize_price(price) if price else "$0-5"
+            price_category = self.categorize_price(price, currency) if price else ("¥0-750" if currency == "JPY" else "$0-5")
             rs_down_threshold = self.V9_RS_DOWN_THRESHOLD.get(regime, -3.0)
         else:
-            price_category = self.categorize_price(price) if price else "$0-5"
+            price_category = self.categorize_price(price, currency) if price else ("¥0-750" if currency == "JPY" else "$0-5")
             rs_down_threshold = self.RS_DOWN_THRESHOLD
 
         return ema_threshold, rs_down_threshold, price_category

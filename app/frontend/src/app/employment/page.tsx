@@ -516,8 +516,17 @@ function RiskHistoryTab() {
   ];
 
   if (showSP500 && histData.sp500.length > 0) {
+    // Align S&P500 data to risk history dates (same length, same x-axis)
+    const sp500Map = new Map<string, number>();
+    for (const s of histData.sp500) {
+      sp500Map.set(s.date.substring(0, 7), s.close);
+    }
+    const alignedSP500 = histData.history.map((h) => ({
+      x: h.date,
+      y: sp500Map.get(h.date.substring(0, 7)) ?? null,
+    }));
     series.push({
-      data: histData.sp500.map((s) => ({ x: s.date, y: s.close })),
+      data: alignedSP500,
       type: 'line', color: '#10b981', label: 'S&P 500',
       yAxisSide: 'right',
     });
@@ -553,6 +562,7 @@ function RiskHistoryTab() {
             yAxisFormat={(v) => `${Math.round(v)}`}
             yAxisRightFormat={(v) => v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`}
             height={420}
+            initialShowAll
           />
         </div>
       </GlassCard>
