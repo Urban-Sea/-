@@ -16,6 +16,7 @@ _MODES = {"aggressive", "balanced", "conservative"}
 _PERIODS = {"3mo", "6mo", "1y", "2y"}
 from datetime import datetime, timedelta
 import time
+import yfinance as yf
 
 # 本格ロジックをインポート
 from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
@@ -77,6 +78,7 @@ class ModeResult(BaseModel):
 class SignalResponse(BaseModel):
     """シグナルレスポンス"""
     ticker: str
+    name: Optional[str] = None
     timestamp: str
     price: float
     price_change_pct: float
@@ -158,6 +160,13 @@ async def get_signal(
 
         result: EntryAnalysis = detector.analyze(yf_ticker, entry_mode)
 
+        # 企業名取得（yfinance info から）
+        stock_name: Optional[str] = None
+        try:
+            stock_name = yf.Ticker(yf_ticker).info.get("shortName")
+        except Exception:
+            pass
+
         # レスポンス構築
         conditions = SignalConditions(
             bearish_choch=CHoCHCondition(
@@ -193,6 +202,7 @@ async def get_signal(
 
         response = SignalResponse(
             ticker=ticker,  # ユーザー入力のティッカーを返す（yfinance正規化前）
+            name=stock_name,
             timestamp=datetime.now().isoformat(),
             price=result.price,
             price_change_pct=result.price_change_pct,
@@ -242,6 +252,7 @@ class BatchRequest(BaseModel):
 class BatchResult(BaseModel):
     """バッチ結果（1銘柄）"""
     ticker: str
+    name: Optional[str] = None
     price: Optional[float] = None
     price_change_pct: Optional[float] = None
     combined_ready: bool = False
@@ -288,11 +299,19 @@ async def analyze_batch(request: BatchRequest):
             )
             result = detector.analyze(yf_ticker, entry_mode)
 
+            # 企業名取得
+            batch_name: Optional[str] = None
+            try:
+                batch_name = yf.Ticker(yf_ticker).info.get("shortName")
+            except Exception:
+                pass
+
             if result.entry_allowed:
                 entry_ready_count += 1
 
             results.append(BatchResult(
                 ticker=ticker,
+                name=batch_name,
                 price=result.price,
                 price_change_pct=result.price_change_pct,
                 combined_ready=result.combined_ready,

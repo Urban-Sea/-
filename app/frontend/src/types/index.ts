@@ -23,6 +23,7 @@ export interface SignalCondition {
 
 export interface SignalResponse {
   ticker: string;
+  name?: string | null;
   timestamp: string;
   price: number;
   price_change_pct: number;
@@ -569,6 +570,7 @@ export interface ChartMarkersResponse {
 // Batch analysis types
 export interface BatchResult {
   ticker: string;
+  name?: string | null;
   price?: number;
   price_change_pct?: number;
   combined_ready: boolean;

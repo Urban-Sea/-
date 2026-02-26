@@ -24,7 +24,16 @@ const modeLabels: Record<Mode, { label: string; desc: string }> = {
 };
 
 const defaultQuickTickers = ['NVDA', 'TSLA', 'META', 'PLTR', 'COIN', 'IONQ', 'SOUN', 'RKLB'];
-const JP_QUICK_TICKERS = ['7203', '9984', '6758', '8306', '6861', '7974', '9983', '4063'];
+const JP_QUICK_TICKERS = [
+  { ticker: '7203', name: 'トヨタ' },
+  { ticker: '9984', name: 'ソフトバンクG' },
+  { ticker: '6758', name: 'ソニーG' },
+  { ticker: '8306', name: '三菱UFJ' },
+  { ticker: '6861', name: 'キーエンス' },
+  { ticker: '7974', name: '任天堂' },
+  { ticker: '9983', name: 'ファストリ' },
+  { ticker: '4063', name: '信越化学' },
+];
 const periods: { value: Period; label: string }[] = [
   { value: '1d', label: '1日' },
   { value: '5d', label: '5日' },
@@ -417,11 +426,12 @@ function SignalsPage() {
             <span className="text-xs text-red-400/70 uppercase tracking-wider mr-1 font-medium">JP</span>
             {JP_QUICK_TICKERS.map((t) => (
               <span
-                key={t}
-                onClick={() => handleAnalyze(t)}
-                className="px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer font-mono"
+                key={t.ticker}
+                onClick={() => handleAnalyze(t.ticker)}
+                className="px-2.5 py-1.5 plumb-glass rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer"
               >
-                {t}
+                <span className="font-mono">{t.ticker}</span>
+                <span className="ml-1 text-[10px] text-muted-foreground">{t.name}</span>
               </span>
             ))}
           </div>
@@ -513,9 +523,12 @@ function SignalsPage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <TickerIcon ticker={r.ticker} size={28} />
-                          <span className="text-lg font-bold text-foreground">{r.ticker}</span>
+                          <div>
+                            <span className="text-lg font-bold text-foreground">{r.ticker}</span>
+                            {r.name && <span className="ml-1.5 text-[10px] text-muted-foreground">{r.name}</span>}
+                          </div>
                         </div>
-                        <span className="text-sm font-semibold font-mono text-foreground">${r.price?.toFixed(2)}</span>
+                        <span className="text-sm font-semibold font-mono text-foreground">{/^\d/.test(r.ticker) ? '¥' : '$'}{r.price?.toFixed(2)}</span>
                       </div>
                       <div className="mb-2 flex items-center gap-2">
                         <StatusChip label={r.entry_allowed ? '買いシグナル' : 'エントリーなし'} color={r.entry_allowed ? 'green' : 'blue'} />
@@ -553,12 +566,12 @@ function SignalsPage() {
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/20 font-mono">JP</span>
                       )}
                       {(() => {
-                        const stock = stocks.find(s => s.ticker === signal.ticker);
-                        return stock?.name ? <span className="text-xs text-muted-foreground max-w-[200px] truncate">{stock.name}</span> : null;
+                        const name = signal.name ?? stocks.find(s => s.ticker === signal.ticker)?.name;
+                        return name ? <span className="text-xs text-muted-foreground max-w-[200px] truncate">{name}</span> : null;
                       })()}
                     </div>
                     <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-xl font-bold font-mono text-foreground">${signal.price.toFixed(2)}</span>
+                      <span className="text-xl font-bold font-mono text-foreground">{/^\d/.test(signal.ticker) ? '¥' : '$'}{signal.price.toFixed(2)}</span>
                       <span className={`text-sm font-semibold ${signal.price_change_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                         {signal.price_change_pct >= 0 ? '+' : ''}{signal.price_change_pct.toFixed(2)}%
                       </span>
