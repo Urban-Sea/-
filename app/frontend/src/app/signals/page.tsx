@@ -247,11 +247,13 @@ function SignalsPage() {
     <div className="space-y-4 w-full px-4 lg:px-6">
       {/* ── Page Header ── */}
       <div className="plumb-animate-in">
-        <div className="h-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 mb-4" />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">シグナル分析</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">統合エントリーシステム・チャート・保有管理</p>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-blue-500 via-cyan-400 to-purple-500" />
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">シグナル分析</h1>
+            </div>
+            <p className="text-xs text-muted-foreground pl-3.5">統合エントリーシステム・チャート・保有管理</p>
           </div>
           {/* Mode Selector */}
           <div className="flex items-center gap-3">
