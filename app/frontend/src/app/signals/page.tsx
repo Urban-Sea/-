@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime } from '@/lib/api';
+import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
 import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
+import { useUser } from '@/components/providers/UserProvider';
 import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
 
 type Mode = 'balanced' | 'aggressive' | 'conservative';
@@ -78,6 +79,37 @@ function SignalsPage() {
   const [showAddTicker, setShowAddTicker] = useState(false);
   const [newTickerInput, setNewTickerInput] = useState('');
 
+  // Watchlist: backend sync (authenticated) or localStorage fallback
+  const { email } = useUser();
+  const { data: wlData, mutate: mutateWl } = useWatchlist();
+  const migrated = useRef(false);
+
+  // Sync quickTickers from backend watchlist when available
+  useEffect(() => {
+    if (!wlData?.watchlists?.length) return;
+    const defaultWl = wlData.watchlists.find(w => w.is_default) ?? wlData.watchlists[0];
+    if (defaultWl?.tickers?.length) {
+      setQuickTickers(defaultWl.tickers);
+    }
+  }, [wlData]);
+
+  // One-time migration: localStorage → backend on first auth
+  useEffect(() => {
+    if (!email || migrated.current) return;
+    if (wlData && wlData.watchlists.length === 0) {
+      const saved = localStorage.getItem('quickTickers');
+      if (saved) {
+        try {
+          const local: string[] = JSON.parse(saved);
+          if (local.length > 0) {
+            migrated.current = true;
+            Promise.all(local.map(t => addWatchlistTicker(t))).then(() => mutateWl());
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }, [email, wlData, mutateWl]);
+
   // URL params support: /signals?ticker=AAPL&tab=holding
   const searchParams = useSearchParams();
   const [initialParamsHandled, setInitialParamsHandled] = useState(false);
@@ -100,7 +132,9 @@ function SignalsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, initialParamsHandled]);
 
+  // Load localStorage fallback (unauthenticated only)
   useEffect(() => {
+    if (email) return; // skip — backend is the source of truth
     const saved = localStorage.getItem('quickTickers');
     if (saved) {
       try {
@@ -109,23 +143,31 @@ function SignalsPage() {
         // ignore parse errors
       }
     }
-  }, []);
+  }, [email]);
 
-  const addQuickTicker = (t: string) => {
+  const addQuickTicker = async (t: string) => {
     const tick = t.trim().toUpperCase();
     if (!tick) return;
     if (quickTickers.includes(tick)) return;
     const newList = [...quickTickers, tick];
     setQuickTickers(newList);
-    localStorage.setItem('quickTickers', JSON.stringify(newList));
     setNewTickerInput('');
     setShowAddTicker(false);
+    if (email) {
+      try { await addWatchlistTicker(tick); mutateWl(); } catch { /* ignore */ }
+    } else {
+      localStorage.setItem('quickTickers', JSON.stringify(newList));
+    }
   };
 
-  const removeQuickTicker = (t: string) => {
+  const removeQuickTicker = async (t: string) => {
     const newList = quickTickers.filter(x => x !== t);
     setQuickTickers(newList);
-    localStorage.setItem('quickTickers', JSON.stringify(newList));
+    if (email) {
+      try { await removeWatchlistTicker(t); mutateWl(); } catch { /* ignore */ }
+    } else {
+      localStorage.setItem('quickTickers', JSON.stringify(newList));
+    }
   };
 
   const handleAnalyze = async (t?: string) => {

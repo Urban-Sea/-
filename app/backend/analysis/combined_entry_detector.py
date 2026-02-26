@@ -493,17 +493,22 @@ class CombinedEntryDetector:
         return True, 100, ""
 
     def _fetch_data(self, ticker: str) -> Optional[pd.DataFrame]:
-        """銘柄データを取得"""
+        """銘柄データを取得（L2 DBキャッシュ付き）"""
         try:
-            stock = yf.Ticker(ticker)
-            df = stock.history(period="6mo")
-            if df.empty:
+            from cache_utils import fetch_ohlcv_cached
+            return fetch_ohlcv_cached(ticker, "6mo")
+        except ImportError:
+            # Fallback (non-Railway環境)
+            try:
+                stock = yf.Ticker(ticker)
+                df = stock.history(period="6mo")
+                if df.empty:
+                    return None
+                df = df.reset_index()
+                df = df.rename(columns={'index': 'Date'})
+                return df
+            except Exception:
                 return None
-            df = df.reset_index()
-            df = df.rename(columns={'index': 'Date'})
-            return df
-        except Exception:
-            return None
 
     def _fetch_benchmark(self) -> Optional[pd.DataFrame]:
         """ベンチマークデータを取得"""

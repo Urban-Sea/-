@@ -320,14 +320,13 @@ async def get_bos_analysis(ticker: str):
         raise HTTPException(status_code=400, detail="Invalid ticker format")
 
     try:
-        import yfinance as yf
         import pandas as pd
+        from cache_utils import fetch_ohlcv_cached
 
-        # 株価データ取得
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="6mo")
+        # 株価データ取得（L2 DBキャッシュ付き）
+        df = fetch_ohlcv_cached(ticker, "6mo")
 
-        if df.empty:
+        if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
 
         # インジケーター計算
@@ -422,20 +421,20 @@ async def get_signal_history(
         return _history_cache[cache_key]["data"]
 
     try:
-        import yfinance as yf
         import pandas as pd
         import numpy as np
+        from cache_utils import fetch_ohlcv_cached
 
-        # 株価データ取得（1年分+余裕）
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="2y" if period == "1y" else period)
+        # 株価データ取得（L2 DBキャッシュ付き）
+        actual_period = "2y" if period == "1y" else period
+        df = fetch_ohlcv_cached(ticker, actual_period)
 
-        if df.empty or len(df) < 50:
+        if df is None or df.empty or len(df) < 50:
             raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
 
         # 日付をDateカラムに
-        df = df.reset_index()
-        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+        if 'Date' in df.columns and hasattr(df['Date'].iloc[0], 'strftime'):
+            df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
 
         # インジケータ計算
         df['EMA_8'] = df['Close'].ewm(span=8, adjust=False).mean()
@@ -467,10 +466,12 @@ async def get_signal_history(
         # SPYデータ取得（RS計算 + V10 Regime判定の両方で使用）
         spy_regime_map = {}  # date -> regime string
         try:
-            spy_raw = yf.Ticker("SPY").history(period="2y" if period == "1y" else period)
-            if not spy_raw.empty:
-                spy_raw = spy_raw.reset_index()
-                spy_raw['Date_str'] = spy_raw['Date'].dt.strftime('%Y-%m-%d')
+            spy_raw = fetch_ohlcv_cached("SPY", actual_period)
+            if spy_raw is not None and not spy_raw.empty:
+                if 'Date' in spy_raw.columns and hasattr(spy_raw['Date'].iloc[0], 'strftime'):
+                    spy_raw['Date_str'] = spy_raw['Date'].dt.strftime('%Y-%m-%d')
+                else:
+                    spy_raw['Date_str'] = spy_raw['Date'].astype(str)
 
                 # RS計算用
                 if len(spy_raw) >= 20:
@@ -907,19 +908,18 @@ async def get_chart_markers(
         return _markers_cache[cache_key]["data"]
 
     try:
-        import yfinance as yf
         import pandas as pd
+        from cache_utils import fetch_ohlcv_cached
 
-        # 株価データ取得
-        stock = yf.Ticker(ticker)
-        df = stock.history(period=period)
+        # 株価データ取得（L2 DBキャッシュ付き）
+        df = fetch_ohlcv_cached(ticker, period)
 
-        if df.empty:
+        if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
 
-        # 日付をインデックスから列に変換
-        df = df.reset_index()
-        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+        # 日付をDateカラムに
+        if 'Date' in df.columns and hasattr(df['Date'].iloc[0], 'strftime'):
+            df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
 
         # BOSとCHoCH検出
         highs = df['High'].tolist()

@@ -9,11 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import {
-  ResponsiveContainer, Area, LineChart, Line,
-  ComposedChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, ReferenceLine,
-} from 'recharts';
+import EconChartCanvas from '@/components/charts/EconChartCanvas';
+import type { ChartSeries, ChartReferenceLine } from '@/components/charts/EconChartCanvas';
 import { usePlumbingSummary, useHistoryCharts, useBacktestStates, useMarketEvents, usePolicyRegime } from '@/lib/api';
 import {
   scoreHue, scoreLabel,
@@ -600,32 +597,41 @@ function DashboardTab({ data, eventsData, regimeData }: {
 // TAB 2: History Charts
 // ============================================================
 
-// Date axis helpers for two-tier X axis (MM/DD + Year)
-function getYearMidDates(data: Array<{ date: string }>): string[] {
-  const groups: Record<string, string[]> = {};
-  data.forEach(d => {
-    if (!d.date) return;
-    const y = d.date.substring(0, 4);
-    (groups[y] ??= []).push(d.date);
-  });
-  return Object.values(groups).map(dates => dates[Math.floor(dates.length / 2)]);
+// Canvas chart helpers
+function toSeries(
+  arr: Array<Record<string, unknown>>,
+  field: string,
+  opts: Partial<ChartSeries> & { label: string; color: string },
+): ChartSeries {
+  return {
+    data: arr.map(r => ({ x: r.date as string, y: r[field] as number | null })),
+    type: opts.type ?? 'line',
+    ...opts,
+  };
 }
-const fmtDateTick = (d: string) => d?.length >= 10 ? `${d.substring(5, 7)}/${d.substring(8, 10)}` : d ?? '';
-const fmtYearTick = (d: string) => d?.substring(0, 4) ?? '';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ChartTooltipContent({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="plumb-glass rounded-lg px-3 py-2.5 text-sm font-mono shadow-xl">
-      <p className="text-muted-foreground mb-1.5">{label}</p>
-      {payload.map((p: { name: string; value: number | null; color: string }, i: number) => (
-        <p key={i} style={{ color: p.color }} className="tabular-nums">
-          {p.name}: {p.value != null ? p.value.toLocaleString() : '—'}
-        </p>
-      ))}
-    </div>
-  );
+function mergeOverlay(
+  base: Array<Record<string, unknown>>,
+  marketIndicators: Array<Record<string, unknown>>,
+  showSP500: boolean,
+  showNASDAQ: boolean,
+): ChartSeries[] {
+  if (!showSP500 && !showNASDAQ) return [];
+  const miMap = new Map(marketIndicators.map(r => [r.date as string, r]));
+  const overlay: ChartSeries[] = [];
+  if (showSP500) {
+    overlay.push({
+      data: base.map(r => { const mi = miMap.get(r.date as string); return { x: r.date as string, y: mi ? (mi.sp500 as number | null) : null }; }),
+      type: 'line', color: '#10b981', label: 'S&P500', dashed: true, yAxisSide: 'right',
+    });
+  }
+  if (showNASDAQ) {
+    overlay.push({
+      data: base.map(r => { const mi = miMap.get(r.date as string); return { x: r.date as string, y: mi ? (mi.nasdaq as number | null) : null }; }),
+      type: 'line', color: '#8b5cf6', label: 'NASDAQ', dashed: true, yAxisSide: 'right',
+    });
+  }
+  return overlay;
 }
 
 const CHART_TYPES = [
@@ -672,224 +678,108 @@ function HistoryChartsTab() {
   const handlePeriod = (p: string) => { setCustomRange(null); setPeriod(p); };
   const handleCrisis = (start: string, end: string) => { setCustomRange({ start, end }); };
 
-  const axisStyle = { fill: 'var(--color-muted-foreground)', fontSize: 12, fontFamily: 'var(--font-geist-mono)' };
-
   function renderChart() {
     if (!histData) return null;
     const d = histData.data;
-
-    // Compute year midpoints for year axis labels
-    const baseDataMap: Record<string, Array<{ date: string }>> = {
-      net_liquidity: d.net_liquidity, margin_debt: d.margin_debt,
-      kre: d.bank_sector, spreads: d.credit_spreads, vix: d.market_indicators,
-      layer_scores: d.layer_scores ?? [], divergence: d.layer_divergence ?? [],
-    };
-    const yearMids = getYearMidDates(baseDataMap[chartType] ?? []);
-    const yearTick = { fill: 'var(--color-foreground)', fontSize: 13, fontFamily: 'var(--font-geist-mono)', fontWeight: 600, opacity: 0.5 };
+    let series: ChartSeries[] = [];
+    let refs: ChartReferenceLine[] = [];
+    let yFmt: ((v: number) => string) | undefined;
+    let yRFmt: ((v: number) => string) | undefined;
 
     switch (chartType) {
       case 'net_liquidity': {
-        // Merge S&P500/NASDAQ from market_indicators by date
-        const nlData = (showSP500 || showNASDAQ)
-          ? (() => {
-              const miMap = new Map(d.market_indicators.map((r) => [r.date, r]));
-              return d.net_liquidity.map((row) => {
-                const mi = miMap.get(row.date);
-                return { ...row, ...(showSP500 && mi ? { sp500: mi.sp500 } : {}), ...(showNASDAQ && mi ? { nasdaq: mi.nasdaq } : {}) };
-              });
-            })()
-          : d.net_liquidity;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={nlData}>
-              <defs>
-                <linearGradient id="nlFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v.toLocaleString()}B`} />
-              {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <Area yAxisId="left" type="monotone" dataKey="net_liquidity" stroke="#3b82f6" fill="url(#nlFill)" strokeWidth={1.5} dot={false} name="Net Liquidity" connectNulls />
-              {showSP500 && <Line yAxisId="overlay" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
-              {showNASDAQ && <Line yAxisId="overlay" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(d.net_liquidity, 'net_liquidity', { type: 'area', color: '#3b82f6', label: 'Net Liquidity' }),
+          ...mergeOverlay(d.net_liquidity, d.market_indicators, showSP500, showNASDAQ),
+        ];
+        yFmt = (v) => `$${v.toLocaleString()}B`;
+        yRFmt = (v) => fmt(v);
+        break;
       }
       case 'margin_debt': {
-        const mdData = (showSP500 || showNASDAQ)
-          ? (() => {
-              const miMap = new Map(d.market_indicators.map((r) => [r.date, r]));
-              return d.margin_debt.map((row) => {
-                const mi = miMap.get(row.date);
-                return { ...row, ...(showSP500 && mi ? { sp500: mi.sp500 } : {}), ...(showNASDAQ && mi ? { nasdaq: mi.nasdaq } : {}) };
-              });
-            })()
-          : d.margin_debt;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={mdData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
-              <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <Bar yAxisId="left" dataKey="debit_balance" fill="rgba(6,182,212,0.3)" name="残高 (M$)" />
-              <Line yAxisId="right" type="monotone" dataKey="change_2y" stroke="#f97316" strokeWidth={1.5} dot={false} name="2Y変化率 (%)" strokeDasharray="5 5" connectNulls />
-              {showSP500 && <Line yAxisId="left" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
-              {showNASDAQ && <Line yAxisId="left" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(d.margin_debt, 'debit_balance', { type: 'bar', color: 'rgba(6,182,212,0.5)', label: '残高 (M$)' }),
+          toSeries(d.margin_debt, 'change_2y', { type: 'line', color: '#f97316', label: '2Y変化率 (%)', dashed: true, yAxisSide: 'right' }),
+          ...mergeOverlay(d.margin_debt, d.market_indicators, showSP500, showNASDAQ),
+        ];
+        yFmt = (v) => `${(v / 1000).toFixed(0)}K`;
+        yRFmt = (v) => `${v}%`;
+        break;
       }
       case 'kre': {
-        const kreData = (showSP500 || showNASDAQ)
-          ? (() => {
-              const miMap = new Map(d.market_indicators.map((r) => [r.date, r]));
-              return d.bank_sector.map((row) => {
-                const mi = miMap.get(row.date);
-                return { ...row, ...(showSP500 && mi ? { sp500: mi.sp500 } : {}), ...(showNASDAQ && mi ? { nasdaq: mi.nasdaq } : {}) };
-              });
-            })()
-          : d.bank_sector;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={kreData}>
-              <defs>
-                <linearGradient id="kreFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `$${v}`} />
-              <YAxis yAxisId="right" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <Area yAxisId="left" type="monotone" dataKey="kre_close" stroke="#a855f7" fill="url(#kreFill)" strokeWidth={1.5} dot={false} name="KRE ($)" connectNulls />
-              <Line yAxisId="right" type="monotone" dataKey="kre_52w_change" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="52W変化率 (%)" strokeDasharray="5 5" connectNulls />
-              {showSP500 && <Line yAxisId="left" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
-              {showNASDAQ && <Line yAxisId="left" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(d.bank_sector, 'kre_close', { type: 'area', color: '#a855f7', label: 'KRE ($)' }),
+          toSeries(d.bank_sector, 'kre_52w_change', { type: 'line', color: '#f59e0b', label: '52W変化率 (%)', dashed: true, yAxisSide: 'right' }),
+          ...mergeOverlay(d.bank_sector, d.market_indicators, showSP500, showNASDAQ),
+        ];
+        yFmt = (v) => `$${v}`;
+        yRFmt = (v) => `${v}%`;
+        break;
       }
       case 'spreads': {
-        const spData = (showSP500 || showNASDAQ)
-          ? (() => {
-              const miMap = new Map(d.market_indicators.map((r) => [r.date, r]));
-              return d.credit_spreads.map((row) => {
-                const mi = miMap.get(row.date);
-                return { ...row, ...(showSP500 && mi ? { sp500: mi.sp500 } : {}), ...(showNASDAQ && mi ? { nasdaq: mi.nasdaq } : {}) };
-              });
-            })()
-          : d.credit_spreads;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={spData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v}%`} />
-              {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine yAxisId="left" y={5} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: 'HY危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <Line yAxisId="left" type="monotone" dataKey="hy_spread" stroke="#ef4444" strokeWidth={1.5} dot={false} name="HYスプレッド (%)" connectNulls />
-              <Line yAxisId="left" type="monotone" dataKey="ig_spread" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="IGスプレッド (%)" connectNulls />
-              {showSP500 && <Line yAxisId="overlay" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
-              {showNASDAQ && <Line yAxisId="overlay" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(d.credit_spreads, 'hy_spread', { type: 'line', color: '#ef4444', label: 'HYスプレッド (%)' }),
+          toSeries(d.credit_spreads, 'ig_spread', { type: 'line', color: '#f59e0b', label: 'IGスプレッド (%)' }),
+          ...mergeOverlay(d.credit_spreads, d.market_indicators, showSP500, showNASDAQ),
+        ];
+        refs = [{ y: 5, color: 'rgba(239,68,68,0.4)', label: 'HY危険', dashed: true }];
+        yFmt = (v) => `${v}%`;
+        yRFmt = (v) => fmt(v);
+        break;
       }
       case 'vix': {
-        // Merge S&P500/NASDAQ overlay into VIX data
-        const vixData = showSP500 || showNASDAQ
-          ? d.market_indicators.map((row) => ({ ...row }))
-          : d.market_indicators;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={vixData}>
-              <defs>
-                <linearGradient id="vixFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#fb923c" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#fb923c" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="left" tick={axisStyle} tickLine={false} />
-              {(showSP500 || showNASDAQ) && <YAxis yAxisId="overlay" orientation="right" tick={axisStyle} tickLine={false} tickFormatter={(v) => fmt(v)} />}
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine yAxisId="left" y={20} stroke="rgba(251,191,36,0.3)" strokeDasharray="4 4" label={{ value: '警戒', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <ReferenceLine yAxisId="left" y={30} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <Area yAxisId="left" type="monotone" dataKey="vix" stroke="#fb923c" fill="url(#vixFill)" strokeWidth={1.5} dot={false} name="VIX" connectNulls />
-              {showSP500 && <Line yAxisId="overlay" type="monotone" dataKey="sp500" stroke="#10b981" strokeWidth={1} dot={false} name="S&P500" connectNulls strokeDasharray="3 3" />}
-              {showNASDAQ && <Line yAxisId="overlay" type="monotone" dataKey="nasdaq" stroke="#8b5cf6" strokeWidth={1} dot={false} name="NASDAQ" connectNulls strokeDasharray="3 3" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(d.market_indicators, 'vix', { type: 'area', color: '#fb923c', label: 'VIX' }),
+          ...mergeOverlay(d.market_indicators, d.market_indicators, showSP500, showNASDAQ),
+        ];
+        refs = [
+          { y: 20, color: 'rgba(251,191,36,0.4)', label: '警戒', dashed: true },
+          { y: 30, color: 'rgba(239,68,68,0.4)', label: '危険', dashed: true },
+        ];
+        yRFmt = (v) => fmt(v);
+        break;
       }
       case 'layer_scores': {
         const lsData = d.layer_scores ?? [];
         if (lsData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">Layerスコアデータがありません</div>;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={lsData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis tick={axisStyle} tickLine={false} domain={[0, 100]} />
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine y={30} stroke="rgba(16,185,129,0.3)" strokeDasharray="4 4" label={{ value: '安全', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <ReferenceLine y={70} stroke="rgba(239,68,68,0.3)" strokeDasharray="4 4" label={{ value: '危険', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <Line type="monotone" dataKey="layer1" stroke="#3b82f6" strokeWidth={1.5} dot={false} name="L1 政策" connectNulls />
-              <Line type="monotone" dataKey="layer2a" stroke="#a855f7" strokeWidth={1.5} dot={false} name="L2A 銀行" connectNulls />
-              <Line type="monotone" dataKey="layer2b" stroke="#06b6d4" strokeWidth={1.5} dot={false} name="L2B 市場" connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(lsData, 'layer1', { type: 'line', color: '#3b82f6', label: 'L1 政策' }),
+          toSeries(lsData, 'layer2a', { type: 'line', color: '#a855f7', label: 'L2A 銀行' }),
+          toSeries(lsData, 'layer2b', { type: 'line', color: '#06b6d4', label: 'L2B 市場' }),
+        ];
+        refs = [
+          { y: 30, color: 'rgba(16,185,129,0.4)', label: '安全', dashed: true },
+          { y: 70, color: 'rgba(239,68,68,0.4)', label: '危険', dashed: true },
+        ];
+        break;
       }
       case 'divergence': {
         const divData = d.layer_divergence ?? [];
         if (divData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">乖離データがありません</div>;
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={divData}>
-              <defs>
-                <linearGradient id="divPos" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="divNeg" x1="0" y1="1" x2="0" y2="0">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--plumb-grid)" />
-              <XAxis dataKey="date" tickFormatter={fmtDateTick} tick={axisStyle} tickLine={false} />
-              <XAxis xAxisId={1} dataKey="date" allowDuplicatedCategory={false} ticks={yearMids} tickFormatter={fmtYearTick} tick={yearTick} tickLine={false} axisLine={false} />
-              <YAxis tick={axisStyle} tickLine={false} tickFormatter={(v) => `${v.toFixed(1)}σ`} />
-              <RechartsTooltip content={<ChartTooltipContent />} />
-              <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeOpacity={0.3} />
-              <ReferenceLine y={1} stroke="rgba(239,68,68,0.2)" strokeDasharray="4 4" label={{ value: '+1σ 注意', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <ReferenceLine y={-1} stroke="rgba(16,185,129,0.2)" strokeDasharray="4 4" label={{ value: '-1σ 買い候補', fill: 'var(--color-muted-foreground)', fontSize: 11 }} />
-              <Area type="monotone" dataKey="divergence" stroke="#6366f1" fill="url(#divPos)" strokeWidth={1.5} dot={false} name="乖離 (σ)" connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
-        );
+        series = [
+          toSeries(divData, 'divergence', { type: 'area', color: '#6366f1', label: '乖離 (σ)' }),
+        ];
+        refs = [
+          { y: 0, color: 'rgba(150,150,150,0.3)', dashed: false },
+          { y: 1, color: 'rgba(239,68,68,0.3)', label: '+1σ 注意', dashed: true },
+          { y: -1, color: 'rgba(16,185,129,0.3)', label: '-1σ 買い候補', dashed: true },
+        ];
+        yFmt = (v) => `${v.toFixed(1)}σ`;
+        break;
       }
       default:
         return null;
     }
+
+    return (
+      <EconChartCanvas
+        series={series}
+        referenceLines={refs.length > 0 ? refs : undefined}
+        yAxisFormat={yFmt}
+        yAxisRightFormat={yRFmt}
+        height={400}
+      />
+    );
   }
 
   return (

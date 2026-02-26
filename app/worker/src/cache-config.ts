@@ -35,6 +35,7 @@ const CACHE_RULES: CacheRule[] = [
   // No cache: user CRUD
   { pattern: /^\/api\/holdings/, ttl: 0 },
   { pattern: /^\/api\/trades/, ttl: 0 },
+  { pattern: /^\/api\/watchlist/, ttl: 0 },
 
   // No cache: real-time / on-demand
   { pattern: /^\/api\/signal\//, ttl: 0 },

@@ -32,6 +32,7 @@ import type {
   PolicyRegimeData,
   PortfolioHistoryResponse,
   CashBalancesResponse,
+  WatchlistsResponse,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://empathetic-hope-production.up.railway.app';
@@ -442,6 +443,23 @@ export async function updateCashBalance(id: string, data: { label?: string; curr
 
 export async function deleteCashBalance(id: string) {
   return fetchAPI(`/api/holdings/cash/${id}`, { method: 'DELETE' });
+}
+
+// Watchlist API
+export async function getWatchlists(): Promise<WatchlistsResponse> {
+  return fetchAPI('/api/watchlist');
+}
+
+export async function addWatchlistTicker(ticker: string): Promise<void> {
+  await fetchAPI(`/api/watchlist/add-ticker?ticker=${encodeURIComponent(ticker)}`, { method: 'POST' });
+}
+
+export async function removeWatchlistTicker(ticker: string): Promise<void> {
+  await fetchAPI(`/api/watchlist/remove-ticker?ticker=${encodeURIComponent(ticker)}`, { method: 'POST' });
+}
+
+export function useWatchlist() {
+  return useSWR<WatchlistsResponse>('/api/watchlist');
 }
 
 export function useStocks(params?: { active_only?: boolean }) {

@@ -707,6 +707,22 @@ export interface PolicyRegimeData {
   fed_comment: string;
 }
 
+// Watchlist types
+export interface WatchlistRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  tickers: string[];
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WatchlistsResponse {
+  watchlists: WatchlistRecord[];
+  total: number;
+}
+
 // Crisis Event types (for backtest timeline)
 export interface CrisisEvent {
   event: string;

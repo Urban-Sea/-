@@ -96,43 +96,12 @@ def set_cache(key: str, data: dict):
     }
 
 
-def _db_cache_get(ticker: str) -> Optional[dict]:
-    """L2: Supabase stock_cache からキャッシュ取得（期限内のみ）"""
-    try:
-        sb = app_main.get_supabase()
-        if not sb:
-            return None
-        result = (
-            sb.table("stock_cache")
-            .select("data, expires_at")
-            .eq("ticker", ticker)
-            .execute()
-        )
-        if result.data:
-            row = result.data[0]
-            expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
-            if expires_at > datetime.now(expires_at.tzinfo):
-                return row["data"]
-    except Exception as e:
-        logger.debug(f"DB cache read error for {ticker}: {e}")
-    return None
+from cache_utils import db_cache_get as _db_cache_get, db_cache_set as _raw_db_cache_set
 
 
 def _db_cache_set(ticker: str, data: dict):
-    """L2: Supabase stock_cache に upsert"""
-    try:
-        sb = app_main.get_supabase()
-        if not sb:
-            return
-        now = datetime.utcnow()
-        sb.table("stock_cache").upsert({
-            "ticker": ticker,
-            "data": data,
-            "fetched_at": now.isoformat(),
-            "expires_at": (now + timedelta(seconds=CACHE_TTL)).isoformat(),
-        }).execute()
-    except Exception as e:
-        logger.debug(f"DB cache write error for {ticker}: {e}")
+    """L2: Supabase stock_cache に upsert（stock.py互換ラッパー）"""
+    _raw_db_cache_set(ticker, data, ttl=CACHE_TTL)
 
 
 def _fetch_single_quote(ticker: str) -> dict:
