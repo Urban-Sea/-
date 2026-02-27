@@ -1,7 +1,7 @@
 """
 /api/liquidity - 配管タブデータ
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, timedelta
@@ -23,8 +23,9 @@ from analysis.liquidity_score import (
     rolling_zscore,
     MARKET_STATE_DEFINITIONS,
 )
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 # ============================================================
 # 並列実行 + インメモリキャッシュ

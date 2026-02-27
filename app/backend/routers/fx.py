@@ -6,9 +6,10 @@ import logging
 import time
 import urllib.request
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 logger = logging.getLogger(__name__)
 
 # In-memory cache (5 min TTL)

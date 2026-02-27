@@ -8,7 +8,7 @@ L3: yfinance API（200-500ms/銘柄）
 import re
 import json
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 import yfinance as yf
@@ -21,10 +21,11 @@ import time
 
 import main as app_main
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance
+from auth import require_proxy
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 # --- 入力バリデーション ---
 _TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")

@@ -1,13 +1,14 @@
 """
 /api/market-state - 市場状態履歴
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import main
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 
 class MarketStateRecord(BaseModel):

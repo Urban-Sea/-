@@ -28,6 +28,23 @@ _PROXY_SECRET = os.getenv("PROXY_SECRET", "")
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
+async def require_proxy(
+    x_proxy_secret: str | None = Header(None),
+) -> None:
+    """
+    プロキシ経由アクセスを検証（メール不要）。
+    Worker → Backend 間の共有シークレットのみチェック。
+    開発環境ではスキップ。
+    """
+    if not _IS_PRODUCTION:
+        return
+    if not _PROXY_SECRET:
+        logger.error("PROXY_SECRET is not configured in production!")
+        raise HTTPException(status_code=503, detail="Service misconfigured")
+    if not x_proxy_secret or not hmac.compare_digest(x_proxy_secret, _PROXY_SECRET):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 async def require_auth(
     x_user_email: str | None = Header(None),
     x_proxy_secret: str | None = Header(None),

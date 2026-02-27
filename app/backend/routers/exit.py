@@ -3,7 +3,7 @@
 5層Exit Systemに基づくExit判定を提供
 """
 import re
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 import yfinance as yf
@@ -11,8 +11,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 
 def _detect_asset_class(ticker: str) -> AssetClass:

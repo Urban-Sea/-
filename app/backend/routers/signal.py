@@ -7,7 +7,7 @@
 - CHoCH検出: Bearish → Bullish シーケンス確認
 """
 import re
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, Any
 
@@ -23,8 +23,9 @@ from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, E
 from analysis.bos_detector import BOSDetector
 from analysis.regime_detector import RegimeDetector
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance, get_config
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 
 def _detect_asset_class(ticker: str) -> AssetClass:

@@ -5,15 +5,16 @@
 - 4Regime対応（BULL, WEAKENING, BEAR, RECOVERY）
 - EMA Short（21日）の傾きでトレンド判定
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
 # 本格ロジックをインポート
 from analysis.regime_detector import RegimeDetector, RegimeResult
 from analysis.asset_class import AssetClass
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 # インメモリキャッシュ（5分TTL）
 _regime_cache: dict = {"data": None, "expires": None}

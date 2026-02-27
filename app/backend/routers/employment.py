@@ -1,7 +1,7 @@
 """
 /api/employment - 景気警戒タブデータ
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime, timedelta
@@ -10,8 +10,9 @@ import asyncio
 import main
 import math
 import statistics
+from auth import require_proxy
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_proxy)])
 
 # ============================================================
 # Phase 3: ThreadPoolExecutor (DB並列実行用)
