@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
 # --- 入力バリデーション ---
-_TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,15}$")
 
 
 def _to_yf(ticker: str) -> str:
@@ -39,9 +39,10 @@ def _to_yf(ticker: str) -> str:
 _ALLOWED_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
 _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
-# シンプルなインメモリキャッシュ
+# シンプルなインメモリキャッシュ（上限500エントリ）
 _cache: Dict[str, dict] = {}
 CACHE_TTL = 300  # 5分
+_CACHE_MAX_SIZE = 500
 _executor = ThreadPoolExecutor(max_workers=10)
 
 
@@ -98,10 +99,18 @@ def get_cached(key: str) -> Optional[dict]:
 
 
 def set_cache(key: str, data: dict):
-    """キャッシュに保存"""
+    """キャッシュに保存（上限超過時は期限切れエントリを削除）"""
+    now = time.time()
+    if len(_cache) >= _CACHE_MAX_SIZE:
+        expired = [k for k, v in _cache.items() if (now - v.get("timestamp", 0)) > CACHE_TTL]
+        for k in expired:
+            del _cache[k]
+        if len(_cache) >= _CACHE_MAX_SIZE:
+            oldest = min(_cache, key=lambda k: _cache[k].get("timestamp", 0))
+            del _cache[oldest]
     _cache[key] = {
         "data": data,
-        "timestamp": time.time()
+        "timestamp": now
     }
 
 

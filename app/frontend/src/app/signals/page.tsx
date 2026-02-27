@@ -115,8 +115,8 @@ function SignalsPage() {
       const saved = localStorage.getItem('quickTickers');
       if (saved) {
         try {
-          const local: string[] = JSON.parse(saved);
-          if (local.length > 0) {
+          const local: unknown = JSON.parse(saved);
+          if (Array.isArray(local) && local.every(v => typeof v === 'string') && local.length > 0) {
             migrated.current = true;
             Promise.all(local.map(t => addWatchlistTicker(t))).then(() => mutateWl());
           }
@@ -152,7 +152,12 @@ function SignalsPage() {
     if (email) return; // skip — backend is the source of truth
     const saved = localStorage.getItem('quickTickers');
     if (saved) {
-      try { setQuickTickers(JSON.parse(saved)); } catch { /* ignore */ }
+      try {
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(v => typeof v === 'string')) {
+          setQuickTickers(parsed);
+        }
+      } catch { /* ignore */ }
     }
   }, [email]);
 
@@ -160,7 +165,14 @@ function SignalsPage() {
   useEffect(() => {
     const saved = localStorage.getItem('jpQuickTickers');
     if (saved) {
-      try { setJpTickers(JSON.parse(saved)); } catch { /* ignore */ }
+      try {
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(v =>
+          typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).ticker === 'string' && typeof (v as Record<string, unknown>).name === 'string'
+        )) {
+          setJpTickers(parsed as Array<{ ticker: string; name: string }>);
+        }
+      } catch { /* ignore */ }
     }
   }, []);
 

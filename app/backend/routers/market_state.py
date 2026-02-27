@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import main
-from auth import require_proxy
+from auth import require_proxy, require_auth
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
@@ -130,7 +130,7 @@ async def get_latest_market_state():
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_auth)])
 async def add_market_state(record: MarketStateRecord):
     """
     市場状態を記録

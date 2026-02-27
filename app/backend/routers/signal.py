@@ -34,12 +34,25 @@ def _detect_asset_class(ticker: str) -> AssetClass:
         return AssetClass.JP_STOCK
     return AssetClass.US_STOCK
 
-# インメモリキャッシュ（5分TTL）
+# インメモリキャッシュ（5分TTL、上限500エントリ）
 _signal_cache: dict = {}  # key: "ticker:mode" → {"data": ..., "expires": ...}
 _history_cache: dict = {}  # key: "ticker:period:mode" → {"data": ..., "expires": ...}
 _markers_cache: dict = {}  # key: "ticker:period" → {"data": ..., "expires": ...}
 _regime_cache: dict = {}   # key: "ticker" → {"data": ..., "expires": ...}
 _SIGNAL_TTL = timedelta(minutes=5)
+_CACHE_MAX_SIZE = 500
+
+
+def _evict_cache(cache: dict, max_size: int = _CACHE_MAX_SIZE) -> None:
+    """期限切れエントリを削除し、上限超過時は最古のエントリを削除"""
+    now = datetime.now()
+    expired = [k for k, v in cache.items() if v.get("expires") and v["expires"] < now]
+    for k in expired:
+        del cache[k]
+    if len(cache) > max_size:
+        sorted_keys = sorted(cache, key=lambda k: cache[k].get("expires", now))
+        for k in sorted_keys[:len(cache) - max_size]:
+            del cache[k]
 
 
 class CHoCHCondition(BaseModel):
@@ -227,6 +240,7 @@ async def get_signal(
             other_modes=other_modes,
         )
 
+        _evict_cache(_signal_cache)
         _signal_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
         return response
 
@@ -337,7 +351,7 @@ async def analyze_batch(request: BatchRequest):
             results.append(BatchResult(
                 ticker=ticker,
                 error=True,
-                error_message=str(e),
+                error_message="Analysis failed",
             ))
 
     return BatchResponse(
@@ -879,6 +893,7 @@ async def get_signal_history(
             "stats": stats,
         }
 
+        _evict_cache(_history_cache)
         _history_cache[cache_key] = {"data": result, "expires": now + _SIGNAL_TTL}
         return result
 
@@ -927,6 +942,7 @@ async def get_regime_for_ticker(ticker: str):
             "effect": result.effect_description,
         }
 
+        _evict_cache(_regime_cache)
         _regime_cache[ticker] = {"data": response, "expires": now + _SIGNAL_TTL}
         return response
 
@@ -1072,6 +1088,7 @@ async def get_chart_markers(
             "data_points": len(df),
         }
 
+        _evict_cache(_markers_cache)
         _markers_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
         return response
 

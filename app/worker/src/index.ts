@@ -12,23 +12,26 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
 };
 
-function corsHeaders(origin: string, env: Env): Record<string, string> {
-  // 本番では localhost を許可しない
-  const allowed = env.ALLOWED_ORIGIN
-    ? [env.ALLOWED_ORIGIN]
-    : [];
+/** Per-user エンドポイント判定（Cache-Control: private 用） */
+const PER_USER_PATTERNS = [/^\/api\/holdings/, /^\/api\/trades/, /^\/api\/watchlist/];
 
-  // dev 環境用: ALLOWED_ORIGIN が localhost なら追加
+function isPerUserEndpoint(pathname: string): boolean {
+  return PER_USER_PATTERNS.some(p => p.test(pathname));
+}
+
+function buildAllowedOrigins(env: Env): string[] {
+  const allowed = env.ALLOWED_ORIGIN ? [env.ALLOWED_ORIGIN] : [];
   if (env.ALLOWED_ORIGIN?.startsWith('http://localhost')) {
     allowed.push('http://localhost:3000', 'http://localhost:3001');
-  } else {
-    // 本番ドメインのみ — localhost は含まない
   }
+  return allowed;
+}
 
+function corsHeaders(origin: string, allowed: string[], env: Env): Record<string, string> {
   const responseOrigin = allowed.includes(origin) ? origin : (env.ALLOWED_ORIGIN || '');
-
   return {
     'Access-Control-Allow-Origin': responseOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -42,11 +45,20 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || '';
-    const cors = corsHeaders(origin, env);
+    const allowed = buildAllowedOrigins(env);
+    const cors = corsHeaders(origin, allowed, env);
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: { ...cors, ...SECURITY_HEADERS } });
+    }
+
+    // PROXY_SECRET 未設定チェック
+    if (!env.PROXY_SECRET) {
+      return new Response(
+        JSON.stringify({ detail: 'Service misconfigured' }),
+        { status: 500, headers: { ...SECURITY_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } },
+      );
     }
 
     // Only proxy /api/* paths
@@ -54,11 +66,26 @@ export default {
       return new Response('Not Found', { status: 404, headers: SECURITY_HEADERS });
     }
 
+    // パストラバーサル防止: ".." を含むパスを拒否
+    if (url.pathname.includes('..')) {
+      return new Response(
+        JSON.stringify({ detail: 'Invalid path' }),
+        { status: 400, headers: { ...SECURITY_HEADERS, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // X-User-Email 信頼性検証:
+    // 信頼された Origin からのリクエストのみ X-User-Email を転送する。
+    // curl 等の直接アクセスでは Origin ヘッダーがないため、
+    // X-User-Email はストリップされる（なりすまし防止）。
+    const isTrustedOrigin = allowed.includes(origin);
+    const rawEmail = request.headers.get('X-User-Email') || '';
+    const userEmail = isTrustedOrigin ? rawEmail : '';
+
     const ttl = getCacheTtl(url.pathname);
     const isCacheable = request.method === 'GET' && ttl > 0;
 
-    // Build per-user cache key (user-specific endpoints get separate cache entries)
-    const userEmail = request.headers.get('X-User-Email') || '';
+    // Build per-user cache key
     const cacheKeyUrl = userEmail
       ? `${url.toString()}::user=${userEmail}`
       : url.toString();
@@ -79,14 +106,19 @@ export default {
       }
     }
 
-    // Proxy to origin (Railway)
+    // Proxy to origin (Railway) — ホワイトリスト方式でヘッダー転送
     const proxyUrl = `${env.ORIGIN}${url.pathname}${url.search}`;
-    const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.delete('Host');
-    // Attach shared secret to prove request came from this Worker
-    if (env.PROXY_SECRET) {
-      proxyHeaders.set('X-Proxy-Secret', env.PROXY_SECRET);
+    const proxyHeaders = new Headers();
+    proxyHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
+    proxyHeaders.set('Accept', request.headers.get('Accept') || 'application/json');
+
+    // 信頼された Origin からのみ X-User-Email を転送（なりすまし防止）
+    if (isTrustedOrigin && rawEmail) {
+      proxyHeaders.set('X-User-Email', rawEmail);
     }
+
+    // Attach shared secret to prove request came from this Worker
+    proxyHeaders.set('X-Proxy-Secret', env.PROXY_SECRET);
 
     let proxyResponse: Response;
     try {
@@ -119,7 +151,7 @@ export default {
       headers: responseHeaders,
     });
 
-    // Store in cache (non-blocking) — includes per-user data with short TTL
+    // Store in cache (non-blocking)
     if (isCacheable && proxyResponse.status === 200) {
       const cache = caches.default;
       const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
@@ -127,7 +159,12 @@ export default {
         status: 200,
         headers: responseHeaders,
       });
-      cacheResponse.headers.set('Cache-Control', `public, max-age=${ttl}`);
+      // Per-user EP は Cache-Control: private、それ以外は public
+      const cacheDirective = isPerUserEndpoint(url.pathname) ? 'private' : 'public';
+      cacheResponse.headers.set('Cache-Control', `${cacheDirective}, max-age=${ttl}`);
+      if (isPerUserEndpoint(url.pathname)) {
+        cacheResponse.headers.set('Vary', 'X-User-Email');
+      }
       ctx.waitUntil(cache.put(cacheKey, cacheResponse));
     }
 

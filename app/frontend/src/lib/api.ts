@@ -142,14 +142,12 @@ export async function getPlumbingSummary(): Promise<PlumbingSummary> {
 }
 
 // Holdings API
-export async function getHoldings(userId?: string): Promise<HoldingsResponse> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/holdings${query}`);
+export async function getHoldings(): Promise<HoldingsResponse> {
+  return fetchAPI('/api/holdings');
 }
 
-export async function createHolding(holding: Partial<HoldingRecord>, userId?: string): Promise<HoldingRecord> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/holdings${query}`, {
+export async function createHolding(holding: Partial<HoldingRecord>): Promise<HoldingRecord> {
+  return fetchAPI('/api/holdings', {
     method: 'POST',
     body: JSON.stringify(holding),
   });
@@ -158,31 +156,26 @@ export async function createHolding(holding: Partial<HoldingRecord>, userId?: st
 export async function updateHolding(
   holdingId: string,
   holding: Partial<HoldingRecord>,
-  userId?: string
 ): Promise<HoldingRecord> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/holdings/${holdingId}${query}`, {
+  return fetchAPI(`/api/holdings/${holdingId}`, {
     method: 'PUT',
     body: JSON.stringify(holding),
   });
 }
 
-export async function deleteHolding(holdingId: string, userId?: string): Promise<void> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/holdings/${holdingId}${query}`, {
+export async function deleteHolding(holdingId: string): Promise<void> {
+  return fetchAPI(`/api/holdings/${holdingId}`, {
     method: 'DELETE',
   });
 }
 
 // Trades API
 export async function getTrades(params?: {
-  user_id?: string;
   ticker?: string;
   action?: 'BUY' | 'SELL';
   limit?: number;
 }): Promise<{ trades: TradeRecord[]; total: number }> {
   const searchParams = new URLSearchParams();
-  if (params?.user_id) searchParams.set('user_id', params.user_id);
   if (params?.ticker) searchParams.set('ticker', params.ticker);
   if (params?.action) searchParams.set('action', params.action);
   if (params?.limit) searchParams.set('limit', String(params.limit));
@@ -191,14 +184,12 @@ export async function getTrades(params?: {
   return fetchAPI(`/api/trades${query ? `?${query}` : ''}`);
 }
 
-export async function getTradeStats(userId?: string): Promise<TradeStats> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/trades/stats${query}`);
+export async function getTradeStats(): Promise<TradeStats> {
+  return fetchAPI('/api/trades/stats');
 }
 
-export async function createTrade(trade: Partial<TradeRecord>, userId?: string): Promise<TradeRecord> {
-  const query = userId ? `?user_id=${userId}` : '';
-  return fetchAPI(`/api/trades${query}`, {
+export async function createTrade(trade: Partial<TradeRecord>): Promise<TradeRecord> {
+  return fetchAPI('/api/trades', {
     method: 'POST',
     body: JSON.stringify(trade),
   });

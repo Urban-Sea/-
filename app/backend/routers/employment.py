@@ -10,7 +10,7 @@ import asyncio
 import main
 import math
 import statistics
-from auth import require_proxy
+from auth import require_proxy, require_auth
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
@@ -200,7 +200,7 @@ class IndicatorInput(BaseModel):
     notes: Optional[str] = None
 
 
-@router.post("/indicators")
+@router.post("/indicators", dependencies=[Depends(require_auth)])
 async def upsert_indicator(data: IndicatorInput):
     """
     経済指標を登録または更新。値が変わった場合は自動で修正履歴を記録。

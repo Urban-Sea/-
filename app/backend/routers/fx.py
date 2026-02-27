@@ -48,4 +48,4 @@ async def get_usdjpy():
         logger.exception("Failed to fetch USD/JPY")
         if _cache["rate"]:
             return {"rate": _cache["rate"], "cached": True, "stale": True}
-        raise HTTPException(status_code=503, detail=f"Failed to fetch USD/JPY: {e}")
+        raise HTTPException(status_code=503, detail="Failed to fetch USD/JPY rate")

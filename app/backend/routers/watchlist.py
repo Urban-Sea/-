@@ -68,7 +68,7 @@ async def get_watchlists(user_email: str = Depends(require_auth)):
         return WatchlistsResponse(watchlists=watchlists, total=len(watchlists))
     except Exception as e:
         logger.exception("Watchlist get error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=WatchlistRecord)
@@ -91,7 +91,7 @@ async def create_watchlist(body: WatchlistCreate, user_email: str = Depends(requ
         raise
     except Exception as e:
         logger.exception("Watchlist create error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{watchlist_id}", response_model=WatchlistRecord)
@@ -127,7 +127,7 @@ async def update_watchlist(
         raise
     except Exception as e:
         logger.exception("Watchlist update error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{watchlist_id}")
@@ -150,7 +150,7 @@ async def delete_watchlist(watchlist_id: str, user_email: str = Depends(require_
         raise
     except Exception as e:
         logger.exception("Watchlist delete error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/add-ticker")
@@ -193,7 +193,7 @@ async def add_ticker(
         raise
     except Exception as e:
         logger.exception("Add ticker error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/remove-ticker")
@@ -223,4 +223,4 @@ async def remove_ticker(
         return {"tickers": []}
     except Exception as e:
         logger.exception("Remove ticker error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

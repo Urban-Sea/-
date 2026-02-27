@@ -23,7 +23,7 @@ from analysis.liquidity_score import (
     rolling_zscore,
     MARKET_STATE_DEFINITIONS,
 )
-from auth import require_proxy
+from auth import require_proxy, require_auth
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
@@ -477,7 +477,7 @@ class MarginDebtInput(BaseModel):
     free_credit: Optional[float] = None
 
 
-@router.post("/margin-debt")
+@router.post("/margin-debt", dependencies=[Depends(require_auth)])
 async def upsert_margin_debt(data: MarginDebtInput):
     """
     信用取引残高をupsert。FINRA公表値（百万ドル単位）を受け取り、

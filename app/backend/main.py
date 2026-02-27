@@ -35,6 +35,29 @@ class SecurityHeaderMiddleware(BaseHTTPMiddleware):
             )
         return response
 
+
+# CSRF対策: 書き込みリクエストのOrigin検証
+_ALLOWED_ORIGINS = {
+    "https://open-regime.pages.dev",
+    "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev",
+}
+_MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+class CSRFOriginMiddleware(BaseHTTPMiddleware):
+    """書き込みリクエストのOriginヘッダーを検証（CSRF防止）"""
+    async def dispatch(self, request: Request, call_next):
+        if _IS_PRODUCTION and request.method in _MUTATING_METHODS:
+            origin = request.headers.get("origin", "")
+            # Worker経由ならX-Proxy-Secretが付いているのでOriginなしでも許可
+            has_proxy_secret = request.headers.get("x-proxy-secret")
+            if not has_proxy_secret and origin not in _ALLOWED_ORIGINS:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Origin not allowed"},
+                )
+        return await call_next(request)
+
 # Supabase client (global)
 supabase: Client = None
 
@@ -77,6 +100,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # セキュリティヘッダーミドルウェア（CORS より先に登録 = レスポンス処理は後）
 app.add_middleware(SecurityHeaderMiddleware)
+# CSRF Origin検証ミドルウェア
+app.add_middleware(CSRFOriginMiddleware)
 
 # CORS設定（本番では localhost を除外）
 _cors_origins = [
