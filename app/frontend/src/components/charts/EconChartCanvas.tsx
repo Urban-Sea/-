@@ -242,6 +242,12 @@ export default function EconChartCanvas({
       }
     }
 
+    // Clip chart area so bars/lines don't overlap axis labels
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padding.left, padding.top, chartWidth, chartHeight);
+    ctx.clip();
+
     // Draw series
     for (const s of series) {
       const sliced = s.data.slice(start, end);
@@ -302,6 +308,9 @@ export default function EconChartCanvas({
         }
       }
     }
+
+    // Restore full canvas for overlays (crosshair, labels, scrollbar)
+    ctx.restore();
 
     // Event markers (vertical lines with labels)
     if (eventMarkers && eventMarkers.length > 0) {
