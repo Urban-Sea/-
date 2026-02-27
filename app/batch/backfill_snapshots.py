@@ -9,6 +9,7 @@ Usage:
 """
 
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -19,6 +20,20 @@ from .config import get_supabase
 from .db import upsert_portfolio_snapshots
 
 logger = logging.getLogger("batch.backfill")
+
+_JP_RE = re.compile(r"^\d+(\.T)?$", re.IGNORECASE)
+
+
+def _is_jp(ticker: str) -> bool:
+    """日本株ティッカーか判定（7203, 7203.T → True）"""
+    return bool(_JP_RE.match(ticker))
+
+
+def _to_yf(ticker: str) -> str:
+    """ティッカーをyfinance形式に正規化（7203 → 7203.T）"""
+    if _is_jp(ticker) and not ticker.upper().endswith(".T"):
+        return f"{ticker}.T"
+    return ticker
 
 
 def backfill_snapshots(since: str = "2024-06-01") -> int:
@@ -110,21 +125,33 @@ def backfill_snapshots(since: str = "2024-06-01") -> int:
             for ticker, pos in holdings_state.items():
                 shares = pos["shares"]
                 avg_price = pos["avg_price"]
-                close_price = day_prices.get(ticker, avg_price)  # フォールバック: 原価
+                close_price = day_prices.get(ticker, avg_price)
+                jp = _is_jp(ticker)
 
-                market_value = shares * close_price
-                cost = shares * avg_price
-                total_market += market_value
-                total_cost += cost
+                # 時価・原価を計算（JP株は¥建て）
+                market_value_native = shares * close_price
+                cost_native = shares * avg_price
+
+                # USD換算（JP株: ¥→$ に変換）
+                if jp and fx_rate > 0:
+                    market_value_usd = market_value_native / fx_rate
+                    cost_usd = cost_native / fx_rate
+                else:
+                    market_value_usd = market_value_native
+                    cost_usd = cost_native
+
+                total_market += market_value_usd
+                total_cost += cost_usd
 
                 detail.append({
                     "ticker": ticker,
                     "shares": shares,
                     "avg_price": round(avg_price, 2),
                     "close_price": round(close_price, 2),
-                    "market_value_usd": round(market_value, 2),
-                    "cost_usd": round(cost, 2),
-                    "unrealized_pnl_usd": round(market_value - cost, 2),
+                    "market_value_usd": round(market_value_usd, 2),
+                    "cost_usd": round(cost_usd, 2),
+                    "unrealized_pnl_usd": round(market_value_usd - cost_usd, 2),
+                    "currency": "JPY" if jp else "USD",
                 })
 
             all_rows.append({
@@ -155,37 +182,45 @@ def _download_history(
 ) -> dict[str, dict[str, float]]:
     """
     yfinance で過去終値を一括ダウンロード。
-    Returns: {date_str: {ticker: close_price}}
+    JP株ティッカーは .T に正規化して取得し、元のキーで返す。
+    Returns: {date_str: {user_ticker: close_price}}
     """
     if not tickers:
         return {}
 
+    # ユーザーティッカー → yfinanceティッカー のマッピング
+    yf_map = {t: _to_yf(t) for t in tickers}
+    rev_map = {v: k for k, v in yf_map.items()}
+    yf_tickers = sorted(set(yf_map.values()))
+
     result: dict[str, dict[str, float]] = {}
 
     try:
-        df = yf.download(tickers, start=start, end=end, progress=False)
+        df = yf.download(yf_tickers, start=start, end=end, progress=False)
         if df.empty:
             return result
 
-        if len(tickers) == 1:
-            ticker = tickers[0]
+        if len(yf_tickers) == 1:
+            yf_t = yf_tickers[0]
             if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
-                close = df["Close"][ticker]
+                close = df["Close"][yf_t]
             else:
                 close = df["Close"]
+            user_t = rev_map.get(yf_t, yf_t)
             for idx, val in close.dropna().items():
                 date_str = idx.strftime("%Y-%m-%d")
-                result[date_str] = {ticker: float(val)}
+                result[date_str] = {user_t: float(val)}
         else:
             close_df = df["Close"]
             for idx in close_df.index:
                 date_str = idx.strftime("%Y-%m-%d")
                 day_prices = {}
-                for ticker in tickers:
-                    if ticker in close_df.columns:
-                        val = close_df.loc[idx, ticker]
+                for yf_t in yf_tickers:
+                    if yf_t in close_df.columns:
+                        val = close_df.loc[idx, yf_t]
                         if pd.notna(val):
-                            day_prices[ticker] = float(val)
+                            user_t = rev_map.get(yf_t, yf_t)
+                            day_prices[user_t] = float(val)
                 if day_prices:
                     result[date_str] = day_prices
 

@@ -6,6 +6,7 @@
 """
 
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -15,6 +16,20 @@ from .config import get_supabase
 from .db import upsert_portfolio_snapshots
 
 logger = logging.getLogger("batch.snapshot")
+
+_JP_RE = re.compile(r"^\d+(\.T)?$", re.IGNORECASE)
+
+
+def _is_jp(ticker: str) -> bool:
+    """日本株ティッカーか判定（7203, 7203.T → True）"""
+    return bool(_JP_RE.match(ticker))
+
+
+def _to_yf(ticker: str) -> str:
+    """ティッカーをyfinance形式に正規化（7203 → 7203.T）"""
+    if _is_jp(ticker) and not ticker.upper().endswith(".T"):
+        return f"{ticker}.T"
+    return ticker
 
 
 def take_daily_snapshot(snapshot_date: str | None = None) -> int:
@@ -66,26 +81,36 @@ def take_daily_snapshot(snapshot_date: str | None = None) -> int:
             shares = float(h["shares"])
             avg_price = float(h["avg_price"])
             close_price = prices.get(ticker)
+            jp = _is_jp(ticker)
 
             if close_price is None:
-                # 終値取得不可 → 取得原価をフォールバック
                 close_price = avg_price
                 logger.warning(f"  No price for {ticker}, using avg_price={avg_price}")
 
-            market_value = shares * close_price
-            cost = shares * avg_price
+            # 時価・原価を計算（JP株は¥建て）
+            market_value_native = shares * close_price
+            cost_native = shares * avg_price
 
-            total_market += market_value
-            total_cost += cost
+            # USD換算（JP株: ¥→$ に変換）
+            if jp and fx_rate > 0:
+                market_value_usd = market_value_native / fx_rate
+                cost_usd = cost_native / fx_rate
+            else:
+                market_value_usd = market_value_native
+                cost_usd = cost_native
+
+            total_market += market_value_usd
+            total_cost += cost_usd
 
             detail.append({
                 "ticker": ticker,
                 "shares": shares,
                 "avg_price": round(avg_price, 2),
                 "close_price": round(close_price, 2),
-                "market_value_usd": round(market_value, 2),
-                "cost_usd": round(cost, 2),
-                "unrealized_pnl_usd": round(market_value - cost, 2),
+                "market_value_usd": round(market_value_usd, 2),
+                "cost_usd": round(cost_usd, 2),
+                "unrealized_pnl_usd": round(market_value_usd - cost_usd, 2),
+                "currency": "JPY" if jp else "USD",
                 "sector": h.get("sector"),
                 "account_type": h.get("account_type"),
             })
@@ -125,34 +150,40 @@ def _fetch_closing_prices(tickers: list[str]) -> dict[str, float]:
     """
     yfinance で終値を一括取得。最新の利用可能な終値を返す。
     1回のAPI呼び出しで全ティッカーをダウンロード。
+    JP株ティッカーは .T に正規化して取得し、元のキーで返す。
     """
     if not tickers:
         return {}
 
+    # ユーザーティッカー → yfinanceティッカー のマッピング
+    yf_map = {t: _to_yf(t) for t in tickers}  # {"7203": "7203.T", "AAPL": "AAPL"}
+    rev_map = {v: k for k, v in yf_map.items()}  # {"7203.T": "7203", "AAPL": "AAPL"}
+    yf_tickers = sorted(set(yf_map.values()))
+
     prices: dict[str, float] = {}
     try:
-        df = yf.download(tickers, period="5d", progress=False)
+        df = yf.download(yf_tickers, period="5d", progress=False)
         if df.empty:
             logger.warning("yfinance returned empty dataframe")
             return prices
 
-        # 単一ティッカーの場合、columns は MultiIndex にならない
-        if len(tickers) == 1:
-            ticker = tickers[0]
+        if len(yf_tickers) == 1:
+            yf_t = yf_tickers[0]
             if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
-                close = df["Close"][ticker]
+                close = df["Close"][yf_t]
             else:
                 close = df["Close"]
             if not close.empty:
-                prices[ticker] = float(close.dropna().iloc[-1])
+                user_t = rev_map.get(yf_t, yf_t)
+                prices[user_t] = float(close.dropna().iloc[-1])
         else:
-            # 複数ティッカー → MultiIndex columns
             close_df = df["Close"] if "Close" in df.columns.get_level_values(0) else df
-            for ticker in tickers:
-                if ticker in close_df.columns:
-                    series = close_df[ticker].dropna()
+            for yf_t in yf_tickers:
+                if yf_t in close_df.columns:
+                    series = close_df[yf_t].dropna()
                     if not series.empty:
-                        prices[ticker] = float(series.iloc[-1])
+                        user_t = rev_map.get(yf_t, yf_t)
+                        prices[user_t] = float(series.iloc[-1])
 
     except Exception as e:
         logger.error(f"yfinance download error: {e}")
