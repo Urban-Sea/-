@@ -1050,17 +1050,36 @@ function StatsTab({ stats }: { stats: TradeStats }) {
 // Asset Trends Tab (資産推移)
 // ============================================================
 
+type TrendPeriod = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
+const TREND_PERIODS: { key: TrendPeriod; label: string; months: number | 'ytd' }[] = [
+  { key: '1M',  label: '1M',     months: 1 },
+  { key: '3M',  label: '3M',     months: 3 },
+  { key: '6M',  label: '6M',     months: 6 },
+  { key: 'YTD', label: 'YTD',    months: 'ytd' },
+  { key: '1Y',  label: '1Y',     months: 12 },
+  { key: 'ALL', label: '全期間', months: 120 },
+];
+
 function AssetTrendsTab() {
-  const { data, error, isLoading } = usePortfolioHistory(60);
+  const [period, setPeriod] = useState<TrendPeriod>('1Y');
   const [currency, setCurrency] = useState<'USD' | 'JPY'>('JPY');
+
+  const activeMonths = useMemo(() => {
+    const opt = TREND_PERIODS.find((p) => p.key === period);
+    if (opt?.months === 'ytd') return new Date().getMonth() + 1;
+    return (opt?.months as number) ?? 12;
+  }, [period]);
+
+  const { data, error, isLoading } = usePortfolioHistory(activeMonths);
 
   if (isLoading) {
     return (
       <div className="space-y-4 plumb-animate-in">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
         </div>
-        <Skeleton className="h-[420px] rounded-2xl" />
+        <Skeleton className="h-[340px] rounded-2xl" />
+        <Skeleton className="h-[260px] rounded-2xl" />
       </div>
     );
   }
@@ -1094,31 +1113,51 @@ function AssetTrendsTab() {
   const conv = (usd: number, rate: number) => isJpy ? usd * rate : usd;
   const fmt = isJpy ? formatJPY : formatUSD;
 
-  const series: ChartSeries[] = [
+  // Return rate: (unrealized_pnl / total_cost) * 100
+  const currentReturnRate = summary && summary.total_cost_usd > 0
+    ? (summary.unrealized_pnl_usd / summary.total_cost_usd) * 100
+    : 0;
+
+  // Chart 1: Asset Trends (3 series, left axis only)
+  const assetSeries: ChartSeries[] = [
     {
       data: history.map((p) => ({ x: p.date, y: conv(p.total_assets_usd, p.fx_rate_usdjpy) })),
       type: 'area',
       color: '#06b6d4',
-      label: isJpy ? '総資産 (円)' : '総資産 (USD)',
+      label: isJpy ? '総資産 (円)' : 'Total Assets',
     },
     {
       data: history.map((p) => ({ x: p.date, y: conv(p.total_market_value_usd, p.fx_rate_usdjpy) })),
       type: 'line',
       color: '#3b82f6',
-      label: isJpy ? 'ポートフォリオ時価 (円)' : 'ポートフォリオ時価',
+      label: isJpy ? '時価 (円)' : 'Market Value',
     },
     {
       data: history.map((p) => ({ x: p.date, y: conv(p.total_cost_usd, p.fx_rate_usdjpy) })),
       type: 'line',
       color: '#71717a',
-      label: isJpy ? '取得原価 (円)' : '取得原価',
+      label: isJpy ? '取得原価 (円)' : 'Cost Basis',
       dashed: true,
     },
+  ];
+
+  // Chart 2: Unrealized P&L (bar) + Return Rate % (line, right axis)
+  const pnlSeries: ChartSeries[] = [
     {
       data: history.map((p) => ({ x: p.date, y: conv(p.unrealized_pnl_usd, p.fx_rate_usdjpy) })),
+      type: 'bar',
+      color: 'rgba(16,185,129,0.6)',
+      barNegativeColor: 'rgba(239,68,68,0.6)',
+      label: isJpy ? '含み損益 (円)' : 'Unrealized P&L',
+    },
+    {
+      data: history.map((p) => ({
+        x: p.date,
+        y: p.total_cost_usd > 0 ? (p.unrealized_pnl_usd / p.total_cost_usd) * 100 : null,
+      })),
       type: 'line',
-      color: '#10b981',
-      label: isJpy ? '含み損益 (円)' : '含み損益',
+      color: '#f59e0b',
+      label: '収益率 (%)',
       yAxisSide: 'right' as const,
     },
   ];
@@ -1148,19 +1187,63 @@ function AssetTrendsTab() {
       sub: isJpy ? formatUSD(summary?.total_cash_usd ?? 0) : formatJPY((summary?.total_cash_usd ?? 0) * fx),
       color: 'text-zinc-500 dark:text-zinc-400',
     },
+    {
+      label: '収益率',
+      value: `${currentReturnRate >= 0 ? '+' : ''}${currentReturnRate.toFixed(2)}%`,
+      sub: '含み損益 / 取得原価',
+      color: pnlClass(currentReturnRate),
+    },
   ];
 
-  const yFmtLeft = isJpy
+  const yFmtAsset = isJpy
     ? (v: number) => v >= 1_000_000 ? `¥${(v / 10_000).toFixed(0)}万` : `¥${Math.round(v).toLocaleString()}`
     : (v: number) => `$${(v / 1000).toFixed(1)}K`;
-  const yFmtRight = isJpy
-    ? (v: number) => v >= 1_000_000 ? `¥${(v / 10_000).toFixed(0)}万` : `¥${Math.round(v).toLocaleString()}`
+  const yFmtPnl = isJpy
+    ? (v: number) => {
+        const abs = Math.abs(v);
+        const sign = v < 0 ? '-' : '';
+        return abs >= 1_000_000 ? `${sign}¥${(abs / 10_000).toFixed(0)}万` : `${sign}¥${Math.round(abs).toLocaleString()}`;
+      }
     : (v: number) => `$${v.toFixed(0)}`;
+  const yFmtPct = (v: number) => `${v.toFixed(1)}%`;
 
   return (
     <div className="space-y-4 plumb-animate-in">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* Controls: Period selector + Currency toggle */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex gap-0.5 plumb-glass rounded-lg p-1">
+          {TREND_PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                period === p.key
+                  ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                  : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setCurrency('JPY')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+            }`}
+          >¥ JPY</button>
+          <button
+            onClick={() => setCurrency('USD')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              !isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+            }`}
+          >$ USD</button>
+        </div>
+      </div>
+
+      {/* Summary Cards (5 cols) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
         {summaryItems.map((item) => (
           <div key={item.label} className="plumb-glass rounded-lg px-4 py-3.5 plumb-glass-hover">
             <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">{item.label}</span>
@@ -1170,31 +1253,29 @@ function AssetTrendsTab() {
         ))}
       </div>
 
-      {/* Chart */}
+      {/* Chart 1: Asset Trends */}
       <GlassCard>
         <div className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">資産推移チャート</h3>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setCurrency('JPY')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
-                }`}
-              >¥ JPY</button>
-              <button
-                onClick={() => setCurrency('USD')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  !isJpy ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
-                }`}
-              >$ USD</button>
-            </div>
-          </div>
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">資産推移</h3>
           <EconChartCanvas
-            series={series}
-            yAxisFormat={yFmtLeft}
-            yAxisRightFormat={yFmtRight}
-            height={420}
+            series={assetSeries}
+            yAxisFormat={yFmtAsset}
+            height={340}
+            initialShowAll
+          />
+        </div>
+      </GlassCard>
+
+      {/* Chart 2: Unrealized P&L + Return Rate */}
+      <GlassCard>
+        <div className="p-4">
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400 mb-3">含み損益 / 収益率</h3>
+          <EconChartCanvas
+            series={pnlSeries}
+            yAxisFormat={yFmtPnl}
+            yAxisRightFormat={yFmtPct}
+            height={260}
+            initialShowAll
           />
         </div>
       </GlassCard>

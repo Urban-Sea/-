@@ -10,6 +10,7 @@ export interface ChartSeries {
   label: string;
   dashed?: boolean;
   yAxisSide?: 'left' | 'right';
+  barNegativeColor?: string;
 }
 
 export interface ChartReferenceLine {
@@ -142,6 +143,19 @@ export default function EconChartCanvas({
       }
     }
 
+    // Ensure zero is included in Y range for bar series
+    for (const s of series) {
+      if (s.type === 'bar') {
+        if (s.yAxisSide === 'right') {
+          if (rightMin > 0) rightMin = 0;
+          if (rightMax < 0) rightMax = 0;
+        } else {
+          if (leftMin > 0) leftMin = 0;
+          if (leftMax < 0) leftMax = 0;
+        }
+      }
+    }
+
     // Include reference lines in left axis range
     if (referenceLines) {
       for (const rl of referenceLines) {
@@ -241,7 +255,9 @@ export default function EconChartCanvas({
           const x = xScale(i) - barW / 2;
           const zeroY = yFn(0);
           const valY = yFn(val);
-          const barColor = val >= 0 ? 'rgba(59,130,246,0.5)' : 'rgba(239,68,68,0.5)';
+          const barColor = val >= 0
+            ? (s.barNegativeColor ? s.color : 'rgba(59,130,246,0.5)')
+            : (s.barNegativeColor || 'rgba(239,68,68,0.5)');
           ctx.fillStyle = barColor;
           const top = Math.min(zeroY, valY);
           const barH = Math.abs(zeroY - valY) || 1;
