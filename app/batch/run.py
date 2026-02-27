@@ -81,7 +81,7 @@ WARMUP_ENDPOINTS = [
     "/api/market-state/latest",
     "/api/employment/risk-score",
     "/api/employment/overview",
-    "/api/employment/risk-history?months=120",
+    "/api/employment/risk-history?months=350",
     "/api/liquidity/overview",
     "/api/liquidity/plumbing-summary",
     "/api/liquidity/events",
