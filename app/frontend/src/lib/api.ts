@@ -413,7 +413,28 @@ export function useHoldings() {
 }
 
 export function useHoldingsInit() {
-  return useSWR<HoldingsInitResponse>('/api/holdings/init', {
+  return useSWR<HoldingsInitResponse>('/api/holdings/init', async (url: string) => {
+    try {
+      return await fetchAPI<HoldingsInitResponse>(url);
+    } catch (err) {
+      // /init not deployed yet — fall back to 3 parallel calls
+      if (err instanceof Error && err.message.includes('404')) {
+        const [h, c, fx] = await Promise.all([
+          fetchAPI<HoldingsResponse>('/api/holdings'),
+          fetchAPI<CashBalancesResponse>('/api/holdings/cash'),
+          fetchAPI<{ rate: number }>('/api/fx/usdjpy').catch(() => ({ rate: 150.0 })),
+        ]);
+        return {
+          holdings: h.holdings,
+          total: h.total,
+          total_value: h.total_value ?? 0,
+          cash: c,
+          fx_rate: fx.rate,
+        };
+      }
+      throw err;
+    }
+  }, {
     revalidateOnFocus: false,
     keepPreviousData: true,
     dedupingInterval: 10000,
