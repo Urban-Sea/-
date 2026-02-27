@@ -57,10 +57,16 @@ export default {
     const ttl = getCacheTtl(url.pathname);
     const isCacheable = request.method === 'GET' && ttl > 0;
 
-    // Try cache first (public data only — user CRUD has ttl=0)
+    // Build per-user cache key (user-specific endpoints get separate cache entries)
+    const userEmail = request.headers.get('X-User-Email') || '';
+    const cacheKeyUrl = userEmail
+      ? `${url.toString()}::user=${userEmail}`
+      : url.toString();
+
+    // Try cache first
     if (isCacheable) {
       const cache = caches.default;
-      const cacheKey = new Request(url.toString(), { method: 'GET' });
+      const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
       const cached = await cache.match(cacheKey);
 
       if (cached) {
@@ -113,17 +119,30 @@ export default {
       headers: responseHeaders,
     });
 
-    // Store in cache (non-blocking) — public/shared data only
-    // User CRUD endpoints (holdings, trades, watchlist) have ttl=0 → never cached
+    // Store in cache (non-blocking) — includes per-user data with short TTL
     if (isCacheable && proxyResponse.status === 200) {
       const cache = caches.default;
-      const cacheKey = new Request(url.toString(), { method: 'GET' });
+      const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
       const cacheResponse = new Response(response.clone().body, {
         status: 200,
         headers: responseHeaders,
       });
       cacheResponse.headers.set('Cache-Control', `public, max-age=${ttl}`);
       ctx.waitUntil(cache.put(cacheKey, cacheResponse));
+    }
+
+    // Invalidate per-user cache on mutations (POST/PUT/DELETE)
+    if (request.method !== 'GET' && request.method !== 'HEAD' && proxyResponse.status < 400 && userEmail) {
+      const cache = caches.default;
+      const pathsToInvalidate = [
+        '/api/holdings',
+        '/api/holdings/init',
+        '/api/holdings/cash',
+      ];
+      for (const path of pathsToInvalidate) {
+        const purgeUrl = `${url.origin}${path}::user=${userEmail}`;
+        ctx.waitUntil(cache.delete(new Request(purgeUrl, { method: 'GET' })));
+      }
     }
 
     return response;

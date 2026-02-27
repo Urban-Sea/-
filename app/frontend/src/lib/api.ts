@@ -32,6 +32,7 @@ import type {
   PolicyRegimeData,
   PortfolioHistoryResponse,
   CashBalancesResponse,
+  HoldingsInitResponse,
   WatchlistsResponse,
 } from '@/types';
 
@@ -404,7 +405,19 @@ export function useRiskHistory(months: number = 350) {
 }
 
 export function useHoldings() {
-  return useSWR<HoldingsResponse>('/api/holdings');
+  return useSWR<HoldingsResponse>('/api/holdings', {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    dedupingInterval: 10000,
+  });
+}
+
+export function useHoldingsInit() {
+  return useSWR<HoldingsInitResponse>('/api/holdings/init', {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    dedupingInterval: 10000,
+  });
 }
 
 export function useTrades(params?: { limit?: number; enabled?: boolean }) {
@@ -427,12 +440,15 @@ export function useTradeStats(enabled: boolean = true) {
 export function usePortfolioHistory(months: number = 24, enabled: boolean = true) {
   return useSWR<PortfolioHistoryResponse>(
     enabled ? `/api/holdings/portfolio-history?months=${months}` : null,
-    { keepPreviousData: true, refreshInterval: 30 * 60 * 1000 },
+    { keepPreviousData: true, revalidateOnFocus: false, dedupingInterval: 10000, refreshInterval: 30 * 60 * 1000 },
   );
 }
 
 export function useCashBalances() {
   return useSWR<CashBalancesResponse>('/api/holdings/cash', {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    dedupingInterval: 10000,
     refreshInterval: 30 * 60 * 1000,
   });
 }

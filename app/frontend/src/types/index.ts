@@ -307,6 +307,15 @@ export interface CashBalancesResponse {
   total: number;
 }
 
+// Holdings Init (combined endpoint)
+export interface HoldingsInitResponse {
+  holdings: HoldingRecord[];
+  total: number;
+  total_value: number;
+  cash: CashBalancesResponse;
+  fx_rate: number;
+}
+
 // Employment types
 export interface EconomicIndicator {
   id: number;

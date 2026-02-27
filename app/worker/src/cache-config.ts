@@ -32,8 +32,13 @@ const CACHE_RULES: CacheRule[] = [
   { pattern: /^\/api\/fx\/usdjpy$/, ttl: 5 * 60 },
   { pattern: /^\/api\/stock\/batch-quotes/, ttl: 5 * 60 },
 
-  // No cache: user CRUD
-  { pattern: /^\/api\/holdings/, ttl: 0 },
+  // User data: short per-user cache (cache key includes X-User-Email)
+  { pattern: /^\/api\/holdings\/init$/, ttl: 60 },              // 1 min
+  { pattern: /^\/api\/holdings$/, ttl: 60 },                    // 1 min (GET list only)
+  { pattern: /^\/api\/holdings\/portfolio-history/, ttl: 120 },  // 2 min (daily batch data)
+  { pattern: /^\/api\/holdings\/cash$/, ttl: 60 },              // 1 min (GET list only)
+  // Holdings sub-routes (CRUD /{id}, /sell etc.) — no cache
+  { pattern: /^\/api\/holdings\//, ttl: 0 },
   { pattern: /^\/api\/trades/, ttl: 0 },
   { pattern: /^\/api\/watchlist/, ttl: 0 },
 

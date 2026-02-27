@@ -136,8 +136,63 @@ async def get_holdings(
 
 
 # ============================================================
-# Portfolio History (取引履歴からポートフォリオ価値を再構築)
+# Init (Holdings + Cash + FX を一括取得 — 3 RTT → 1 RTT)
 # NOTE: Static routes MUST be before /{ticker} to avoid path conflict
+# ============================================================
+
+
+@router.get("/init")
+async def get_holdings_init(user_email: str = Depends(require_auth)):
+    """保有銘柄 + 現金残高 + 為替レートを一括取得（初期ロード最適化）"""
+    supabase = main.get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        holdings_result = (
+            supabase.table("holdings")
+            .select("*")
+            .eq("user_id", user_email)
+            .order("ticker")
+            .execute()
+        )
+        cash_result = (
+            supabase.table("cash_balances")
+            .select("*")
+            .eq("user_id", user_email)
+            .order("label")
+            .execute()
+        )
+        fx_result = (
+            supabase.table("market_indicators")
+            .select("usdjpy")
+            .not_.is_("usdjpy", "null")
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        holdings = holdings_result.data or []
+        cash = cash_result.data or []
+        fx_rate = float(fx_result.data[0]["usdjpy"]) if fx_result.data else 150.0
+
+        return {
+            "holdings": holdings,
+            "total": len(holdings),
+            "total_value": sum(
+                float(h["shares"]) * float(h["avg_price"]) for h in holdings
+            ),
+            "cash": {"balances": cash, "total": len(cash)},
+            "fx_rate": fx_rate,
+        }
+
+    except Exception:
+        logger.exception("Holdings init error")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ============================================================
+# Portfolio History (取引履歴からポートフォリオ価値を再構築)
 # ============================================================
 
 @router.get("/portfolio-history")

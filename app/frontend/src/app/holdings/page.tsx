@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  useHoldings, useTrades, useTradeStats, useBatchQuotes, useUsdJpy,
+  useHoldingsInit, useTrades, useTradeStats, useBatchQuotes,
   usePortfolioHistory, useCashBalances,
   createHolding, updateHolding, deleteHolding, sellFromHolding,
   createCashBalance, updateCashBalance, deleteCashBalance,
@@ -1060,7 +1060,7 @@ const TREND_PERIODS: { key: TrendPeriod; label: string; months: number | 'ytd' }
   { key: 'ALL', label: '全期間', months: 120 },
 ];
 
-function AssetTrendsTab() {
+function AssetTrendsTab({ active }: { active: boolean }) {
   const [period, setPeriod] = useState<TrendPeriod>('1Y');
   const [currency, setCurrency] = useState<'USD' | 'JPY'>('JPY');
 
@@ -1070,7 +1070,7 @@ function AssetTrendsTab() {
     return (opt?.months as number) ?? 12;
   }, [period]);
 
-  const { data, error, isLoading } = usePortfolioHistory(activeMonths);
+  const { data, error, isLoading } = usePortfolioHistory(activeMonths, active);
 
   if (isLoading) {
     return (
@@ -1453,19 +1453,20 @@ function LoadingSkeleton() {
 
 export default function HoldingsPage() {
   const [activeTab, setActiveTab] = useState('portfolio');
-  const { data: holdingsData, error: holdingsError, isLoading: holdingsLoading, mutate: mutateHoldings } = useHoldings();
+  // Combined init: holdings + cash + FX in one request (3 RTT → 1 RTT)
+  const { data: initData, error: holdingsError, isLoading: holdingsLoading, mutate: mutateInit } = useHoldingsInit();
   // Lazy load: only fetch trades/stats when their tabs are visited
   const tradesEnabled = activeTab === 'trades' || activeTab === 'stats';
   const { data: tradesData, isLoading: tradesLoading, mutate: mutateTrades } = useTrades({ limit: 100, enabled: tradesEnabled });
   const { data: stats, mutate: mutateStats } = useTradeStats(activeTab === 'stats');
 
-  const holdings = holdingsData?.holdings ?? [];
+  const holdings = initData?.holdings ?? [];
   const trades = tradesData?.trades ?? [];
 
   const tickers = useMemo(
     () => (holdings.length > 0 ? holdings.map((h) => h.ticker) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [holdingsData],
+    [initData],
   );
   const { data: quotesData, isLoading: quotesLoading } = useBatchQuotes(tickers);
 
@@ -1475,12 +1476,11 @@ export default function HoldingsPage() {
     return map;
   }, [quotesData]);
 
-  // Auto-fetch USD/JPY
-  const { data: fxData } = useUsdJpy();
+  // FX rate from init response
   const [fxRate, setFxRate] = useState(150.0);
   useEffect(() => {
-    if (fxData?.rate) setFxRate(fxData.rate);
-  }, [fxData]);
+    if (initData?.fx_rate) setFxRate(initData.fx_rate);
+  }, [initData]);
 
   // Local state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -1488,10 +1488,10 @@ export default function HoldingsPage() {
   const [sellTarget, setSellTarget] = useState<HoldingRecord | null>(null);
 
   const mutateAll = useCallback(() => {
-    mutateHoldings();
+    mutateInit();
     mutateTrades();
     mutateStats();
-  }, [mutateHoldings, mutateTrades, mutateStats]);
+  }, [mutateInit, mutateTrades, mutateStats]);
 
   const handleAddHolding = useCallback((data: Partial<HoldingRecord>) => {
     const temp: HoldingRecord = {
@@ -1505,20 +1505,28 @@ export default function HoldingsPage() {
       updated_at: new Date().toISOString(),
     } as HoldingRecord;
 
-    mutateHoldings(
+    mutateInit(
       async (current) => {
         const result = await createHolding(data);
-        return { holdings: [...(current?.holdings ?? []), result], total: (current?.total ?? 0) + 1 };
+        const newHoldings = [...(current?.holdings ?? []), result];
+        return {
+          ...current!,
+          holdings: newHoldings,
+          total: newHoldings.length,
+          total_value: newHoldings.reduce((s, h) => s + h.shares * h.avg_price, 0),
+        };
       },
       {
         optimisticData: (current) => ({
+          ...current!,
           holdings: [...(current?.holdings ?? []), temp],
           total: (current?.total ?? 0) + 1,
+          total_value: (current?.total_value ?? 0) + temp.shares * temp.avg_price,
         }),
         rollbackOnError: true,
       },
     );
-  }, [mutateHoldings]);
+  }, [mutateInit]);
 
   const handleDelete = useCallback(async (h: HoldingRecord) => {
     try {
@@ -1541,7 +1549,7 @@ export default function HoldingsPage() {
         <GlassCard>
           <div className="p-8 text-center">
             <p className="text-red-500 text-sm mb-3">{holdingsError instanceof Error ? holdingsError.message : 'データの取得に失敗しました'}</p>
-            <Button variant="outline" size="sm" onClick={() => mutateHoldings()}>再試行</Button>
+            <Button variant="outline" size="sm" onClick={() => mutateInit()}>再試行</Button>
           </div>
         </GlassCard>
       </div>
@@ -1586,7 +1594,7 @@ export default function HoldingsPage() {
 
         {/* Portfolio Tab */}
         <TabsContent value="portfolio" className="mt-4 space-y-4">
-          <FxBar fxRate={fxRate} isLive={!!fxData?.rate} onFxRateChange={setFxRate} />
+          <FxBar fxRate={fxRate} isLive={!!initData?.fx_rate} onFxRateChange={setFxRate} />
           <PortfolioHero holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <AccountBreakdown holdings={holdings} quotes={quotes} fxRate={fxRate} />
           <PortfolioCharts holdings={holdings} quotes={quotes} fxRate={fxRate} />
@@ -1605,7 +1613,7 @@ export default function HoldingsPage() {
 
         {/* Asset Trends Tab */}
         <TabsContent value="trends" className="mt-4">
-          <AssetTrendsTab />
+          <AssetTrendsTab active={activeTab === 'trends'} />
         </TabsContent>
 
         {/* Trades Tab */}
