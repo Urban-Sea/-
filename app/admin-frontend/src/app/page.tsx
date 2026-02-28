@@ -19,7 +19,7 @@ import {
   Loader2, Shield, Users, Crown, Sun, Moon,
   Search, Activity, Clock, Flag, FileText,
   BarChart3, CheckCircle2, XCircle, AlertCircle,
-  Plus, Power,
+  Plus, Power, RefreshCw,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -175,8 +175,14 @@ export default function AdminPage() {
 function UsersTab() {
   const { data, isLoading, mutate } = useAdminUsers();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [planFilter, setPlanFilter] = useState<string>('all');
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try { await mutate(); } finally { setRefreshing(false); }
+  };
 
   const filteredUsers = useMemo(() => {
     if (!data?.users) return [];
@@ -271,9 +277,19 @@ function UsersTab() {
           </div>
 
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              ユーザー管理
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                ユーザー管理
+              </h2>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                title="最新データを取得"
+              >
+                <RefreshCw className={cn('w-3.5 h-3.5', refreshing && 'animate-spin')} />
+              </button>
+            </div>
             <span className="text-xs text-muted-foreground">{filteredUsers.length} 件</span>
           </div>
 
