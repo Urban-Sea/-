@@ -1,7 +1,7 @@
 'use client';
 
 import { SWRConfig } from 'swr';
-import { getAccessToken, setAccessToken } from './auth-store';
+import { getAccessToken, setAccessToken, isRedirecting, markRedirecting } from './auth-store';
 import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
@@ -30,7 +30,8 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
     }
     // リフレッシュ失敗 or 再試行でも 401 → サインアウトしてログインページへ
     if (response.status === 401) {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !isRedirecting()) {
+        markRedirecting();
         await supabase.auth.signOut();
         setAccessToken(null);
         window.location.href = '/login/';

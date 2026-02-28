@@ -6,7 +6,7 @@ import os
 import hmac
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header as fastapi_Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -165,6 +165,84 @@ app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"]
 app.include_router(users.router, prefix="/api/me", tags=["user"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_mfa.router, prefix="/api/admin/mfa", tags=["admin-mfa"])
+
+
+# ── JWT 診断エンドポイント（認証不要）──
+import jwt as pyjwt
+
+@app.get("/api/auth/check", tags=["auth"])
+async def auth_check(
+    authorization: str | None = fastapi_Header(None),
+):
+    """JWT 検証診断。トークンの各ステップを検証して結果を返す。"""
+    _jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+    _supa_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    result: dict = {"step": "start", "ok": False}
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        result["error"] = "No Bearer token in Authorization header"
+        return result
+
+    token = authorization[7:]
+    result["step"] = "token_received"
+    result["token_length"] = len(token)
+
+    if not _jwt_secret:
+        result["error"] = "SUPABASE_JWT_SECRET not configured on server"
+        return result
+    result["jwt_secret_configured"] = True
+    result["jwt_secret_prefix"] = _jwt_secret[:4] + "..."
+
+    # Step 1: デコード（署名検証なし）でペイロード確認
+    try:
+        unverified = pyjwt.decode(token, options={"verify_signature": False})
+        result["step"] = "unverified_decode_ok"
+        result["claims"] = {
+            "sub": (unverified.get("sub", "")[:8] + "...") if unverified.get("sub") else "MISSING",
+            "aud": unverified.get("aud"),
+            "iss": unverified.get("iss"),
+            "email": (unverified.get("email", "")[:3] + "***") if unverified.get("email") else "MISSING",
+            "email_confirmed_at": bool(unverified.get("email_confirmed_at")),
+            "exp": unverified.get("exp"),
+            "role": unverified.get("role"),
+        }
+    except Exception as e:
+        result["error"] = f"Token malformed: {type(e).__name__}: {e}"
+        return result
+
+    # Step 2: 署名検証
+    try:
+        payload = pyjwt.decode(
+            token, _jwt_secret, algorithms=["HS256"], audience="authenticated",
+        )
+        result["step"] = "verified_decode_ok"
+        result["ok"] = True
+    except pyjwt.ExpiredSignatureError:
+        result["error"] = "Token expired (ExpiredSignatureError)"
+        return result
+    except pyjwt.InvalidAudienceError:
+        result["error"] = f"Audience mismatch: token aud={unverified.get('aud')!r}, expected='authenticated'"
+        return result
+    except pyjwt.InvalidSignatureError:
+        result["error"] = "Signature mismatch — SUPABASE_JWT_SECRET does not match the token signing key"
+        return result
+    except pyjwt.InvalidTokenError as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+        return result
+
+    # Step 3: issuer チェック
+    if _supa_url:
+        expected_iss = f"{_supa_url}/auth/v1"
+        actual_iss = payload.get("iss", "")
+        result["issuer_match"] = actual_iss == expected_iss
+        if not result["issuer_match"]:
+            result["issuer_warning"] = f"expected={expected_iss}, got={actual_iss}"
+
+    # Step 4: email_confirmed_at チェック
+    if not payload.get("email_confirmed_at"):
+        result["email_confirmed_warning"] = "email_confirmed_at missing/null in JWT — M9 check would return 403"
+
+    return result
 
 
 @app.get("/")

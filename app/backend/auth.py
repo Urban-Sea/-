@@ -276,8 +276,19 @@ async def require_auth(
                         expected_iss, actual_iss,
                     )
         except pyjwt.ExpiredSignatureError:
+            logger.warning("JWT expired for request")
             raise HTTPException(status_code=401, detail="Token expired")
-        except pyjwt.InvalidTokenError:
+        except pyjwt.InvalidSignatureError:
+            logger.error(
+                "JWT signature mismatch — check SUPABASE_JWT_SECRET (prefix=%s)",
+                _SUPABASE_JWT_SECRET[:4] + "...",
+            )
+            raise HTTPException(status_code=401, detail="Invalid token")
+        except pyjwt.InvalidAudienceError:
+            logger.error("JWT audience mismatch — expected 'authenticated'")
+            raise HTTPException(status_code=401, detail="Invalid token")
+        except pyjwt.InvalidTokenError as e:
+            logger.error("JWT validation failed: %s: %s", type(e).__name__, e)
             raise HTTPException(status_code=401, detail="Invalid token")
 
         sub = payload.get("sub")
