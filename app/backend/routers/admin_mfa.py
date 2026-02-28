@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_SESSION_DURATION_HOURS = 24
+_SESSION_DURATION_HOURS = 1
 _ISSUER_NAME = "OpenRegimeAdmin"
 
 

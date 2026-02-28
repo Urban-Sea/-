@@ -24,6 +24,7 @@ import {
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { MfaGate } from '@/components/mfa/MfaGate';
+import { clearMfaToken } from '@/lib/mfa-store';
 
 // ============================================================
 // Constants
@@ -122,8 +123,12 @@ export default function AdminPage() {
               >
                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </Button>
-              <Button variant="ghost" size="sm" asChild>
-                <a href="/cdn-cgi/access/logout">ログアウト</a>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { clearMfaToken(); window.location.href = '/cdn-cgi/access/logout'; }}
+              >
+                ログアウト
               </Button>
             </div>
           </div>
