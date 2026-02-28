@@ -108,7 +108,7 @@ export default function AdminPage() {
       <div className="plumb-animate-in">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image src="/icon.png" alt="" width={32} height={32} className="rounded-full" />
+            <Image src="/icon.png" alt="" width={28} height={28} className="rounded-md" />
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight">Open Regime</h1>
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-500">Admin</span>
