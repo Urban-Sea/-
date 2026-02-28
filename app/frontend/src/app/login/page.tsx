@@ -112,7 +112,14 @@ export default function LoginPage() {
         <GlassCard>
           <form onSubmit={handleLogin} className="p-5 space-y-4">
             {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                {error}
+                {error.includes('パスワード') && (
+                  <Link href="/reset-password/" className="block mt-2 text-blue-500 hover:underline text-xs">
+                    パスワードをリセットする
+                  </Link>
+                )}
+              </div>
             )}
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">メールアドレス</label>

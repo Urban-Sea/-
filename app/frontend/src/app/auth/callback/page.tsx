@@ -32,7 +32,18 @@ function CallbackContent() {
     // listen for the auth state change that fires once the hash is processed.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
+        // M8: ハッシュフラグメントからトークンを除去（ブラウザ履歴に残さない）
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
         router.replace('/');
+      }
+      // H8: パスワードリカバリーイベント → パスワード更新ページへ
+      if (event === 'PASSWORD_RECOVERY' && session) {
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        router.replace('/update-password/');
       }
     });
 

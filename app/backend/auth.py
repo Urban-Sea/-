@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from fastapi import Header, HTTPException
 
 import jwt as pyjwt  # PyJWT
+from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,16 @@ _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 _PROXY_SECRET = os.getenv("PROXY_SECRET", "")
 # Supabase JWT シークレット（Supabase Dashboard → Settings → API → JWT Secret）
 _SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+# Supabase URL（JWT issuer 検証用）
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 
 # メールアドレスの簡易バリデーション
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
-# email → UUID キャッシュ（プロセスレベル、デプロイで自動クリア）
-_user_cache: dict[str, str] = {}
+# email → UUID キャッシュ（5分TTL, 最大1000件 — M1: 無制限dict脆弱性修正）
+_user_cache: TTLCache = TTLCache(maxsize=1000, ttl=300)
 # auth_provider_id (Supabase Auth UUID) → users.id キャッシュ
-_provider_id_cache: dict[str, str] = {}
+_provider_id_cache: TTLCache = TTLCache(maxsize=1000, ttl=300)
 
 # 初回ログイン時に自動移行するテーブル一覧
 _USER_TABLES = [
@@ -98,14 +101,15 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
             supabase.table("users").update(
                 {"last_login_at": now_iso}
             ).eq("id", user["id"]).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to update last_login_at for user %s: %s", user["id"], e)
         return user["id"]
 
     # 2. email で検索（CF Access 時代のユーザーを移行）
     if email:
         email_lower = email.strip().lower()
-        result = supabase.table("users").select("id, is_active").eq(
+        # H2: auth_provider も取得（移行済みアカウントの乗っ取り防止）
+        result = supabase.table("users").select("id, is_active, auth_provider").eq(
             "email", email_lower
         ).limit(1).execute()
 
@@ -113,6 +117,16 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
             user = result.data[0]
             if user.get("is_active") is False:
                 raise HTTPException(status_code=403, detail="Account deactivated")
+            # H2: 既に Supabase Auth に移行済みなら別 sub での紐付けを拒否
+            if user.get("auth_provider") not in (None, "", "cloudflare_access"):
+                logger.warning(
+                    "Rejected auth migration: email=%s already bound to provider=%s",
+                    email_lower[:3] + "***", user.get("auth_provider"),
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Account already linked to another identity",
+                )
             # auth_provider を supabase に更新（CF Access → Supabase 移行完了マーク）
             try:
                 supabase.table("users").update({
@@ -120,10 +134,10 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
                     "auth_provider_id": sub,
                     "last_login_at": now_iso,
                 }).eq("id", user["id"]).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to migrate auth_provider for %s: %s", email_lower[:3] + "***", e)
             _provider_id_cache[sub] = user["id"]
-            logger.info(f"Migrated auth provider: {email_lower} -> supabase (sub={sub})")
+            logger.info("Migrated auth provider: %s -> supabase (sub=%s)", email_lower[:3] + "***", sub[:8])
             return user["id"]
 
     # 3. 新規ユーザー作成
@@ -136,9 +150,10 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
             "last_login_at": now_iso,
         }).execute()
         user_id = create.data[0]["id"]
-        logger.info(f"New Supabase Auth user: {user_email} -> {user_id}")
-    except Exception:
+        logger.info("New Supabase Auth user: %s -> %s", user_email[:3] + "***", user_id)
+    except Exception as e:
         # 競合: 別リクエストが先に作成済み
+        logger.warning("User creation race for sub=%s: %s", sub[:8], e)
         retry = supabase.table("users").select("id").eq(
             "auth_provider_id", sub
         ).limit(1).execute()
@@ -182,8 +197,8 @@ def _resolve_user_id(email: str) -> str:
             supabase.table("users").update(
                 {"last_login_at": now_iso}
             ).eq("id", user_id).execute()
-        except Exception:
-            pass  # ログイン時刻更新失敗は無視
+        except Exception as e:
+            logger.warning("Failed to update last_login_at: %s", e)
     else:
         # 初回ログイン: ユーザー自動作成
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -194,8 +209,9 @@ def _resolve_user_id(email: str) -> str:
                 "last_login_at": now_iso,
             }).execute()
             user_id = create.data[0]["id"]
-        except Exception:
+        except Exception as e:
             # 競合: 別リクエストが先に作成済み
+            logger.warning("User creation race for email=%s: %s", email[:3] + "***", e)
             retry = supabase.table("users").select("id").eq("email", email).limit(1).execute()
             if not retry.data:
                 raise HTTPException(status_code=500, detail="Failed to create user")
@@ -244,11 +260,16 @@ async def require_auth(
             logger.error("SUPABASE_JWT_SECRET not configured")
             raise HTTPException(status_code=503, detail="Service misconfigured")
         try:
+            # H1: issuer 検証追加（別 Supabase プロジェクトのトークン拒否）
+            _jwt_opts: dict = {}
+            if _SUPABASE_URL:
+                _jwt_opts["issuer"] = f"{_SUPABASE_URL}/auth/v1"
             payload = pyjwt.decode(
                 token,
                 _SUPABASE_JWT_SECRET,
                 algorithms=["HS256"],
                 audience="authenticated",
+                **_jwt_opts,
             )
         except pyjwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Token expired")
@@ -259,6 +280,13 @@ async def require_auth(
         email = payload.get("email", "")
         if not sub:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
+
+        # M9: メール未確認ユーザーを拒否
+        if not payload.get("email_confirmed_at"):
+            raise HTTPException(
+                status_code=403,
+                detail="Email not verified. Please check your inbox.",
+            )
 
         return _resolve_user_by_jwt(sub, email)
 
@@ -274,6 +302,11 @@ async def require_auth(
             raise HTTPException(status_code=403, detail="Forbidden")
 
     if x_user_email:
+        # C5: レガシーパス使用の非推奨ログ
+        logger.warning(
+            "DEPRECATED: X-User-Email auth used (email=%s). Migrate to JWT.",
+            x_user_email[:3] + "***",
+        )
         email = x_user_email.strip().lower()
         if len(email) > 254 or not _EMAIL_RE.match(email):
             raise HTTPException(status_code=400, detail="Invalid email format")

@@ -3,6 +3,8 @@ Open Regime バックエンド API
 FastAPI + Supabase
 """
 import os
+import hmac
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +14,8 @@ from supabase import create_client, Client
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+_logger = logging.getLogger(__name__)
 
 from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist, users, admin, admin_mfa
 
@@ -42,6 +46,8 @@ _ALLOWED_ORIGINS = {
     "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev",
 }
 _MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+# C1: CSRF検証で使うプロキシシークレット（値まで検証）
+_PROXY_SECRET = os.getenv("PROXY_SECRET", "")
 
 
 class CSRFOriginMiddleware(BaseHTTPMiddleware):
@@ -49,9 +55,14 @@ class CSRFOriginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if _IS_PRODUCTION and request.method in _MUTATING_METHODS:
             origin = request.headers.get("origin", "")
-            # Worker経由ならX-Proxy-Secretが付いているのでOriginなしでも許可
-            has_proxy_secret = request.headers.get("x-proxy-secret")
-            if not has_proxy_secret and origin not in _ALLOWED_ORIGINS:
+            # C1: X-Proxy-Secret の値を検証（存在チェックだけでは不十分）
+            proxy_secret_header = request.headers.get("x-proxy-secret", "")
+            has_valid_proxy = (
+                bool(_PROXY_SECRET)
+                and bool(proxy_secret_header)
+                and hmac.compare_digest(proxy_secret_header, _PROXY_SECRET)
+            )
+            if not has_valid_proxy and origin not in _ALLOWED_ORIGINS:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Origin not allowed"},
@@ -66,6 +77,24 @@ supabase: Client = None
 async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
     global supabase
+
+    # M2: 本番環境で必須シークレットの検証
+    if _IS_PRODUCTION:
+        missing = []
+        if not os.getenv("PROXY_SECRET", "").strip():
+            missing.append("PROXY_SECRET")
+        if not os.getenv("SUPABASE_JWT_SECRET", "").strip():
+            missing.append("SUPABASE_JWT_SECRET")
+        if missing:
+            raise RuntimeError(
+                f"Missing required secrets in production: {', '.join(missing)}"
+            )
+    else:
+        _logger.warning(
+            "Running in DEVELOPMENT mode (ENVIRONMENT=%s). "
+            "Set ENVIRONMENT=production for production deployments.",
+            os.getenv("ENVIRONMENT", "development"),
+        )
 
     # 起動時: Supabase接続
     supabase_url = (os.getenv("SUPABASE_URL") or "").strip()

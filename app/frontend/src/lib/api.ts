@@ -36,14 +36,15 @@ import type {
   WatchlistsResponse,
 } from '@/types';
 
-import { getAccessToken } from './auth-store';
+import { getAccessToken, setAccessToken } from './auth-store';
+import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
   const token = getAccessToken();
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -51,6 +52,28 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       ...options?.headers,
     },
   });
+
+  // B1: 401 → トークンリフレッシュして再試行
+  if (response.status === 401) {
+    const { data } = await supabase.auth.refreshSession();
+    if (data.session?.access_token) {
+      setAccessToken(data.session.access_token);
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${data.session.access_token}`,
+          ...options?.headers,
+        },
+      });
+    }
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login/';
+      }
+      throw new Error('Session expired');
+    }
+  }
 
   if (!response.ok) {
     let detail = response.statusText;

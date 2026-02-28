@@ -10,13 +10,17 @@
 
 import hashlib
 import io
+import os
 import base64
 import secrets
 import logging
+import time
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 import pyotp
 import qrcode
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 
 import main
@@ -28,6 +32,78 @@ router = APIRouter()
 
 _SESSION_DURATION_HOURS = 1
 _ISSUER_NAME = "OpenRegimeAdmin"
+
+# ── C2: TOTP シークレット暗号化 (AES-256-GCM) ──
+_MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
+
+
+def _get_aesgcm() -> AESGCM:
+    if not _MFA_ENCRYPTION_KEY or len(_MFA_ENCRYPTION_KEY) != 64:
+        raise HTTPException(status_code=503, detail="MFA encryption not configured")
+    return AESGCM(bytes.fromhex(_MFA_ENCRYPTION_KEY))
+
+
+def _encrypt_secret(plaintext: str) -> str:
+    """TOTP シークレットを AES-256-GCM で暗号化。nonce:ciphertext (hex) 形式。"""
+    aesgcm = _get_aesgcm()
+    nonce = os.urandom(12)
+    ct = aesgcm.encrypt(nonce, plaintext.encode(), None)
+    return nonce.hex() + ":" + ct.hex()
+
+
+def _decrypt_secret(encrypted: str) -> str:
+    """暗号化された TOTP シークレットを復号。レガシー平文も後方互換で処理。"""
+    if ":" not in encrypted:
+        logger.warning("Legacy plaintext TOTP secret detected — re-encrypt on next setup")
+        return encrypted
+    aesgcm = _get_aesgcm()
+    nonce_hex, ct_hex = encrypted.split(":", 1)
+    return aesgcm.decrypt(bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex), None).decode()
+
+
+# ── C4: TOTP ブルートフォース対策 ──
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SECONDS = 900  # 15分
+_attempt_tracker: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(user_id: str) -> None:
+    """ユーザー別の TOTP 試行回数をチェック。超過時は 429。"""
+    now = time.time()
+    cutoff = now - _LOCKOUT_SECONDS
+    _attempt_tracker[user_id] = [t for t in _attempt_tracker[user_id] if t > cutoff]
+    if len(_attempt_tracker[user_id]) >= _MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {_LOCKOUT_SECONDS // 60} minutes.",
+        )
+
+
+def _record_attempt(user_id: str) -> None:
+    _attempt_tracker[user_id].append(time.time())
+
+
+def _clear_attempts(user_id: str) -> None:
+    _attempt_tracker.pop(user_id, None)
+
+
+# ── H3: TOTP リプレイ防止 ──
+_used_codes: dict[str, dict[str, float]] = defaultdict(dict)
+
+
+def _check_replay(user_id: str, code: str) -> None:
+    """同一コードの再利用を検知。90秒以内に使われたコードは拒否。"""
+    now = time.time()
+    user_codes = _used_codes[user_id]
+    expired = [c for c, exp in user_codes.items() if exp < now]
+    for c in expired:
+        del user_codes[c]
+    if code in user_codes:
+        raise HTTPException(status_code=401, detail="Code already used")
+
+
+def _mark_code_used(user_id: str, code: str) -> None:
+    _used_codes[user_id][code] = time.time() + 90
 
 
 def _hash_token(token: str) -> str:
@@ -110,6 +186,13 @@ async def mfa_setup(admin_id: str = Depends(require_admin)):
     if existing.data and existing.data[0]["enabled"]:
         raise HTTPException(status_code=409, detail="MFA already enabled")
 
+    # H5: pending セットアップが既にある場合は拒否
+    if existing.data and not existing.data[0]["enabled"]:
+        raise HTTPException(
+            status_code=409,
+            detail="MFA setup already in progress. Complete verification or contact support.",
+        )
+
     # TOTP シークレット生成
     secret = pyotp.random_base32()
     email = _get_user_email(supabase, admin_id)
@@ -122,19 +205,13 @@ async def mfa_setup(admin_id: str = Depends(require_admin)):
     img.save(buf, format="PNG")
     qr_base64 = base64.b64encode(buf.getvalue()).decode()
 
-    # DB に保存（未確認状態: enabled=False）
-    if existing.data:
-        supabase.table("admin_mfa").update({
-            "secret_enc": secret,
-            "enabled": False,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("user_id", admin_id).execute()
-    else:
-        supabase.table("admin_mfa").insert({
-            "user_id": admin_id,
-            "secret_enc": secret,
-            "enabled": False,
-        }).execute()
+    # C2: DB に暗号化して保存（未確認状態: enabled=False）
+    encrypted_secret = _encrypt_secret(secret)
+    supabase.table("admin_mfa").insert({
+        "user_id": admin_id,
+        "secret_enc": encrypted_secret,
+        "enabled": False,
+    }).execute()
 
     return {
         "secret": secret,
@@ -160,6 +237,9 @@ async def mfa_setup_verify(
     if not code or len(code) != 6:
         raise HTTPException(status_code=400, detail="6-digit code required")
 
+    # C4: ブルートフォースチェック
+    _check_rate_limit(admin_id)
+
     # シークレット取得
     result = (
         supabase.table("admin_mfa")
@@ -174,11 +254,18 @@ async def mfa_setup_verify(
     if result.data[0]["enabled"]:
         raise HTTPException(status_code=409, detail="MFA already enabled")
 
-    secret = result.data[0]["secret_enc"]
+    # C2: 暗号化シークレットを復号
+    secret = _decrypt_secret(result.data[0]["secret_enc"])
     totp = pyotp.TOTP(secret)
 
     if not totp.verify(code, valid_window=1):
+        _record_attempt(admin_id)
         raise HTTPException(status_code=401, detail="Invalid code")
+
+    # H3: リプレイチェック
+    _check_replay(admin_id, code)
+    _mark_code_used(admin_id, code)
+    _clear_attempts(admin_id)
 
     # MFA を有効化
     supabase.table("admin_mfa").update({
@@ -214,6 +301,9 @@ async def mfa_verify(
     if not code or len(code) != 6:
         raise HTTPException(status_code=400, detail="6-digit code required")
 
+    # C4: ブルートフォースチェック
+    _check_rate_limit(admin_id)
+
     # シークレット取得
     result = (
         supabase.table("admin_mfa")
@@ -225,11 +315,18 @@ async def mfa_verify(
     if not result.data or not result.data[0]["enabled"]:
         raise HTTPException(status_code=404, detail="MFA not enabled")
 
-    secret = result.data[0]["secret_enc"]
+    # C2: 暗号化シークレットを復号
+    secret = _decrypt_secret(result.data[0]["secret_enc"])
     totp = pyotp.TOTP(secret)
 
     if not totp.verify(code, valid_window=1):
+        _record_attempt(admin_id)
         raise HTTPException(status_code=401, detail="Invalid code")
+
+    # H3: リプレイチェック
+    _check_replay(admin_id, code)
+    _mark_code_used(admin_id, code)
+    _clear_attempts(admin_id)
 
     # セッショントークン発行
     session = _create_session_token(supabase, admin_id)
@@ -274,3 +371,27 @@ async def mfa_session_check(
         "valid": True,
         "expires_at": result.data[0]["expires_at"],
     }
+
+
+# ============================================================
+# H4: MFA Session Logout (server-side invalidation)
+# ============================================================
+
+@router.delete("/session")
+async def mfa_logout(
+    admin_id: str = Depends(require_admin),
+    x_mfa_token: str | None = Header(None),
+):
+    """MFA セッショントークンをサーバー側で無効化"""
+    if not x_mfa_token:
+        return {"status": "no_token"}
+
+    supabase = main.get_supabase()
+    token_hash = _hash_token(x_mfa_token)
+
+    supabase.table("admin_mfa_sessions").delete().eq(
+        "user_id", admin_id
+    ).eq("token_hash", token_hash).execute()
+
+    logger.info("MFA session invalidated for user %s", admin_id)
+    return {"status": "logged_out"}

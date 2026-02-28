@@ -147,6 +147,11 @@ export async function checkMfaSession(): Promise<MfaSessionResponse> {
   return fetchAPI('/api/admin/mfa/session');
 }
 
+/** H4: サーバー側で MFA セッションを無効化 */
+export async function logoutMfa(): Promise<{ status: string }> {
+  return fetchAPI('/api/admin/mfa/session', { method: 'DELETE' });
+}
+
 // ============================================================
 // Hooks
 // ============================================================

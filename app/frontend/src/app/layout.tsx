@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { UserProvider } from "@/components/providers/UserProvider";
 import { SWRProvider } from "@/lib/swr";
+import { ChunkErrorHandler } from "@/components/providers/ChunkErrorHandler";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,6 +38,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
       >
+        <ChunkErrorHandler />
         <ThemeProvider>
           <SWRProvider>
             <UserProvider>

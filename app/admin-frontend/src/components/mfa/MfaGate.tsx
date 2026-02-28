@@ -7,7 +7,7 @@ import { MfaSetup } from './MfaSetup';
 import { MfaChallenge } from './MfaChallenge';
 import { Loader2 } from 'lucide-react';
 
-type MfaState = 'loading' | 'setup' | 'challenge' | 'authenticated';
+type MfaState = 'loading' | 'setup' | 'challenge' | 'authenticated' | 'error';
 
 interface MfaGateProps {
   children: React.ReactNode;
@@ -42,8 +42,8 @@ export function MfaGate({ children }: MfaGateProps) {
         setState('challenge');
       }
     } catch {
-      // API エラー → MFA 未設定とみなして通過（初回導入時の互換性）
-      setState('authenticated');
+      // C3: API エラーは認証失敗として扱う（セキュリティ優先）
+      setState('error');
     }
   }, []);
 
@@ -65,6 +65,22 @@ export function MfaGate({ children }: MfaGateProps) {
 
   if (state === 'challenge') {
     return <MfaChallenge onSuccess={() => setState('authenticated')} />;
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <p className="text-destructive text-sm">MFA 認証サービスに接続できません。</p>
+          <button
+            onClick={() => { setState('loading'); checkAuth(); }}
+            className="text-sm text-blue-500 hover:underline"
+          >
+            再試行
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;
