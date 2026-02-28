@@ -490,15 +490,19 @@ function AuditLogTab() {
                       )}
                     </td>
                     <td className="py-1.5 text-xs text-muted-foreground">
-                      {log.old_value && log.new_value && (
-                        <span className="font-mono">
-                          {Object.entries(log.new_value).map(([k, v]) => (
-                            <span key={k} className="mr-2">
-                              {k}: {String(log.old_value?.[k])} → {String(v)}
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                      {log.old_value && log.new_value && (() => {
+                        const oldVal = typeof log.old_value === 'string' ? JSON.parse(log.old_value) : log.old_value;
+                        const newVal = typeof log.new_value === 'string' ? JSON.parse(log.new_value) : log.new_value;
+                        return (
+                          <span className="font-mono">
+                            {Object.entries(newVal).map(([k, v]) => (
+                              <span key={k} className="mr-2">
+                                {k}: {String(oldVal?.[k])} → {String(v)}
+                              </span>
+                            ))}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
