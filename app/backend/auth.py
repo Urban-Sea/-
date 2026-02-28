@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from fastapi import Header, HTTPException
 
 import jwt as pyjwt  # PyJWT
+from jwt import PyJWKClient
 from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
@@ -29,10 +30,19 @@ logger = logging.getLogger(__name__)
 _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 # Worker ↔ Backend 共有シークレット
 _PROXY_SECRET = os.getenv("PROXY_SECRET", "")
-# Supabase JWT シークレット（Supabase Dashboard → Settings → API → JWT Secret）
+# Supabase JWT シークレット（HMAC 用フォールバック）
 _SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-# Supabase URL（JWT issuer 検証用）
+# Supabase URL（JWT issuer 検証 + JWKS エンドポイント用）
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+
+# JWKS クライアント（ES256 等の非対称鍵アルゴリズム用）
+_jwks_client: PyJWKClient | None = None
+if _SUPABASE_URL:
+    _jwks_client = PyJWKClient(
+        f"{_SUPABASE_URL}/auth/v1/.well-known/jwks.json",
+        cache_keys=True,
+        lifespan=3600,  # 1時間キャッシュ
+    )
 
 # メールアドレスの簡易バリデーション
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -256,28 +266,42 @@ async def require_auth(
     # ── Path 1: Supabase Auth JWT ──
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization[7:]
-        if not _SUPABASE_JWT_SECRET:
-            logger.error("SUPABASE_JWT_SECRET not configured")
-            raise HTTPException(status_code=503, detail="Service misconfigured")
         try:
-            # トークンヘッダーからアルゴリズムを取得して許可リストを構築
+            # トークンヘッダーからアルゴリズムを判定
             try:
                 header = pyjwt.get_unverified_header(token)
             except Exception:
                 header = {}
             token_alg = header.get("alg", "HS256")
-            # HMAC 系のみ許可（対称鍵）
-            allowed_algs = list({token_alg, "HS256", "HS384", "HS512"} & {"HS256", "HS384", "HS512"})
-            if not allowed_algs:
-                logger.error("JWT uses unsupported algorithm: %s", token_alg)
-                raise HTTPException(status_code=401, detail="Unsupported token algorithm")
 
-            payload = pyjwt.decode(
-                token,
-                _SUPABASE_JWT_SECRET,
-                algorithms=allowed_algs,
-                audience="authenticated",
-            )
+            if token_alg.startswith("ES") or token_alg.startswith("RS") or token_alg.startswith("PS"):
+                # ── 非対称鍵 (ES256, RS256 等): JWKS 公開鍵で検証 ──
+                if not _jwks_client:
+                    logger.error("JWKS client not available (SUPABASE_URL not set)")
+                    raise HTTPException(status_code=503, detail="Service misconfigured")
+                signing_key = _jwks_client.get_signing_key_from_jwt(token)
+                payload = pyjwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=[token_alg],
+                    audience="authenticated",
+                )
+            else:
+                # ── 対称鍵 (HS256 等): SUPABASE_JWT_SECRET で検証 ──
+                if not _SUPABASE_JWT_SECRET:
+                    logger.error("SUPABASE_JWT_SECRET not configured")
+                    raise HTTPException(status_code=503, detail="Service misconfigured")
+                allowed_algs = list({"HS256", "HS384", "HS512"} & {token_alg, "HS256", "HS384", "HS512"})
+                if not allowed_algs:
+                    logger.error("JWT uses unsupported algorithm: %s", token_alg)
+                    raise HTTPException(status_code=401, detail="Unsupported token algorithm")
+                payload = pyjwt.decode(
+                    token,
+                    _SUPABASE_JWT_SECRET,
+                    algorithms=allowed_algs,
+                    audience="authenticated",
+                )
+
             # H1: issuer 検証（警告のみ — URL不一致でもブロックしない）
             if _SUPABASE_URL:
                 expected_iss = f"{_SUPABASE_URL}/auth/v1"
@@ -291,10 +315,7 @@ async def require_auth(
             logger.warning("JWT expired for request")
             raise HTTPException(status_code=401, detail="Token expired")
         except pyjwt.InvalidSignatureError:
-            logger.error(
-                "JWT signature mismatch — check SUPABASE_JWT_SECRET (prefix=%s)",
-                _SUPABASE_JWT_SECRET[:4] + "...",
-            )
+            logger.error("JWT signature verification failed (alg=%s)", token_alg)
             raise HTTPException(status_code=401, detail="Invalid token")
         except pyjwt.InvalidAudienceError:
             logger.error("JWT audience mismatch — expected 'authenticated'")

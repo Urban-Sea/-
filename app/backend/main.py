@@ -169,6 +169,7 @@ app.include_router(admin_mfa.router, prefix="/api/admin/mfa", tags=["admin-mfa"]
 
 # ── JWT 診断エンドポイント（認証不要）──
 import jwt as pyjwt
+from jwt import PyJWKClient as _DiagPyJWKClient
 
 @app.get("/api/auth/check", tags=["auth"])
 async def auth_check(
@@ -186,17 +187,16 @@ async def auth_check(
     token = authorization[7:]
     result["step"] = "token_received"
     result["token_length"] = len(token)
-
-    if not _jwt_secret:
-        result["error"] = "SUPABASE_JWT_SECRET not configured on server"
-        return result
-    result["jwt_secret_configured"] = True
-    result["jwt_secret_prefix"] = _jwt_secret[:4] + "..."
+    result["jwt_secret_configured"] = bool(_jwt_secret)
+    if _jwt_secret:
+        result["jwt_secret_prefix"] = _jwt_secret[:4] + "..."
+    result["supabase_url_configured"] = bool(_supa_url)
 
     # Step 1: ヘッダー + ペイロード確認（署名検証なし）
     try:
         header = pyjwt.get_unverified_header(token)
         result["header_alg"] = header.get("alg")
+        result["header_kid"] = header.get("kid")
     except Exception:
         header = {}
     try:
@@ -215,14 +215,33 @@ async def auth_check(
         result["error"] = f"Token malformed: {type(e).__name__}: {e}"
         return result
 
-    # Step 2: 署名検証（HMAC 系アルゴリズムを許可）
+    # Step 2: 署名検証
     token_alg = header.get("alg", "HS256")
-    allowed_algs = list({"HS256", "HS384", "HS512"} & {token_alg, "HS256", "HS384", "HS512"})
-    result["allowed_algs"] = allowed_algs
+    result["verification_method"] = "jwks" if token_alg.startswith(("ES", "RS", "PS")) else "hmac_secret"
+
     try:
-        payload = pyjwt.decode(
-            token, _jwt_secret, algorithms=allowed_algs, audience="authenticated",
-        )
+        if token_alg.startswith(("ES", "RS", "PS")):
+            # 非対称鍵: JWKS 公開鍵で検証
+            if not _supa_url:
+                result["error"] = "SUPABASE_URL not configured — cannot fetch JWKS for asymmetric JWT"
+                return result
+            jwks_url = f"{_supa_url}/auth/v1/.well-known/jwks.json"
+            result["jwks_url"] = jwks_url
+            diag_jwks = _DiagPyJWKClient(jwks_url)
+            signing_key = diag_jwks.get_signing_key_from_jwt(token)
+            payload = pyjwt.decode(
+                token, signing_key.key, algorithms=[token_alg], audience="authenticated",
+            )
+        else:
+            # 対称鍵: HMAC シークレットで検証
+            if not _jwt_secret:
+                result["error"] = "SUPABASE_JWT_SECRET not configured on server"
+                return result
+            allowed_algs = list({"HS256", "HS384", "HS512"} & {token_alg, "HS256", "HS384", "HS512"})
+            result["allowed_algs"] = allowed_algs
+            payload = pyjwt.decode(
+                token, _jwt_secret, algorithms=allowed_algs, audience="authenticated",
+            )
         result["step"] = "verified_decode_ok"
         result["ok"] = True
     except pyjwt.ExpiredSignatureError:
@@ -232,10 +251,13 @@ async def auth_check(
         result["error"] = f"Audience mismatch: token aud={unverified.get('aud')!r}, expected='authenticated'"
         return result
     except pyjwt.InvalidSignatureError:
-        result["error"] = "Signature mismatch — SUPABASE_JWT_SECRET does not match the token signing key"
+        result["error"] = "Signature mismatch — key does not match the token signing key"
         return result
     except pyjwt.InvalidTokenError as e:
         result["error"] = f"{type(e).__name__}: {e}"
+        return result
+    except Exception as e:
+        result["error"] = f"JWKS fetch/verify error: {type(e).__name__}: {e}"
         return result
 
     # Step 3: issuer チェック
@@ -248,7 +270,7 @@ async def auth_check(
 
     # Step 4: email_confirmed_at チェック
     if not payload.get("email_confirmed_at"):
-        result["email_confirmed_warning"] = "email_confirmed_at missing/null in JWT — M9 check would return 403"
+        result["email_confirmed_warning"] = "email_confirmed_at missing/null in JWT"
 
     return result
 
