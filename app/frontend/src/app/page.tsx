@@ -104,32 +104,6 @@ export default function AboutPage() {
             金融市場の流動性と米国景気動向をリアルタイムで統合分析し、
             投資環境の可視化をサポートする分析ダッシュボード
           </p>
-          {/* CTA buttons */}
-          <div className="flex justify-center gap-3 pt-2">
-            {isAuthenticated ? (
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors"
-              >
-                ダッシュボードを見る &rarr;
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/register/"
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors"
-                >
-                  無料で始める
-                </Link>
-                <Link
-                  href="/login/"
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg border border-blue-500/30 bg-blue-500/8 text-blue-700 dark:text-blue-300 text-sm font-medium hover:bg-blue-500/15 transition-colors"
-                >
-                  ログイン
-                </Link>
-              </>
-            )}
-          </div>
         </div>
       </div>
 

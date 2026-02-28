@@ -76,7 +76,7 @@ export function Header() {
         <div className="flex-1 lg:hidden" />
 
         <div className="flex items-center gap-1 shrink-0">
-          <GlossaryButton />
+          {isAuthenticated && <GlossaryButton />}
           <ThemeToggle />
           {isAuthenticated ? (
             <UserMenu />
