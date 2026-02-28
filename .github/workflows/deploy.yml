@@ -6,6 +6,7 @@ on:
     paths:
       - 'app/worker/**'
       - 'app/frontend/**'
+      - 'app/admin-frontend/**'
 
 jobs:
   changes:
@@ -14,6 +15,7 @@ jobs:
     outputs:
       worker: ${{ steps.filter.outputs.worker }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      admin: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -24,6 +26,8 @@ jobs:
               - 'app/worker/**'
             frontend:
               - 'app/frontend/**'
+            admin:
+              - 'app/admin-frontend/**'
 
   deploy-worker:
     name: Deploy Cloudflare Worker
@@ -73,6 +77,35 @@ jobs:
       - name: Deploy to Pages
         working-directory: app/frontend
         run: npx wrangler pages deploy out --project-name=open-regime --commit-dirty=true --commit-message="deploy ${{ github.sha }}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-admin:
+    name: Deploy Admin Dashboard
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: app/admin-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: app/admin-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://open-regime-api.ryu3ta-ke-mo100307.workers.dev
+
+      - name: Deploy to Pages
+        working-directory: app/admin-frontend
+        run: npx wrangler pages deploy out --project-name=open-regime-admin --commit-dirty=true --commit-message="deploy ${{ github.sha }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

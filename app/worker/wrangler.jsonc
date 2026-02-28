@@ -5,6 +5,6 @@
   "compatibility_date": "2026-02-01",
   "vars": {
     "ORIGIN": "https://empathetic-hope-production.up.railway.app",
-    "ALLOWED_ORIGIN": "https://open-regime.pages.dev"
+    "ALLOWED_ORIGIN": "https://open-regime.pages.dev,https://open-regime-admin.pages.dev"
   }
 }

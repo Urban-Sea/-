@@ -73,10 +73,21 @@ def _resolve_user_id(email: str) -> str:
         raise HTTPException(status_code=503, detail="Database not connected")
 
     # users テーブル検索
-    result = supabase.table("users").select("id").eq("email", email).limit(1).execute()
+    result = supabase.table("users").select("id, is_active").eq("email", email).limit(1).execute()
 
     if result.data:
         user_id = result.data[0]["id"]
+        # アカウント凍結チェック
+        if result.data[0].get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
+        # last_login_at を更新（キャッシュミス時 = セッション初回のみ）
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            supabase.table("users").update(
+                {"last_login_at": now_iso}
+            ).eq("id", user_id).execute()
+        except Exception:
+            pass  # ログイン時刻更新失敗は無視
     else:
         # 初回ログイン: ユーザー自動作成
         now_iso = datetime.now(timezone.utc).isoformat()

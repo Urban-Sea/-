@@ -23,15 +23,18 @@ function isPerUserEndpoint(pathname: string): boolean {
 }
 
 function buildAllowedOrigins(env: Env): string[] {
-  const allowed = env.ALLOWED_ORIGIN ? [env.ALLOWED_ORIGIN] : [];
-  if (env.ALLOWED_ORIGIN?.startsWith('http://localhost')) {
-    allowed.push('http://localhost:3000', 'http://localhost:3001');
+  // カンマ区切りで複数 Origin 対応 (後方互換: 単一値でも動作)
+  const raw = env.ALLOWED_ORIGIN || '';
+  const allowed = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (allowed.some(o => o.startsWith('http://localhost'))) {
+    if (!allowed.includes('http://localhost:3000')) allowed.push('http://localhost:3000');
+    if (!allowed.includes('http://localhost:3001')) allowed.push('http://localhost:3001');
   }
   return allowed;
 }
 
-function corsHeaders(origin: string, allowed: string[], env: Env): Record<string, string> {
-  const responseOrigin = allowed.includes(origin) ? origin : (env.ALLOWED_ORIGIN || '');
+function corsHeaders(origin: string, allowed: string[]): Record<string, string> {
+  const responseOrigin = allowed.includes(origin) ? origin : (allowed[0] || '');
   return {
     'Access-Control-Allow-Origin': responseOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -46,7 +49,7 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || '';
     const allowed = buildAllowedOrigins(env);
-    const cors = corsHeaders(origin, allowed, env);
+    const cors = corsHeaders(origin, allowed);
 
     // CORS preflight
     if (request.method === 'OPTIONS') {

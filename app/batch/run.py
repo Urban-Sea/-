@@ -45,6 +45,48 @@ from app.batch.config import (
     DAILY_FRED_LOOKBACK_DAYS,
     get_supabase,
 )
+
+# ===== Batch Log Helper =====
+
+def _log_start(job_type: str) -> int | None:
+    """バッチログ開始を記録し、log_id を返す"""
+    try:
+        sb = get_supabase()
+        result = sb.table("batch_logs").insert({
+            "job_type": job_type,
+            "status": "running",
+            "started_at": datetime.now().isoformat(),
+        }).execute()
+        return result.data[0]["id"] if result.data else None
+    except Exception as e:
+        logger.debug(f"batch_logs insert skipped: {e}")
+        return None
+
+
+def _log_finish(log_id: int | None, status: str = "success",
+                records: int = 0, error_msg: str = None, details: dict = None):
+    """バッチログ完了を記録"""
+    if log_id is None:
+        return
+    try:
+        sb = get_supabase()
+        now = datetime.now()
+        # started_at を取得して duration 計算
+        old = sb.table("batch_logs").select("started_at").eq("id", log_id).limit(1).execute()
+        duration = None
+        if old.data:
+            started = datetime.fromisoformat(old.data[0]["started_at"].replace("Z", "+00:00").replace("+00:00", ""))
+            duration = round((now - started).total_seconds(), 1)
+        sb.table("batch_logs").update({
+            "status": status,
+            "finished_at": now.isoformat(),
+            "duration_seconds": duration,
+            "records_processed": records,
+            "error_message": error_msg,
+            "details": details,
+        }).eq("id", log_id).execute()
+    except Exception as e:
+        logger.debug(f"batch_logs update skipped: {e}")
 from app.batch.db import (
     upsert_credit_spreads,
     upsert_fed_balance_sheet,
@@ -270,39 +312,59 @@ def main():
     any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.precompute or args.daily or args.weekly or args.snapshot or getattr(args, 'backfill_snapshots', False)
     t0 = time.time()
 
-    logger.info(f"=== Batch run: {start} → {end} ===")
+    # ジョブ種別を決定
+    if args.daily:
+        job_type = "daily"
+    elif args.weekly:
+        job_type = "weekly"
+    elif args.fred:
+        job_type = "fred"
+    elif args.yahoo:
+        job_type = "yahoo"
+    elif args.srf:
+        job_type = "srf"
+    elif args.employment:
+        job_type = "employment"
+    elif args.calc:
+        job_type = "calc"
+    elif args.precompute:
+        job_type = "precompute"
+    elif args.snapshot:
+        job_type = "snapshot"
+    elif getattr(args, 'backfill_snapshots', False):
+        job_type = "backfill_snapshots"
+    elif args.full:
+        job_type = "full"
+    else:
+        job_type = "full"
+
+    log_id = _log_start(job_type)
+    logger.info(f"=== Batch run: {start} → {end} ({job_type}) ===")
 
     try:
         if args.snapshot:
-            # スナップショットのみ
             take_daily_snapshot(snapshot_date=end)
 
         elif getattr(args, 'backfill_snapshots', False):
-            # バックフィル
             from app.batch.backfill_snapshots import backfill_snapshots
             since = args.since or (datetime.now() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
             backfill_snapshots(since=since)
 
         elif args.precompute:
-            # 事前計算のみ
             precompute_all()
             _warmup_cache()
 
         elif args.daily:
-            # daily は内部で FRED(3年) / Yahoo(14日) を分けて処理
             _run_daily(end)
-            # データ更新後に事前計算を自動実行
             precompute_all()
             _warmup_cache()
 
         elif args.weekly:
             _run_weekly(start, end)
-            # データ更新後に事前計算を自動実行
             precompute_all()
             _warmup_cache()
 
         else:
-            # 個別指定 or 全実行
             if args.fred or not any_specific:
                 _run_fred(start, end)
 
@@ -318,16 +380,19 @@ def main():
             if args.calc or args.full or not any_specific:
                 _run_calc()
 
-            # 全実行時も事前計算
             if not any_specific or args.full:
                 precompute_all()
                 _warmup_cache()
 
         elapsed = time.time() - t0
         logger.info(f"=== Done in {elapsed:.1f}s ===")
+        _log_finish(log_id, status="success")
 
     except Exception:
         logger.exception("Batch run failed")
+        elapsed = time.time() - t0
+        import traceback
+        _log_finish(log_id, status="error", error_msg=traceback.format_exc()[:1000])
         sys.exit(1)
 
 
