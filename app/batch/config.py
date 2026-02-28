@@ -17,7 +17,7 @@ from supabase import create_client, Client
 logger = logging.getLogger("batch")
 
 # ===== .env 読み込み =====
-# プロジェクトルート（株式AI/）の .env を自動で読む
+# プロジェクトルート（open-regime/）の .env を自動で読む
 _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(_env_path)
 

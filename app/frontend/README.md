@@ -1,4 +1,4 @@
-# 株式AI フロントエンド
+# Open Regime フロントエンド
 
 Next.js 15 + TypeScript + Tailwind CSS で構築されたトレーディングダッシュボード。
 
@@ -60,7 +60,7 @@ wrangler login
 # デプロイ
 cd app/frontend
 npm run build
-wrangler pages deploy out --project-name=kabu-ai
+wrangler pages deploy out --project-name=open-regime
 ```
 
 ## 環境変数

@@ -17,13 +17,13 @@ Usage:
 
 スケジューリング例 (crontab -e):
   # 日次: 毎日 7:00 JST（米市場終了後）
-  0 7 * * * cd /path/to/株式AI && python app/batch/run.py --daily >> logs/batch_daily.log 2>&1
+  0 7 * * * cd /path/to/open-regime && python app/batch/run.py --daily >> logs/batch_daily.log 2>&1
 
   # 週次: 毎週土曜 8:00 JST（週次FRED更新後）
-  0 8 * * 6 cd /path/to/株式AI && python app/batch/run.py --weekly >> logs/batch_weekly.log 2>&1
+  0 8 * * 6 cd /path/to/open-regime && python app/batch/run.py --weekly >> logs/batch_weekly.log 2>&1
 
   # 月次: 毎月1日 9:00 JST（全データ3年分 + 修正検知 + Layer再計算）
-  0 9 1 * * cd /path/to/株式AI && python app/batch/run.py >> logs/batch_monthly.log 2>&1
+  0 9 1 * * cd /path/to/open-regime && python app/batch/run.py >> logs/batch_monthly.log 2>&1
 """
 
 import argparse

@@ -1,5 +1,5 @@
 """
-株式AI バックエンド API
+Open Regime バックエンド API
 FastAPI + Supabase
 """
 import os
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="株式AI API",
+    title="Open Regime API",
     description="V10シグナル計算・Market Regime判定・流動性データAPI",
     version="1.0.0",
     lifespan=lifespan,
@@ -142,7 +142,7 @@ async def root():
     """ヘルスチェック"""
     return {
         "status": "ok",
-        "message": "株式AI API",
+        "message": "Open Regime API",
         "version": "1.0.0",
     }
 

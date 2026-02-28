@@ -21,6 +21,7 @@ import {
   BarChart3, CheckCircle2, XCircle, AlertCircle,
   Plus, Power,
 } from 'lucide-react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 // ============================================================
@@ -102,13 +103,16 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 space-y-6">
+    <div className="w-full px-6 space-y-4">
       {/* Header */}
       <div className="plumb-animate-in">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-6 rounded-full bg-gradient-to-b from-red-500 to-orange-500" />
-            <h1 className="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <Image src="/icon.png" alt="" width={32} height={32} className="rounded-lg" />
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">Open Regime</h1>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-500">Admin</span>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground font-mono">{me.email}</span>
@@ -207,28 +211,28 @@ function UsersTab() {
   }, {} as Record<string, number>);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <GlassCard stagger={1}>
-          <div className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">総ユーザー</span>
+          <div className="px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Users className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">総ユーザー</span>
             </div>
-            <p className="text-2xl font-bold font-mono tabular-nums">{data?.total || 0}</p>
+            <p className="text-xl font-bold font-mono tabular-nums">{data?.total || 0}</p>
           </div>
         </GlassCard>
         {(['pro', 'pro_trial', 'free'] as const).map((plan, i) => (
           <GlassCard key={plan} stagger={i + 2}>
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Crown className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="px-3 py-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Crown className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   {PLAN_LABELS[plan].label}
                 </span>
               </div>
-              <p className="text-2xl font-bold font-mono tabular-nums">{planCounts[plan] || 0}</p>
+              <p className="text-xl font-bold font-mono tabular-nums">{planCounts[plan] || 0}</p>
             </div>
           </GlassCard>
         ))}
@@ -236,8 +240,8 @@ function UsersTab() {
 
       {/* Search & Filter */}
       <GlassCard stagger={5}>
-        <div className="p-5">
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="px-4 py-3">
+          <div className="flex flex-col sm:flex-row gap-2 mb-3">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
@@ -245,13 +249,13 @@ function UsersTab() {
                 placeholder="メール・表示名で検索..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full pl-8 pr-3 py-1 text-xs rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
             <select
               value={planFilter}
               onChange={e => setPlanFilter(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded border border-border bg-background cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+              className="text-xs px-2 py-1 rounded border border-border bg-background cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="all">全プラン</option>
               {PLANS.map(p => (
@@ -260,7 +264,7 @@ function UsersTab() {
             </select>
           </div>
 
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               ユーザー管理
             </h2>
@@ -287,31 +291,29 @@ function UsersTab() {
                 <tbody>
                   {filteredUsers.map(user => (
                     <tr key={user.id} className="border-b border-border/50 last:border-0">
-                      <td className="py-3 pr-4 text-xs font-mono truncate max-w-[200px]">
+                      <td className="py-1.5 pr-4 text-xs font-mono truncate max-w-[200px]">
                         {user.email}
                       </td>
-                      <td className="py-3 pr-4 text-xs text-muted-foreground">
+                      <td className="py-1.5 pr-4 text-xs text-muted-foreground">
                         {user.display_name || '-'}
                       </td>
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={user.plan}
-                            onChange={e => handlePlanChange(user.id, e.target.value)}
-                            disabled={updatingId === user.id}
-                            className={cn(
-                              'text-xs font-medium px-2 py-1 rounded border border-border bg-background cursor-pointer',
-                              'focus:outline-none focus:ring-1 focus:ring-ring',
-                              updatingId === user.id && 'opacity-50',
-                            )}
-                          >
-                            {PLANS.map(p => (
-                              <option key={p} value={p}>{PLAN_LABELS[p].label}</option>
-                            ))}
-                          </select>
-                        </div>
+                      <td className="py-1.5 pr-4">
+                        <select
+                          value={user.plan}
+                          onChange={e => handlePlanChange(user.id, e.target.value)}
+                          disabled={updatingId === user.id}
+                          className={cn(
+                            'text-xs font-medium px-1.5 py-0.5 rounded border border-border bg-background cursor-pointer',
+                            'focus:outline-none focus:ring-1 focus:ring-ring',
+                            updatingId === user.id && 'opacity-50',
+                          )}
+                        >
+                          {PLANS.map(p => (
+                            <option key={p} value={p}>{PLAN_LABELS[p].label}</option>
+                          ))}
+                        </select>
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-1.5 pr-4">
                         <button
                           onClick={() => handleToggleActive(user.id, user.is_active !== false)}
                           disabled={updatingId === user.id}
@@ -331,10 +333,10 @@ function UsersTab() {
                           {user.is_active !== false ? 'Active' : 'Frozen'}
                         </button>
                       </td>
-                      <td className="py-3 pr-4 text-xs text-muted-foreground font-mono">
+                      <td className="py-1.5 pr-4 text-xs text-muted-foreground font-mono">
                         {formatDate(user.created_at)}
                       </td>
-                      <td className="py-3 text-xs text-muted-foreground font-mono">
+                      <td className="py-1.5 text-xs text-muted-foreground font-mono">
                         {formatDateTime(user.last_login_at)}
                       </td>
                     </tr>
@@ -378,20 +380,20 @@ function StatsTab() {
   const maxCount = Math.max(...signups.map(d => d.count), 1);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {kpis.map((kpi, i) => {
           const Icon = kpi.icon;
           return (
             <GlassCard key={kpi.label} stagger={i + 1}>
-              <div className="p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <div className="px-3 py-2">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     {kpi.label}
                   </span>
                 </div>
-                <p className="text-2xl font-bold font-mono tabular-nums">{kpi.value}</p>
+                <p className="text-xl font-bold font-mono tabular-nums">{kpi.value}</p>
               </div>
             </GlassCard>
           );
@@ -400,8 +402,8 @@ function StatsTab() {
 
       {signups.length > 0 && (
         <GlassCard stagger={5}>
-          <div className="p-5">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">
+          <div className="px-4 py-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
               日別新規登録 (過去30日)
             </h2>
             <div className="flex items-end gap-1 h-32">
@@ -440,8 +442,8 @@ function AuditLogTab() {
 
   return (
     <GlassCard stagger={1}>
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             管理者操作ログ
           </h2>
@@ -451,43 +453,43 @@ function AuditLogTab() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : !data?.logs.length ? (
-          <p className="text-sm text-muted-foreground text-center py-8">ログがありません</p>
+          <p className="text-sm text-muted-foreground text-center py-6">ログがありません</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">日時</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">管理者</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">アクション</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">対象</th>
-                  <th className="pb-2 text-xs font-medium text-muted-foreground">変更内容</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">日時</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">管理者</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">アクション</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">対象</th>
+                  <th className="pb-1.5 text-xs font-medium text-muted-foreground">変更内容</th>
                 </tr>
               </thead>
               <tbody>
                 {data.logs.map(log => (
                   <tr key={log.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-2.5 pr-4 text-xs text-muted-foreground font-mono whitespace-nowrap">
+                    <td className="py-1.5 pr-4 text-xs text-muted-foreground font-mono whitespace-nowrap">
                       {formatDateTime(log.created_at)}
                     </td>
-                    <td className="py-2.5 pr-4 text-xs font-mono truncate max-w-[160px]">
+                    <td className="py-1.5 pr-4 text-xs font-mono truncate max-w-[160px]">
                       {log.admin_email}
                     </td>
-                    <td className="py-2.5 pr-4">
+                    <td className="py-1.5 pr-4">
                       <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500 font-medium">
                         {log.action}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-4 text-xs text-muted-foreground font-mono">
+                    <td className="py-1.5 pr-4 text-xs text-muted-foreground font-mono">
                       {log.target_type && (
                         <span>{log.target_type}/{log.target_id?.slice(0, 8)}</span>
                       )}
                     </td>
-                    <td className="py-2.5 text-xs text-muted-foreground">
+                    <td className="py-1.5 text-xs text-muted-foreground">
                       {log.old_value && log.new_value && (
                         <span className="font-mono">
                           {Object.entries(log.new_value).map(([k, v]) => (
@@ -524,8 +526,8 @@ function BatchLogTab() {
 
   return (
     <GlassCard stagger={1}>
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             バッチ実行ログ
           </h2>
@@ -535,22 +537,22 @@ function BatchLogTab() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : !data?.logs.length ? (
-          <p className="text-sm text-muted-foreground text-center py-8">ログがありません</p>
+          <p className="text-sm text-muted-foreground text-center py-6">ログがありません</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">種別</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">ステータス</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">開始</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">所要時間</th>
-                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">件数</th>
-                  <th className="pb-2 text-xs font-medium text-muted-foreground">エラー</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">種別</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">ステータス</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">開始</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">所要時間</th>
+                  <th className="pb-1.5 pr-4 text-xs font-medium text-muted-foreground">件数</th>
+                  <th className="pb-1.5 text-xs font-medium text-muted-foreground">エラー</th>
                 </tr>
               </thead>
               <tbody>
@@ -562,27 +564,27 @@ function BatchLogTab() {
                   const StatusIcon = style.icon;
                   return (
                     <tr key={log.id} className="border-b border-border/50 last:border-0">
-                      <td className="py-2.5 pr-4">
-                        <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-muted">
+                      <td className="py-1.5 pr-4">
+                        <span className="text-xs font-mono font-medium px-1.5 py-0.5 rounded bg-muted">
                           {log.job_type}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-4">
+                      <td className="py-1.5 pr-4">
                         <span className={cn('flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full w-fit', style.color)}>
                           <StatusIcon className={cn('w-3 h-3', log.status === 'running' && 'animate-spin')} />
                           {log.status}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-4 text-xs text-muted-foreground font-mono whitespace-nowrap">
+                      <td className="py-1.5 pr-4 text-xs text-muted-foreground font-mono whitespace-nowrap">
                         {formatDateTime(log.started_at)}
                       </td>
-                      <td className="py-2.5 pr-4 text-xs font-mono tabular-nums">
+                      <td className="py-1.5 pr-4 text-xs font-mono tabular-nums">
                         {log.duration_seconds != null ? `${log.duration_seconds}s` : '-'}
                       </td>
-                      <td className="py-2.5 pr-4 text-xs font-mono tabular-nums">
+                      <td className="py-1.5 pr-4 text-xs font-mono tabular-nums">
                         {log.records_processed}
                       </td>
-                      <td className="py-2.5 text-xs text-red-400 truncate max-w-[200px]">
+                      <td className="py-1.5 text-xs text-red-400 truncate max-w-[200px]">
                         {log.error_message || '-'}
                       </td>
                     </tr>
@@ -635,8 +637,8 @@ function FeatureFlagsTab() {
 
   return (
     <GlassCard stagger={1}>
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             機能フラグ
           </h2>
@@ -653,7 +655,7 @@ function FeatureFlagsTab() {
 
         {/* Create Form */}
         {showCreate && (
-          <div className="mb-4 p-3 rounded border border-border bg-muted/30 space-y-2">
+          <div className="mb-3 p-3 rounded border border-border bg-muted/30 space-y-2">
             <input
               type="text"
               placeholder="flag_key (例: enable_new_chart)"
@@ -687,11 +689,11 @@ function FeatureFlagsTab() {
         ) : !data?.flags.length ? (
           <p className="text-sm text-muted-foreground text-center py-8">フラグがありません</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {data.flags.map(flag => (
               <div
                 key={flag.id}
-                className="flex items-center justify-between p-3 rounded border border-border/50 hover:bg-muted/30 transition-colors"
+                className="flex items-center justify-between px-3 py-2 rounded border border-border/50 hover:bg-muted/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
