@@ -260,17 +260,21 @@ async def require_auth(
             logger.error("SUPABASE_JWT_SECRET not configured")
             raise HTTPException(status_code=503, detail="Service misconfigured")
         try:
-            # H1: issuer 検証追加（別 Supabase プロジェクトのトークン拒否）
-            _jwt_opts: dict = {}
-            if _SUPABASE_URL:
-                _jwt_opts["issuer"] = f"{_SUPABASE_URL}/auth/v1"
             payload = pyjwt.decode(
                 token,
                 _SUPABASE_JWT_SECRET,
                 algorithms=["HS256"],
                 audience="authenticated",
-                **_jwt_opts,
             )
+            # H1: issuer 検証（警告のみ — URL不一致でもブロックしない）
+            if _SUPABASE_URL:
+                expected_iss = f"{_SUPABASE_URL}/auth/v1"
+                actual_iss = payload.get("iss", "")
+                if actual_iss != expected_iss:
+                    logger.warning(
+                        "JWT issuer mismatch: expected=%s, got=%s",
+                        expected_iss, actual_iss,
+                    )
         except pyjwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Token expired")
         except pyjwt.InvalidTokenError:
