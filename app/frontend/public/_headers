@@ -1,7 +1,0 @@
-# RSC flight data files - prevent CDN caching
-# These are used by Next.js client router for soft navigation
-# CDN caching can cause .txt to be served instead of .html after CF Access auth redirect
-/*.txt
-  Cache-Control: no-store
-  Content-Type: text/x-component; charset=utf-8
-  X-Content-Type-Options: nosniff
