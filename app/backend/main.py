@@ -13,7 +13,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist, users, admin
+from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist, users, admin, admin_mfa
 
 _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
@@ -116,7 +116,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-User-Email"],
+    allow_headers=["Content-Type", "Authorization", "X-User-Email", "X-MFA-Token"],
 )
 
 
@@ -135,6 +135,7 @@ app.include_router(fx.router, prefix="/api/fx", tags=["fx"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 app.include_router(users.router, prefix="/api/me", tags=["user"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_mfa.router, prefix="/api/admin/mfa", tags=["admin-mfa"])
 
 
 @app.get("/")

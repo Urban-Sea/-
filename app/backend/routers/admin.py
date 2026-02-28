@@ -2,11 +2,12 @@
 /api/admin — 管理者用エンドポイント
 管理者メールリスト (ADMIN_EMAILS 環境変数) で認可制御。
 """
+import hashlib
 import json
 import os
 import logging
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
 
 import main
 from auth import require_auth
@@ -53,6 +54,53 @@ async def require_admin(user_id: str = Depends(require_auth)) -> str:
     return user_id
 
 
+async def require_admin_mfa(
+    admin_id: str = Depends(require_admin),
+    x_mfa_token: str | None = Header(None),
+) -> str:
+    """
+    管理者認証 + MFA セッション検証。
+    MFA が有効な管理者は有効なセッショントークンが必須。
+    MFA 未設定の場合はそのまま通過（段階的導入のため）。
+    """
+    supabase = main.get_supabase()
+
+    # MFA 設定状態チェック
+    mfa_result = (
+        supabase.table("admin_mfa")
+        .select("enabled")
+        .eq("user_id", admin_id)
+        .limit(1)
+        .execute()
+    )
+
+    # MFA 未設定 or 無効 → そのまま通過
+    if not mfa_result.data or not mfa_result.data[0]["enabled"]:
+        return admin_id
+
+    # MFA 有効 → トークン検証必須
+    if not x_mfa_token:
+        raise HTTPException(status_code=403, detail="MFA verification required")
+
+    token_hash = hashlib.sha256(x_mfa_token.encode()).hexdigest()
+    now = datetime.now(timezone.utc).isoformat()
+
+    session = (
+        supabase.table("admin_mfa_sessions")
+        .select("id")
+        .eq("user_id", admin_id)
+        .eq("token_hash", token_hash)
+        .gte("expires_at", now)
+        .limit(1)
+        .execute()
+    )
+
+    if not session.data:
+        raise HTTPException(status_code=403, detail="MFA session expired or invalid")
+
+    return admin_id
+
+
 def _audit_log(supabase, admin_user_id: str, action: str,
                target_type: str = None, target_id: str = None,
                old_value: dict = None, new_value: dict = None):
@@ -75,7 +123,7 @@ def _audit_log(supabase, admin_user_id: str, action: str,
 # ============================================================
 
 @router.get("/users")
-async def list_users(_: str = Depends(require_admin)):
+async def list_users(_: str = Depends(require_admin_mfa)):
     """全ユーザー一覧を返す"""
     supabase = main.get_supabase()
     if not supabase:
@@ -94,7 +142,7 @@ async def list_users(_: str = Depends(require_admin)):
 async def update_user(
     target_user_id: str,
     request: Request,
-    admin_id: str = Depends(require_admin),
+    admin_id: str = Depends(require_admin_mfa),
 ):
     """ユーザーのプラン・表示名・有効状態を更新"""
     supabase = main.get_supabase()
@@ -145,7 +193,7 @@ async def update_user(
 # ============================================================
 
 @router.get("/stats")
-async def get_stats(_: str = Depends(require_admin)):
+async def get_stats(_: str = Depends(require_admin_mfa)):
     """ユーザー統計を返す"""
     supabase = main.get_supabase()
     if not supabase:
@@ -215,7 +263,7 @@ async def get_stats(_: str = Depends(require_admin)):
 @router.get("/audit-logs")
 async def list_audit_logs(
     limit: int = Query(50, ge=1, le=200),
-    _: str = Depends(require_admin),
+    _: str = Depends(require_admin_mfa),
 ):
     """監査ログ一覧"""
     supabase = main.get_supabase()
@@ -259,7 +307,7 @@ async def list_audit_logs(
 @router.get("/batch-logs")
 async def list_batch_logs(
     limit: int = Query(50, ge=1, le=200),
-    _: str = Depends(require_admin),
+    _: str = Depends(require_admin_mfa),
 ):
     """バッチ実行ログ一覧"""
     supabase = main.get_supabase()
@@ -281,7 +329,7 @@ async def list_batch_logs(
 # ============================================================
 
 @router.get("/feature-flags")
-async def list_feature_flags(_: str = Depends(require_admin)):
+async def list_feature_flags(_: str = Depends(require_admin_mfa)):
     """機能フラグ一覧"""
     supabase = main.get_supabase()
     if not supabase:
@@ -299,7 +347,7 @@ async def list_feature_flags(_: str = Depends(require_admin)):
 @router.post("/feature-flags")
 async def create_feature_flag(
     request: Request,
-    admin_id: str = Depends(require_admin),
+    admin_id: str = Depends(require_admin_mfa),
 ):
     """機能フラグ作成"""
     supabase = main.get_supabase()
@@ -335,7 +383,7 @@ async def create_feature_flag(
 async def update_feature_flag(
     flag_id: int,
     request: Request,
-    admin_id: str = Depends(require_admin),
+    admin_id: str = Depends(require_admin_mfa),
 ):
     """機能フラグの ON/OFF 切替"""
     supabase = main.get_supabase()

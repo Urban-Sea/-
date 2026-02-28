@@ -1,16 +1,19 @@
 import useSWR from 'swr';
 import { getAuthEmail } from './auth-store';
+import { getMfaToken } from './mfa-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
   const email = getAuthEmail();
+  const mfaToken = getMfaToken();
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(email ? { 'X-User-Email': email } : {}),
+      ...(mfaToken ? { 'X-MFA-Token': mfaToken } : {}),
       ...options?.headers,
     },
   });
@@ -89,6 +92,59 @@ export interface FeatureFlag {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================
+// MFA Types & Functions
+// ============================================================
+
+export interface MfaStatus {
+  mfa_enabled: boolean;
+  mfa_setup: boolean;
+}
+
+export interface MfaSetupResponse {
+  secret: string;
+  qr_code: string;
+  provisioning_uri: string;
+}
+
+export interface MfaVerifyResponse {
+  status: string;
+  token: string;
+  expires_at: string;
+}
+
+export interface MfaSessionResponse {
+  valid: boolean;
+  reason?: string;
+  expires_at?: string;
+}
+
+export async function fetchMfaStatus(): Promise<MfaStatus> {
+  return fetchAPI('/api/admin/mfa/status');
+}
+
+export async function startMfaSetup(): Promise<MfaSetupResponse> {
+  return fetchAPI('/api/admin/mfa/setup', { method: 'POST' });
+}
+
+export async function verifyMfaSetup(code: string): Promise<MfaVerifyResponse> {
+  return fetchAPI('/api/admin/mfa/setup/verify', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function verifyMfaCode(code: string): Promise<MfaVerifyResponse> {
+  return fetchAPI('/api/admin/mfa/verify', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function checkMfaSession(): Promise<MfaSessionResponse> {
+  return fetchAPI('/api/admin/mfa/session');
 }
 
 // ============================================================

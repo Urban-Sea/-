@@ -38,7 +38,7 @@ function corsHeaders(origin: string, allowed: string[]): Record<string, string> 
   return {
     'Access-Control-Allow-Origin': responseOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email, X-MFA-Token',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
@@ -115,9 +115,13 @@ export default {
     proxyHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
     proxyHeaders.set('Accept', request.headers.get('Accept') || 'application/json');
 
-    // 信頼された Origin からのみ X-User-Email を転送（なりすまし防止）
+    // 信頼された Origin からのみ X-User-Email / X-MFA-Token を転送（なりすまし防止）
     if (isTrustedOrigin && rawEmail) {
       proxyHeaders.set('X-User-Email', rawEmail);
+    }
+    const mfaToken = request.headers.get('X-MFA-Token');
+    if (isTrustedOrigin && mfaToken) {
+      proxyHeaders.set('X-MFA-Token', mfaToken);
     }
 
     // Attach shared secret to prove request came from this Worker

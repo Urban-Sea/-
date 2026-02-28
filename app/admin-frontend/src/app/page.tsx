@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { MfaGate } from '@/components/mfa/MfaGate';
 
 // ============================================================
 // Constants
@@ -103,59 +104,61 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="w-full px-6 space-y-4">
-      {/* Header */}
-      <div className="plumb-animate-in">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Image src="/icon.png" alt="" width={28} height={28} className="rounded-md" />
-            <h1 className="text-2xl font-bold tracking-tight">Open Regime Admin</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground font-mono">{me.email}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <a href="/cdn-cgi/access/logout">ログアウト</a>
-            </Button>
+    <MfaGate>
+      <div className="w-full px-6 space-y-4">
+        {/* Header */}
+        <div className="plumb-animate-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Image src="/icon.png" alt="" width={28} height={28} className="rounded-md" />
+              <h1 className="text-2xl font-bold tracking-tight">Open Regime Admin</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground font-mono">{me.email}</span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <a href="/cdn-cgi/access/logout">ログアウト</a>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-border pb-px overflow-x-auto">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-colors whitespace-nowrap',
-                activeTab === tab.key
-                  ? 'bg-muted text-foreground border-b-2 border-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-              )}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+        {/* Tab Navigation */}
+        <div className="flex gap-1 border-b border-border pb-px overflow-x-auto">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-colors whitespace-nowrap',
+                  activeTab === tab.key
+                    ? 'bg-muted text-foreground border-b-2 border-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                )}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Tab Content */}
-      {activeTab === 'users' && <UsersTab />}
-      {activeTab === 'stats' && <StatsTab />}
-      {activeTab === 'audit' && <AuditLogTab />}
-      {activeTab === 'batch' && <BatchLogTab />}
-      {activeTab === 'flags' && <FeatureFlagsTab />}
-    </div>
+        {/* Tab Content */}
+        {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'stats' && <StatsTab />}
+        {activeTab === 'audit' && <AuditLogTab />}
+        {activeTab === 'batch' && <BatchLogTab />}
+        {activeTab === 'flags' && <FeatureFlagsTab />}
+      </div>
+    </MfaGate>
   );
 }
 
