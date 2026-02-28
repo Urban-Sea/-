@@ -28,9 +28,11 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
         },
       });
     }
-    // リフレッシュ失敗 or 再試行でも 401 → ログインページへ
+    // リフレッシュ失敗 or 再試行でも 401 → サインアウトしてログインページへ
     if (response.status === 401) {
       if (typeof window !== 'undefined') {
+        await supabase.auth.signOut();
+        setAccessToken(null);
         window.location.href = '/login/';
       }
       throw new Error('Session expired');

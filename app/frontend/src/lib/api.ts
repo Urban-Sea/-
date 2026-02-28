@@ -69,6 +69,8 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     }
     if (response.status === 401) {
       if (typeof window !== 'undefined') {
+        await supabase.auth.signOut();
+        setAccessToken(null);
         window.location.href = '/login/';
       }
       throw new Error('Session expired');

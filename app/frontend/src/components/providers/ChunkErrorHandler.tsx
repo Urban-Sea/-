@@ -3,14 +3,16 @@
 import { useEffect } from 'react';
 
 /**
- * B2: Cloudflare Pages デプロイ時の JS チャンク 404 エラーを検知して自動リロード。
+ * B2: Cloudflare Pages デプロイ時の JS チャンク 404 エラーを検知して自動遷移。
  * デプロイで古い JS チャンクが削除されると ChunkLoadError が発生する。
+ * 直前にクリックされたリンク先を記録し、チャンクエラー時はそのURLへフルページ遷移する。
  * sessionStorage で10秒以内の連続リロードを防止。
  */
 export function ChunkErrorHandler() {
   useEffect(() => {
     const RELOAD_KEY = '__chunk_error_reload';
     const COOLDOWN_MS = 10_000;
+    let lastClickedHref: string | null = null;
 
     function isChunkError(message: string): boolean {
       return (
@@ -21,13 +23,28 @@ export function ChunkErrorHandler() {
       );
     }
 
+    // リンククリックを追跡（チャンクエラー時の遷移先として使用）
+    function onLinkClick(event: MouseEvent) {
+      const anchor = (event.target as Element)?.closest('a');
+      if (anchor?.href && anchor.href.startsWith(window.location.origin)) {
+        lastClickedHref = anchor.href;
+        setTimeout(() => { lastClickedHref = null; }, 5000);
+      }
+    }
+
     function tryReload() {
       const last = sessionStorage.getItem(RELOAD_KEY);
       if (last && Date.now() - Number(last) < COOLDOWN_MS) {
         return; // クールダウン中 — 無限リロード防止
       }
       sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
-      window.location.reload();
+
+      // クリック先がわかっていればそこへフルページ遷移、なければリロード
+      if (lastClickedHref && lastClickedHref !== window.location.href) {
+        window.location.href = lastClickedHref;
+      } else {
+        window.location.reload();
+      }
     }
 
     function onError(event: ErrorEvent) {
@@ -45,10 +62,12 @@ export function ChunkErrorHandler() {
       }
     }
 
+    document.addEventListener('click', onLinkClick, true);
     window.addEventListener('error', onError);
     window.addEventListener('unhandledrejection', onUnhandledRejection);
 
     return () => {
+      document.removeEventListener('click', onLinkClick, true);
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
     };
