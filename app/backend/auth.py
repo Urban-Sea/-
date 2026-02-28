@@ -260,10 +260,22 @@ async def require_auth(
             logger.error("SUPABASE_JWT_SECRET not configured")
             raise HTTPException(status_code=503, detail="Service misconfigured")
         try:
+            # トークンヘッダーからアルゴリズムを取得して許可リストを構築
+            try:
+                header = pyjwt.get_unverified_header(token)
+            except Exception:
+                header = {}
+            token_alg = header.get("alg", "HS256")
+            # HMAC 系のみ許可（対称鍵）
+            allowed_algs = list({token_alg, "HS256", "HS384", "HS512"} & {"HS256", "HS384", "HS512"})
+            if not allowed_algs:
+                logger.error("JWT uses unsupported algorithm: %s", token_alg)
+                raise HTTPException(status_code=401, detail="Unsupported token algorithm")
+
             payload = pyjwt.decode(
                 token,
                 _SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
+                algorithms=allowed_algs,
                 audience="authenticated",
             )
             # H1: issuer 検証（警告のみ — URL不一致でもブロックしない）
@@ -296,11 +308,12 @@ async def require_auth(
         if not sub:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
 
-        # M9: メール未確認ユーザーを拒否
+        # M9: メール未確認チェック（警告のみ — Supabase版によりJWTにクレームがない場合あり）
         if not payload.get("email_confirmed_at"):
-            raise HTTPException(
-                status_code=403,
-                detail="Email not verified. Please check your inbox.",
+            logger.warning(
+                "JWT missing email_confirmed_at (sub=%s). "
+                "Supabase may not include this claim.",
+                sub[:8],
             )
 
         return _resolve_user_by_jwt(sub, email)

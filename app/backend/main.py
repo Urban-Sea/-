@@ -193,7 +193,12 @@ async def auth_check(
     result["jwt_secret_configured"] = True
     result["jwt_secret_prefix"] = _jwt_secret[:4] + "..."
 
-    # Step 1: デコード（署名検証なし）でペイロード確認
+    # Step 1: ヘッダー + ペイロード確認（署名検証なし）
+    try:
+        header = pyjwt.get_unverified_header(token)
+        result["header_alg"] = header.get("alg")
+    except Exception:
+        header = {}
     try:
         unverified = pyjwt.decode(token, options={"verify_signature": False})
         result["step"] = "unverified_decode_ok"
@@ -210,10 +215,13 @@ async def auth_check(
         result["error"] = f"Token malformed: {type(e).__name__}: {e}"
         return result
 
-    # Step 2: 署名検証
+    # Step 2: 署名検証（HMAC 系アルゴリズムを許可）
+    token_alg = header.get("alg", "HS256")
+    allowed_algs = list({"HS256", "HS384", "HS512"} & {token_alg, "HS256", "HS384", "HS512"})
+    result["allowed_algs"] = allowed_algs
     try:
         payload = pyjwt.decode(
-            token, _jwt_secret, algorithms=["HS256"], audience="authenticated",
+            token, _jwt_secret, algorithms=allowed_algs, audience="authenticated",
         )
         result["step"] = "verified_decode_ok"
         result["ok"] = True
