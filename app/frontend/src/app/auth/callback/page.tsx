@@ -22,7 +22,7 @@ function CallbackContent() {
         if (err) {
           setError(err.message);
         } else {
-          router.replace('/dashboard/');
+          router.replace('/');
         }
       });
       return;
@@ -32,7 +32,7 @@ function CallbackContent() {
     // listen for the auth state change that fires once the hash is processed.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        router.replace('/dashboard/');
+        router.replace('/');
       }
     });
 
@@ -40,7 +40,7 @@ function CallbackContent() {
     const timer = setTimeout(() => {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
-          router.replace('/dashboard/');
+          router.replace('/');
         } else if (!window.location.hash) {
           // No hash fragment and no code — nothing to process
           setError('認証に失敗しました。もう一度お試しください。');

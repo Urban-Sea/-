@@ -22,7 +22,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.replace('/dashboard/');
+      router.replace('/');
     }
   }, [authLoading, isAuthenticated, router]);
 
@@ -43,7 +43,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace('/dashboard/');
+    router.replace('/');
   };
 
   const handleGoogleLogin = async () => {

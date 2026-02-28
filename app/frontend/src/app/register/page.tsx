@@ -69,7 +69,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.replace('/dashboard/');
+      router.replace('/');
     }
   }, [authLoading, isAuthenticated, router]);
 
