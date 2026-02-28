@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { useUser } from '@/components/providers/UserProvider';
-import { useMe, updateMe } from '@/lib/api';
+import { useMe, updateMe, useAdminUsers, updateUserPlan } from '@/lib/api';
 import { GlassCard } from '@/components/shared/glass';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+
+const PLANS = ['free', 'pro_trial', 'pro', 'demo'] as const;
 
 const PLAN_LABELS: Record<string, { label: string; color: string }> = {
   free: { label: 'Free', color: 'bg-zinc-500/20 text-zinc-400' },
@@ -29,6 +31,18 @@ function formatDate(iso: string): string {
   }
 }
 
+function formatDateShort(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export default function AccountPage() {
   const { email } = useUser();
   const { data: me, mutate } = useMe();
@@ -37,6 +51,8 @@ export default function AccountPage() {
   const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const isAdmin = me?.is_admin === true;
 
   // me が読み込まれたら displayName を初期化
   useEffect(() => {
@@ -55,7 +71,7 @@ export default function AccountPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // エラー時はサイレント（将来 toast 追加可能）
+      // エラー時はサイレント
     } finally {
       setSaving(false);
     }
@@ -188,12 +204,105 @@ export default function AccountPage() {
         </div>
       </GlassCard>
 
+      {/* Admin Section — 管理者のみ表示 */}
+      {isAdmin && <AdminSection />}
+
       {/* Logout */}
-      <div className="pb-8 plumb-animate-in plumb-stagger-5">
+      <div className="pb-8 plumb-animate-in plumb-stagger-6">
         <Button variant="destructive" className="w-full" asChild>
           <a href="/cdn-cgi/access/logout">ログアウト</a>
         </Button>
       </div>
     </div>
+  );
+}
+
+/** 管理者専用: ユーザー管理セクション */
+function AdminSection() {
+  const { data, isLoading, mutate } = useAdminUsers();
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const handlePlanChange = async (userId: string, newPlan: string) => {
+    setUpdatingId(userId);
+    try {
+      await updateUserPlan(userId, { plan: newPlan });
+      await mutate();
+    } catch {
+      // silent
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  return (
+    <GlassCard stagger={5}>
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            ユーザー管理
+          </h2>
+          {data && (
+            <span className="text-xs text-muted-foreground">{data.total} 件</span>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">メール</th>
+                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">表示名</th>
+                  <th className="pb-2 pr-4 text-xs font-medium text-muted-foreground">プラン</th>
+                  <th className="pb-2 text-xs font-medium text-muted-foreground">登録日</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.users.map(user => (
+                  <tr key={user.id} className="border-b border-border/50 last:border-0">
+                    <td className="py-3 pr-4 text-xs font-mono truncate max-w-[200px]">
+                      {user.email}
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-muted-foreground">
+                      {user.display_name || '-'}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={user.plan}
+                          onChange={e => handlePlanChange(user.id, e.target.value)}
+                          disabled={updatingId === user.id}
+                          className={cn(
+                            'text-xs font-medium px-2 py-1 rounded border border-border bg-background cursor-pointer',
+                            'focus:outline-none focus:ring-1 focus:ring-ring',
+                            updatingId === user.id && 'opacity-50',
+                          )}
+                        >
+                          {PLANS.map(p => (
+                            <option key={p} value={p}>
+                              {PLAN_LABELS[p].label}
+                            </option>
+                          ))}
+                        </select>
+                        {updatingId === user.id && (
+                          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 text-xs text-muted-foreground">
+                      {formatDateShort(user.created_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </GlassCard>
   );
 }

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 import main
 from auth import require_auth
+from routers.admin import is_admin_email
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,9 @@ async def get_me(user_id: str = Depends(require_auth)):
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="User not found")
-    return result.data[0]
+    user = result.data[0]
+    user["is_admin"] = is_admin_email(user.get("email", ""))
+    return user
 
 
 @router.patch("")

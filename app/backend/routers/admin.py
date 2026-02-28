@@ -23,6 +23,11 @@ _ADMIN_EMAILS: set[str] = set(
 _VALID_PLANS = {"free", "pro_trial", "pro", "demo"}
 
 
+def is_admin_email(email: str) -> bool:
+    """メールアドレスが管理者かどうか判定"""
+    return email.strip().lower() in _ADMIN_EMAILS
+
+
 async def require_admin(user_id: str = Depends(require_auth)) -> str:
     """管理者権限を検証。users テーブルから email を取得し ADMIN_EMAILS と照合。"""
     supabase = main.get_supabase()
@@ -37,11 +42,11 @@ async def require_admin(user_id: str = Depends(require_auth)) -> str:
         .execute()
     )
     if not result.data:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=404, detail="Not Found")
 
     email = result.data[0]["email"].lower()
     if email not in _ADMIN_EMAILS:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=404, detail="Not Found")
 
     return user_id
 

@@ -502,6 +502,7 @@ export interface UserProfile {
   plan: string;
   auth_provider: string;
   created_at: string;
+  is_admin?: boolean;
 }
 
 export function useMe() {
