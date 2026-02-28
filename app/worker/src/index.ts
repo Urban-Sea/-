@@ -34,7 +34,7 @@ function corsHeaders(origin: string, allowed: string[], env: Env): Record<string
   const responseOrigin = allowed.includes(origin) ? origin : (env.ALLOWED_ORIGIN || '');
   return {
     'Access-Control-Allow-Origin': responseOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
