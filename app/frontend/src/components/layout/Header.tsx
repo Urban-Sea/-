@@ -8,6 +8,9 @@ import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { GlossaryButton } from '@/components/onboarding/GlossaryPanel';
 import { UserMenu } from './UserMenu';
+import { useUser } from '@/components/providers/UserProvider';
+import { Button } from '@/components/ui/button';
+import { LogIn } from 'lucide-react';
 import {
   Sheet,
   SheetClose,
@@ -38,6 +41,10 @@ const navItems: { href: string; label: string; icon: LucideIcon }[] = [
 export function Header() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { isAuthenticated } = useUser();
+
+  // 未認証ユーザーにはホームのみ表示
+  const visibleNav = isAuthenticated ? navItems : [navItems[0]];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
@@ -49,7 +56,7 @@ export function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden lg:flex items-center space-x-1 flex-1 justify-center">
-          {navItems.map((item) => (
+          {visibleNav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -71,7 +78,16 @@ export function Header() {
         <div className="flex items-center gap-1 shrink-0">
           <GlossaryButton />
           <ThemeToggle />
-          <UserMenu />
+          {isAuthenticated ? (
+            <UserMenu />
+          ) : (
+            <Button variant="ghost" size="sm" asChild className="text-blue-500 hover:text-blue-400">
+              <Link href="/login/">
+                <LogIn className="w-4 h-4 mr-1.5" />
+                ログイン
+              </Link>
+            </Button>
+          )}
 
           {/* Mobile hamburger */}
           <Sheet open={open} onOpenChange={setOpen}>
@@ -100,7 +116,7 @@ export function Header() {
 
               {/* Nav links */}
               <nav className="flex flex-col gap-1 px-3 py-4">
-                {navItems.map((item) => {
+                {visibleNav.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.href;
                   return (

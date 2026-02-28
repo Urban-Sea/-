@@ -1,17 +1,17 @@
 'use client';
 
 import { SWRConfig } from 'swr';
-import { getAuthEmail } from './auth-store';
+import { getAccessToken } from './auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
 async function swrFetcher<T>(endpoint: string): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const email = getAuthEmail();
+  const token = getAccessToken();
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'X-User-Email': email } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
 

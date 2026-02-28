@@ -1,15 +1,15 @@
 /**
- * Module-level store for the authenticated user's email.
- * Set by UserProvider on mount; read by fetchAPI / swrFetcher to attach
- * the X-User-Email header to every API call.
+ * Module-level store for the Supabase access token.
+ * Set by UserProvider on mount and on token refresh.
+ * Read by fetchAPI / swrFetcher to attach Authorization: Bearer header.
  */
 
-let _email: string | null = null;
+let _accessToken: string | null = null;
 
-export function setAuthEmail(email: string | null) {
-  _email = email;
+export function setAccessToken(token: string | null) {
+  _accessToken = token;
 }
 
-export function getAuthEmail(): string | null {
-  return _email;
+export function getAccessToken(): string | null {
+  return _accessToken;
 }

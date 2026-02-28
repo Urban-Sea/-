@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { useUser } from '@/components/providers/UserProvider';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import { useMe, updateMe } from '@/lib/api';
 import { GlassCard } from '@/components/shared/glass';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,15 @@ function formatDate(iso: string): string {
 }
 
 export default function AccountPage() {
-  const { email } = useUser();
+  return (
+    <AuthGuard>
+      <AccountContent />
+    </AuthGuard>
+  );
+}
+
+function AccountContent() {
+  const { email, signOut } = useUser();
   const { data: me, mutate } = useMe();
   const { theme, setTheme } = useTheme();
 
@@ -87,7 +96,7 @@ export default function AccountPage() {
             </div>
             <div>
               <p className="text-sm font-medium">{email || '未認証'}</p>
-              <p className="text-xs text-muted-foreground">Cloudflare Access 認証</p>
+              <p className="text-xs text-muted-foreground">Supabase Auth 認証</p>
             </div>
           </div>
         </div>
@@ -190,8 +199,8 @@ export default function AccountPage() {
 
       {/* Logout */}
       <div className="pb-8 plumb-animate-in plumb-stagger-6">
-        <Button variant="destructive" className="w-full" asChild>
-          <a href="/cdn-cgi/access/logout">ログアウト</a>
+        <Button variant="destructive" className="w-full" onClick={signOut}>
+          ログアウト
         </Button>
       </div>
     </div>

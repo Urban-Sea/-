@@ -115,9 +115,14 @@ export default {
     proxyHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
     proxyHeaders.set('Accept', request.headers.get('Accept') || 'application/json');
 
-    // 信頼された Origin からのみ X-User-Email / X-MFA-Token を転送（なりすまし防止）
+    // 信頼された Origin からのみ認証ヘッダーを転送（なりすまし防止）
     if (isTrustedOrigin && rawEmail) {
       proxyHeaders.set('X-User-Email', rawEmail);
+    }
+    // Authorization: Bearer <JWT> (Supabase Auth)
+    const authHeader = request.headers.get('Authorization');
+    if (isTrustedOrigin && authHeader) {
+      proxyHeaders.set('Authorization', authHeader);
     }
     const mfaToken = request.headers.get('X-MFA-Token');
     if (isTrustedOrigin && mfaToken) {

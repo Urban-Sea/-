@@ -13,6 +13,7 @@ import {
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
 import type { ChartSeries, ChartReferenceLine } from '@/components/charts/EconChartCanvas';
 import { usePlumbingSummary, useHistoryCharts, useBacktestStates, useMarketEvents, usePolicyRegime } from '@/lib/api';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import {
   scoreHue, scoreLabel,
   GlassCard, ScoreRing, GaugeBar, Metric, StatusChip, ScoreLegend, DocSection, DocTable,
@@ -1293,6 +1294,14 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 // ============================================================
 
 export default function LiquidityPage() {
+  return (
+    <AuthGuard>
+      <LiquidityContent />
+    </AuthGuard>
+  );
+}
+
+function LiquidityContent() {
   const { data, error: summaryError, isLoading, isValidating, mutate } = usePlumbingSummary();
   const { data: eventsData } = useMarketEvents();
   const { data: regimeData } = usePolicyRegime();

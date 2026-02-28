@@ -13,11 +13,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export function UserMenu() {
-  const { email, initial, isLoading } = useUser();
+  const { email, initial, isLoading, isAuthenticated, signOut } = useUser();
 
   if (isLoading) {
     return <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />;
   }
+
+  if (!isAuthenticated) return null;
 
   return (
     <DropdownMenu>
@@ -45,14 +47,12 @@ export function UserMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <a
-            href="/cdn-cgi/access/logout"
-            className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="text-sm">ログアウト</span>
-          </a>
+        <DropdownMenuItem
+          onClick={signOut}
+          className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span className="text-sm">ログアウト</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

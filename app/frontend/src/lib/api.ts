@@ -36,18 +36,18 @@ import type {
   WatchlistsResponse,
 } from '@/types';
 
-import { getAuthEmail } from './auth-store';
+import { getAccessToken } from './auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const email = getAuthEmail();
+  const token = getAccessToken();
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'X-User-Email': email } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });

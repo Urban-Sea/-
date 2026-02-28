@@ -16,6 +16,7 @@ yfinance>=0.2.40
 slowapi==0.1.9
 pyotp==2.9.0
 qrcode[pil]==8.0
+PyJWT>=2.8.0
 
 # Utilities
 python-dotenv==1.0.1

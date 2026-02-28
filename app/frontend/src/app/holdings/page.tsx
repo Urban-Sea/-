@@ -15,6 +15,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import {
   useHoldingsInit, useTrades, useTradeStats, useBatchQuotes,
   usePortfolioHistory, useCashBalances,
@@ -1453,6 +1454,14 @@ function LoadingSkeleton() {
 // ============================================================
 
 export default function HoldingsPage() {
+  return (
+    <AuthGuard>
+      <HoldingsContent />
+    </AuthGuard>
+  );
+}
+
+function HoldingsContent() {
   const [activeTab, setActiveTab] = useState('portfolio');
   // Combined init: holdings + cash + FX in one request (3 RTT → 1 RTT)
   const { data: initData, error: holdingsError, isLoading: holdingsLoading, mutate: mutateInit } = useHoldingsInit();

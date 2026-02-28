@@ -12,6 +12,7 @@ import {
   usePolicyRegime,
   useRegime,
 } from '@/lib/api';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import {
   GlassCard, ScoreRing, GaugeBar, StatusChip, ScoreLegend, DocSection, DocTable,
 } from '@/components/shared/glass';
@@ -740,6 +741,14 @@ function SystemGuideTab() {
 // ============================================================
 
 export default function IntegratedDashboardPage() {
+  return (
+    <AuthGuard>
+      <DashboardContent />
+    </AuthGuard>
+  );
+}
+
+function DashboardContent() {
   const { data: plumbing, isLoading: loadP } = usePlumbingSummary();
   const { data: economic, isLoading: loadE } = useEmploymentRiskScore();
   const { data: events } = useMarketEvents();

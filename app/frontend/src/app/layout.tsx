@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { UserProvider } from "@/components/providers/UserProvider";
 import { SWRProvider } from "@/lib/swr";
-import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,7 +42,6 @@ export default function RootLayout({
             <UserProvider>
               <TooltipProvider>
                 <Header />
-                <WelcomeModal />
                 <main className="w-full py-6">
                   {children}
                 </main>

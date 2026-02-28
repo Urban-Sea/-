@@ -7,6 +7,7 @@ import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Crosshair, Package, History, BookOpen } from 'lucide-react';
 import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
@@ -56,9 +57,11 @@ const chartOptionLabels: Record<ChartOption, { label: string; title: string }> =
 
 export default function SignalsPageWrapper() {
   return (
-    <Suspense fallback={null}>
-      <SignalsPage />
-    </Suspense>
+    <AuthGuard>
+      <Suspense fallback={null}>
+        <SignalsPage />
+      </Suspense>
+    </AuthGuard>
   );
 }
 

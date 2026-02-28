@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { LayoutDashboard, History, LineChart, BookOpen } from 'lucide-react';
 import { useEmploymentRiskScore, useRiskHistory } from '@/lib/api';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import {
   scoreHue, scoreLabel,
   GlassCard, ScoreRing, GaugeBar, StatusChip, ScoreLegend, DocSection, DocTable,
@@ -976,6 +977,14 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 // ============================================================
 
 export default function EmploymentPage() {
+  return (
+    <AuthGuard>
+      <EmploymentContent />
+    </AuthGuard>
+  );
+}
+
+function EmploymentContent() {
   const { data, error: riskError, isLoading, isValidating, mutate } = useEmploymentRiskScore();
 
   const refreshing = isValidating && !isLoading;
