@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Crosshair, Package, History, BookOpen } from 'lucide-react';
 import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
@@ -771,10 +772,10 @@ function SignalsPage() {
           {/* ── Analysis Tabs ── */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="plumb-tabs">
             <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
-              <TabsTrigger value="entry" className="text-[11px] font-mono uppercase tracking-wider">エントリー判定</TabsTrigger>
-              <TabsTrigger value="holding" className="text-[11px] font-mono uppercase tracking-wider">保有分析</TabsTrigger>
-              <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider">過去シグナル</TabsTrigger>
-              <TabsTrigger value="system" className="text-[11px] font-mono uppercase tracking-wider">システム解説</TabsTrigger>
+              <TabsTrigger value="entry" className="text-[11px] font-mono uppercase tracking-wider"><Crosshair className="w-3.5 h-3.5 mr-1.5" />エントリー判定</TabsTrigger>
+              <TabsTrigger value="holding" className="text-[11px] font-mono uppercase tracking-wider"><Package className="w-3.5 h-3.5 mr-1.5" />保有分析</TabsTrigger>
+              <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider"><History className="w-3.5 h-3.5 mr-1.5" />過去シグナル</TabsTrigger>
+              <TabsTrigger value="system" className="text-[11px] font-mono uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5 mr-1.5" />システム解説</TabsTrigger>
             </TabsList>
 
             {/* ── Tab: Entry ── */}

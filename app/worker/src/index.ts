@@ -16,7 +16,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** Per-user エンドポイント判定（Cache-Control: private 用） */
-const PER_USER_PATTERNS = [/^\/api\/holdings/, /^\/api\/trades/, /^\/api\/watchlist/];
+const PER_USER_PATTERNS = [/^\/api\/holdings/, /^\/api\/trades/, /^\/api\/watchlist/, /^\/api\/me/];
 
 function isPerUserEndpoint(pathname: string): boolean {
   return PER_USER_PATTERNS.some(p => p.test(pathname));

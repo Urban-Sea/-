@@ -10,18 +10,29 @@ import { GlossaryButton } from '@/components/onboarding/GlossaryPanel';
 import { UserMenu } from './UserMenu';
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  Home,
+  LayoutDashboard,
+  Droplets,
+  ShieldAlert,
+  BarChart3,
+  Briefcase,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 
-const navItems = [
-  { href: '/', label: 'ホーム' },
-  { href: '/dashboard', label: 'ダッシュボード' },
-  { href: '/liquidity', label: '米国金融流動性' },
-  { href: '/employment', label: '米国景気リスク' },
-  { href: '/signals', label: '銘柄分析' },
-  { href: '/holdings', label: 'ポートフォリオ' },
+const navItems: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/', label: 'ホーム', icon: Home },
+  { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+  { href: '/liquidity', label: '米国金融流動性', icon: Droplets },
+  { href: '/employment', label: '米国景気リスク', icon: ShieldAlert },
+  { href: '/signals', label: '銘柄分析', icon: BarChart3 },
+  { href: '/holdings', label: 'ポートフォリオ', icon: Briefcase },
 ];
 
 export function Header() {
@@ -71,27 +82,53 @@ export function Header() {
                 </svg>
               </button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-72 bg-card border-border">
-              <SheetTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-                ナビゲーション
-              </SheetTitle>
-              <nav className="flex flex-col gap-1">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      'px-4 py-3 text-sm font-medium transition-colors rounded-lg',
-                      pathname === item.href
-                        ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-blue-500/5'
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className="w-72 border-l border-blue-400/15 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-950 backdrop-blur-xl p-0"
+            >
+              {/* Header */}
+              <div className="flex items-center gap-2.5 px-5 pt-5 pb-4 border-b border-blue-400/10">
+                <Image src="/icon.png" alt="" width={24} height={24} className="rounded-md" />
+                <SheetTitle className="text-base font-bold tracking-tight text-blue-100">
+                  Open Regime
+                </SheetTitle>
+                <SheetClose className="ml-auto rounded-md p-1 text-blue-300/50 hover:text-blue-200 hover:bg-blue-500/10 transition-colors">
+                  <X className="w-4 h-4" />
+                </SheetClose>
+              </div>
+
+              {/* Nav links */}
+              <nav className="flex flex-col gap-1 px-3 py-4">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        'group flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150',
+                        isActive
+                          ? 'bg-blue-500/20 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.25)]'
+                          : 'text-blue-200/60 hover:text-blue-100 hover:bg-blue-500/10'
+                      )}
+                    >
+                      <Icon className={cn(
+                        'w-[18px] h-[18px] shrink-0 transition-colors',
+                        isActive ? 'text-blue-400' : 'text-blue-400/40 group-hover:text-blue-400/70'
+                      )} />
+                      {item.label}
+                    </Link>
+                  );
+                })}
               </nav>
+
+              {/* Footer accent line */}
+              <div className="mt-auto border-t border-blue-400/10 px-5 py-4">
+                <p className="text-[11px] text-blue-300/30 font-medium tracking-wider uppercase">Market Intelligence</p>
+              </div>
             </SheetContent>
           </Sheet>
         </div>

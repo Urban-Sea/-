@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { LayoutDashboard, BookOpen, Droplets, ShieldAlert, BarChart3, Briefcase } from 'lucide-react';
 import {
   usePlumbingSummary,
   useEmploymentRiskScore,
@@ -342,7 +343,7 @@ function EconomicCard({ economic }: { economic: EmploymentRiskScore }) {
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400 font-mono">ECONOMIC ALERT</p>
-            <h3 className="text-base font-bold">米国景気警戒システム</h3>
+            <h3 className="text-base font-bold">米国景気リスク評価モニター</h3>
             <p className="text-xs text-muted-foreground">雇用・消費者・構造の3軸で景気を評価</p>
           </div>
           <Badge variant="outline" className={`${pc.text} ${pc.border} text-xs font-mono`}>
@@ -496,10 +497,10 @@ function InsightCardsSection({ cards }: { cards: InsightCard[] }) {
 
 /** Navigation Cards — links to all other pages */
 const NAV_ICONS: Record<string, React.ReactNode> = {
-  liquidity: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" /></svg>,
-  employment: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>,
-  signals: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" /></svg>,
-  holdings: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 0 0 .75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 0 0-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0 1 12 17.25c-2.776 0-5.44-.473-7.927-1.344a2.213 2.213 0 0 1-.673-.38m0 0A2.18 2.18 0 0 1 3 14.15V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 0 1 3.413-.387m7.5 0V5.25A2.25 2.25 0 0 0 13.5 3h-3a2.25 2.25 0 0 0-2.25 2.25v.894m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>,
+  liquidity: <Droplets className="w-4 h-4" />,
+  employment: <ShieldAlert className="w-4 h-4" />,
+  signals: <BarChart3 className="w-4 h-4" />,
+  holdings: <Briefcase className="w-4 h-4" />,
 };
 
 function NavigationCards() {
@@ -609,7 +610,7 @@ function SystemGuideTab() {
             <p className="text-xs">金融市場の流動性（FRB資金、銀行、レバレッジ）が正常に機能しているかを監視します。短期的な市場の健全性を表します。</p>
           </div>
           <div className="plumb-glass rounded-lg p-3">
-            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">米国景気警戒システム</p>
+            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">米国景気リスク評価モニター</p>
             <p className="text-xs">雇用・消費者・経済構造の3つの軸から、実体経済の健全性を評価します。中長期的な景気動向を表します。</p>
           </div>
         </div>
@@ -646,7 +647,7 @@ function SystemGuideTab() {
         />
       </DocSection>
 
-      <DocSection title="米国景気警戒システムとは">
+      <DocSection title="米国景気リスク評価モニターとは">
         <p>実体経済の健全性を<strong>100点満点</strong>で評価するシステムです。スコアが高いほど景気悪化のリスクが高いことを意味します。</p>
         <DocTable
           headers={['カテゴリ', '配点', '主な指標']}
@@ -761,8 +762,8 @@ export default function IntegratedDashboardPage() {
 
       <Tabs defaultValue="dashboard" className="plumb-tabs">
         <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
-          <TabsTrigger value="dashboard" className="text-[11px] font-mono uppercase tracking-wider">ダッシュボード</TabsTrigger>
-          <TabsTrigger value="guide" className="text-[11px] font-mono uppercase tracking-wider">システム解説</TabsTrigger>
+          <TabsTrigger value="dashboard" className="text-[11px] font-mono uppercase tracking-wider"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />ダッシュボード</TabsTrigger>
+          <TabsTrigger value="guide" className="text-[11px] font-mono uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5 mr-1.5" />システム解説</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-4">

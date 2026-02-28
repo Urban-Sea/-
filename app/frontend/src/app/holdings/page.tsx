@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Briefcase, TrendingUp, ArrowLeftRight, PieChart } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -1579,16 +1580,16 @@ export default function HoldingsPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="plumb-glass rounded-lg p-1 border-none w-full justify-start">
           <TabsTrigger value="portfolio" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
-            ポートフォリオ ({holdings.length})
+            <Briefcase className="w-3.5 h-3.5 mr-1.5" />ポートフォリオ ({holdings.length})
           </TabsTrigger>
           <TabsTrigger value="trends" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
-            資産推移
+            <TrendingUp className="w-3.5 h-3.5 mr-1.5" />資産推移
           </TabsTrigger>
           <TabsTrigger value="trades" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
-            取引履歴{tradesData ? ` (${trades.length})` : ''}
+            <ArrowLeftRight className="w-3.5 h-3.5 mr-1.5" />取引履歴{tradesData ? ` (${trades.length})` : ''}
           </TabsTrigger>
           <TabsTrigger value="stats" className="text-[11px] font-mono uppercase tracking-wider data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400">
-            統計
+            <PieChart className="w-3.5 h-3.5 mr-1.5" />統計
           </TabsTrigger>
         </TabsList>
 

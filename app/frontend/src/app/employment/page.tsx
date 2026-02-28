@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { LayoutDashboard, History, LineChart, BookOpen } from 'lucide-react';
 import { useEmploymentRiskScore, useRiskHistory } from '@/lib/api';
 import {
   scoreHue, scoreLabel,
@@ -1014,10 +1015,10 @@ export default function EmploymentPage() {
       {/* Tabs */}
       <Tabs defaultValue="dashboard" className="plumb-tabs">
         <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
-          <TabsTrigger value="dashboard" className="text-[11px] font-mono uppercase tracking-wider">ダッシュボード</TabsTrigger>
-          <TabsTrigger value="risk-history" className="text-[11px] font-mono uppercase tracking-wider">過去リスクスコア履歴</TabsTrigger>
-          <TabsTrigger value="indicators" className="text-[11px] font-mono uppercase tracking-wider">指標グラフ</TabsTrigger>
-          <TabsTrigger value="docs" className="text-[11px] font-mono uppercase tracking-wider">システム解説</TabsTrigger>
+          <TabsTrigger value="dashboard" className="text-[11px] font-mono uppercase tracking-wider"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />ダッシュボード</TabsTrigger>
+          <TabsTrigger value="risk-history" className="text-[11px] font-mono uppercase tracking-wider"><History className="w-3.5 h-3.5 mr-1.5" />過去リスクスコア履歴</TabsTrigger>
+          <TabsTrigger value="indicators" className="text-[11px] font-mono uppercase tracking-wider"><LineChart className="w-3.5 h-3.5 mr-1.5" />指標グラフ</TabsTrigger>
+          <TabsTrigger value="docs" className="text-[11px] font-mono uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5 mr-1.5" />システム解説</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard">
