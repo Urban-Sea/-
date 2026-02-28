@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Settings, LogOut } from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 import { useUser } from '@/components/providers/UserProvider';
 import {
   DropdownMenu,
@@ -40,8 +40,8 @@ export function UserMenu() {
         )}
         <DropdownMenuItem asChild>
           <Link href="/settings/" className="flex items-center gap-2 cursor-pointer">
-            <Settings className="w-3.5 h-3.5" />
-            <span className="text-sm">設定</span>
+            <User className="w-3.5 h-3.5" />
+            <span className="text-sm">アカウント</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

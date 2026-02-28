@@ -494,6 +494,44 @@ export function useWatchlist() {
   return useSWR<WatchlistsResponse>('/api/watchlist');
 }
 
+// User Profile API
+export interface UserProfile {
+  id: string;
+  email: string;
+  display_name: string | null;
+  plan: string;
+  auth_provider: string;
+  created_at: string;
+}
+
+export function useMe() {
+  return useSWR<UserProfile>('/api/me');
+}
+
+export async function updateMe(data: { display_name: string | null }): Promise<{ status: string }> {
+  return fetchAPI('/api/me', { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+// Admin API
+export interface AdminUsersResponse {
+  users: UserProfile[];
+  total: number;
+}
+
+export function useAdminUsers() {
+  return useSWR<AdminUsersResponse>('/api/admin/users');
+}
+
+export async function updateUserPlan(
+  userId: string,
+  data: { plan?: string; display_name?: string },
+): Promise<{ status: string }> {
+  return fetchAPI(`/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export function useStocks(params?: { active_only?: boolean }) {
   const searchParams = new URLSearchParams();
   if (params?.active_only !== undefined) searchParams.set('active_only', String(params.active_only));

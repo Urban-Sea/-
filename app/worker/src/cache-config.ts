@@ -28,6 +28,9 @@ const CACHE_RULES: CacheRule[] = [
   { pattern: /^\/api\/fx\/usdjpy$/, ttl: 5 * 60 },
   { pattern: /^\/api\/stock\/batch-quotes/, ttl: 5 * 60 },
 
+  // User profile — per-user cached
+  { pattern: /^\/api\/me$/, ttl: 60 },
+
   // User data: short per-user cache (cache key includes X-User-Email)
   { pattern: /^\/api\/holdings\/init$/, ttl: 60 },              // 1 min
   { pattern: /^\/api\/holdings$/, ttl: 60 },                    // 1 min (GET list only)
