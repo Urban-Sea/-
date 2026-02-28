@@ -10,10 +10,14 @@ function CallbackContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Implicit flow: tokens arrive in the URL hash fragment.
+    // Supabase client's `detectSessionInUrl` processes the hash automatically
+    // when it initialises. We just need to wait for the session to be ready.
+    //
+    // Also handle legacy PKCE `?code=` param as fallback.
     const code = searchParams.get('code');
 
     if (code) {
-      // PKCE flow: exchange code for session
       supabase.auth.exchangeCodeForSession(code).then(({ error: err }) => {
         if (err) {
           setError(err.message);
@@ -21,20 +25,33 @@ function CallbackContent() {
           router.replace('/dashboard/');
         }
       });
-    } else {
-      // Hash fragment flow (handled by detectSessionInUrl)
-      // Give Supabase client a moment to process the hash
-      const timer = setTimeout(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-          if (session) {
-            router.replace('/dashboard/');
-          } else {
-            setError('認証に失敗しました。もう一度お試しください。');
-          }
-        });
-      }, 500);
-      return () => clearTimeout(timer);
+      return;
     }
+
+    // For implicit flow & email confirmation redirects,
+    // listen for the auth state change that fires once the hash is processed.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        router.replace('/dashboard/');
+      }
+    });
+
+    // If session already exists (hash was processed before listener attached)
+    const timer = setTimeout(() => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          router.replace('/dashboard/');
+        } else if (!window.location.hash) {
+          // No hash fragment and no code — nothing to process
+          setError('認証に失敗しました。もう一度お試しください。');
+        }
+      });
+    }, 1000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timer);
+    };
   }, [router, searchParams]);
 
   if (error) {
