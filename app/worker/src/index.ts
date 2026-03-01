@@ -58,7 +58,7 @@ function corsHeaders(origin: string, allowed: string[]): Record<string, string> 
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MFA-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email, X-MFA-Token',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
@@ -158,11 +158,15 @@ export default {
     if (authHeader) {
       proxyHeaders.set('Authorization', authHeader);
     }
-    // X-MFA-Token は信頼 Origin からのみ転送（Admin 用、JWT とは別経路）
+    // Admin 用ヘッダーは信頼 Origin からのみ転送
+    // X-User-Email: Cloudflare Access が設定（Legacy 認証パス）
+    // X-MFA-Token: Admin MFA セッショントークン
     const isTrustedOrigin = allowed.includes(origin);
-    const mfaToken = request.headers.get('X-MFA-Token');
-    if (isTrustedOrigin && mfaToken) {
-      proxyHeaders.set('X-MFA-Token', mfaToken);
+    if (isTrustedOrigin) {
+      const userEmail = request.headers.get('X-User-Email');
+      if (userEmail) proxyHeaders.set('X-User-Email', userEmail);
+      const mfaToken = request.headers.get('X-MFA-Token');
+      if (mfaToken) proxyHeaders.set('X-MFA-Token', mfaToken);
     }
 
     // Attach shared secret to prove request came from this Worker
