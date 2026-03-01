@@ -95,6 +95,20 @@ class HoldingUpdate(BaseModel):
     thesis: Optional[str] = None
     notes: Optional[str] = None
 
+    @field_validator("shares")
+    @classmethod
+    def validate_shares(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("shares must be positive")
+        return v
+
+    @field_validator("avg_price")
+    @classmethod
+    def validate_price(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("avg_price must be positive")
+        return v
+
 
 class HoldingsResponse(BaseModel):
     """保有銘柄一覧レスポンス"""
@@ -290,7 +304,7 @@ async def get_cash_balances(
         return {"balances": result.data or [], "total": len(result.data or [])}
     except Exception as e:
         logger.exception("Cash balances error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cash")
@@ -319,7 +333,7 @@ async def create_cash_balance(
         raise
     except Exception as e:
         logger.exception("Cash balance create error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/cash/{cash_id}")
@@ -352,7 +366,7 @@ async def update_cash_balance(
         raise
     except Exception as e:
         logger.exception("Cash balance update error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/cash/{cash_id}")
@@ -380,7 +394,7 @@ async def delete_cash_balance(
         raise
     except Exception as e:
         logger.exception("Cash balance delete error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================

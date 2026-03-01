@@ -40,12 +40,6 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
 };
 
-/** Per-user エンドポイント判定（Cache-Control: private 用） */
-const PER_USER_PATTERNS = [/^\/api\/holdings/, /^\/api\/trades/, /^\/api\/watchlist/, /^\/api\/me/];
-
-function isPerUserEndpoint(pathname: string): boolean {
-  return PER_USER_PATTERNS.some(p => p.test(pathname));
-}
 
 function buildAllowedOrigins(env: Env): string[] {
   // カンマ区切りで複数 Origin 対応 (後方互換: 単一値でも動作)
@@ -58,15 +52,21 @@ function buildAllowedOrigins(env: Env): string[] {
   return allowed;
 }
 
-function corsHeaders(origin: string, allowed: string[]): Record<string, string> {
-  const responseOrigin = allowed.includes(origin) ? origin : (allowed[0] || '');
+/** CORS ヘッダー（M1: 不正 Origin には空文字列を返さず、null を返す） */
+function corsHeaders(origin: string, allowed: string[]): Record<string, string> | null {
+  if (!allowed.includes(origin)) return null;
   return {
-    'Access-Control-Allow-Origin': responseOrigin,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email, X-MFA-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MFA-Token',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
+}
+
+/** CORS ヘッダーを安全に結合（null なら空オブジェクト） */
+function safeCors(cors: Record<string, string> | null): Record<string, string> {
+  return cors ?? {};
 }
 
 export default {
@@ -77,7 +77,11 @@ export default {
     const cors = corsHeaders(origin, allowed);
 
     // CORS preflight (rate limit 対象外)
+    // M1: 不正 Origin には CORS ヘッダーなしで 403 を返す
     if (request.method === 'OPTIONS') {
+      if (!cors) {
+        return new Response(null, { status: 403, headers: SECURITY_HEADERS });
+      }
       return new Response(null, { status: 204, headers: { ...cors, ...SECURITY_HEADERS } });
     }
 
@@ -89,7 +93,7 @@ export default {
         {
           status: 429,
           headers: {
-            ...cors,
+            ...safeCors(cors),
             ...SECURITY_HEADERS,
             'Content-Type': 'application/json',
             'Retry-After': '60',
@@ -120,21 +124,11 @@ export default {
       );
     }
 
-    // X-User-Email 信頼性検証:
-    // 信頼された Origin からのリクエストのみ X-User-Email を転送する。
-    // curl 等の直接アクセスでは Origin ヘッダーがないため、
-    // X-User-Email はストリップされる（なりすまし防止）。
-    const isTrustedOrigin = allowed.includes(origin);
-    const rawEmail = request.headers.get('X-User-Email') || '';
-    const userEmail = isTrustedOrigin ? rawEmail : '';
-
+    // C3: キャッシュは公開データのみ（per-user エンドポイントは cache-config で TTL=0）
+    // キャッシュキーにユーザー情報を含めない（cache poisoning 防止）
     const ttl = getCacheTtl(url.pathname);
     const isCacheable = request.method === 'GET' && ttl > 0;
-
-    // Build per-user cache key
-    const cacheKeyUrl = userEmail
-      ? `${url.toString()}::user=${userEmail}`
-      : url.toString();
+    const cacheKeyUrl = url.toString();
 
     // Try cache first
     if (isCacheable) {
@@ -144,7 +138,7 @@ export default {
 
       if (cached) {
         const response = new Response(cached.body, cached);
-        for (const [k, v] of Object.entries({ ...cors, ...SECURITY_HEADERS })) {
+        for (const [k, v] of Object.entries({ ...safeCors(cors), ...SECURITY_HEADERS })) {
           response.headers.set(k, v);
         }
         response.headers.set('X-Cache', 'HIT');
@@ -158,15 +152,14 @@ export default {
     proxyHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
     proxyHeaders.set('Accept', request.headers.get('Accept') || 'application/json');
 
-    // 信頼された Origin からのみ認証ヘッダーを転送（なりすまし防止）
-    if (isTrustedOrigin && rawEmail) {
-      proxyHeaders.set('X-User-Email', rawEmail);
-    }
-    // Authorization: Bearer <JWT> (Supabase Auth)
+    // H2: Authorization は常に転送（Backend 側で JWT 署名を検証するので安全）
+    // Origin 偽装で偽の JWT を送っても Backend が弾く
     const authHeader = request.headers.get('Authorization');
-    if (isTrustedOrigin && authHeader) {
+    if (authHeader) {
       proxyHeaders.set('Authorization', authHeader);
     }
+    // X-MFA-Token は信頼 Origin からのみ転送（Admin 用、JWT とは別経路）
+    const isTrustedOrigin = allowed.includes(origin);
     const mfaToken = request.headers.get('X-MFA-Token');
     if (isTrustedOrigin && mfaToken) {
       proxyHeaders.set('X-MFA-Token', mfaToken);
@@ -188,14 +181,14 @@ export default {
         JSON.stringify({ detail: 'Origin temporarily unavailable' }),
         {
           status: 502,
-          headers: { ...cors, ...SECURITY_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+          headers: { ...safeCors(cors), ...SECURITY_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
         },
       );
     }
 
     // Build response with CORS + security headers
     const responseHeaders = new Headers(proxyResponse.headers);
-    for (const [k, v] of Object.entries({ ...cors, ...SECURITY_HEADERS })) {
+    for (const [k, v] of Object.entries({ ...safeCors(cors), ...SECURITY_HEADERS })) {
       responseHeaders.set(k, v);
     }
     responseHeaders.set('X-Cache', 'MISS');
@@ -206,7 +199,7 @@ export default {
       headers: responseHeaders,
     });
 
-    // Store in cache (non-blocking)
+    // Store in cache (non-blocking) — 公開データのみ（per-user は TTL=0 でここに来ない）
     if (isCacheable && proxyResponse.status === 200) {
       const cache = caches.default;
       const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
@@ -214,27 +207,8 @@ export default {
         status: 200,
         headers: responseHeaders,
       });
-      // Per-user EP は Cache-Control: private、それ以外は public
-      const cacheDirective = isPerUserEndpoint(url.pathname) ? 'private' : 'public';
-      cacheResponse.headers.set('Cache-Control', `${cacheDirective}, max-age=${ttl}`);
-      if (isPerUserEndpoint(url.pathname)) {
-        cacheResponse.headers.set('Vary', 'X-User-Email');
-      }
+      cacheResponse.headers.set('Cache-Control', `public, max-age=${ttl}`);
       ctx.waitUntil(cache.put(cacheKey, cacheResponse));
-    }
-
-    // Invalidate per-user cache on mutations (POST/PUT/DELETE)
-    if (request.method !== 'GET' && request.method !== 'HEAD' && proxyResponse.status < 400 && userEmail) {
-      const cache = caches.default;
-      const pathsToInvalidate = [
-        '/api/holdings',
-        '/api/holdings/init',
-        '/api/holdings/cash',
-      ];
-      for (const path of pathsToInvalidate) {
-        const purgeUrl = `${url.origin}${path}::user=${userEmail}`;
-        ctx.waitUntil(cache.delete(new Request(purgeUrl, { method: 'GET' })));
-      }
     }
 
     return response;

@@ -188,8 +188,7 @@ async def auth_check(
     result["step"] = "token_received"
     result["token_length"] = len(token)
     result["jwt_secret_configured"] = bool(_jwt_secret)
-    if _jwt_secret:
-        result["jwt_secret_prefix"] = _jwt_secret[:4] + "..."
+    # NOTE: シークレット値は一切返さない（漏洩防止）
     result["supabase_url_configured"] = bool(_supa_url)
 
     # Step 1: ヘッダー + ペイロード確認（署名検証なし）

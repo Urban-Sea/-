@@ -3,6 +3,7 @@
 設計ドキュメント準拠（BUY/SELLは別レコード）
 """
 import re
+from datetime import datetime as _datetime
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -85,6 +86,15 @@ class TradeCreate(BaseModel):
     def validate_price(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("price must be positive")
+        return v
+
+    @field_validator("trade_date")
+    @classmethod
+    def validate_trade_date(cls, v: str) -> str:
+        try:
+            _datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("trade_date must be YYYY-MM-DD format")
         return v
 
 
@@ -254,6 +264,19 @@ async def create_trade(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
+        # holding_id が指定された場合は所有権を検証
+        if trade.holding_id:
+            h_check = (
+                supabase.table("holdings")
+                .select("id")
+                .eq("id", trade.holding_id)
+                .eq("user_id", user_email)
+                .limit(1)
+                .execute()
+            )
+            if not h_check.data:
+                raise HTTPException(status_code=404, detail="Holding not found")
+
         data = {
             "user_id": user_email,
             "ticker": trade.ticker,
