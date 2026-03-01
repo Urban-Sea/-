@@ -28,8 +28,6 @@ _JP_AM_CLOSE = time(11, 30)
 _JP_PM_OPEN = time(12, 30)
 _JP_PM_CLOSE = time(15, 30)
 
-_CLOSED_MULTIPLIER = 12  # 5分 → 60分
-
 # 日本株ティッカー判定 (数字のみ or 数字.T)
 _JP_TICKER_RE = re.compile(r"^\d+(\.[A-Z]+)?$", re.IGNORECASE)
 
@@ -174,13 +172,76 @@ def is_jp_market_open() -> bool:
     return (_JP_AM_OPEN <= t < _JP_AM_CLOSE) or (_JP_PM_OPEN <= t < _JP_PM_CLOSE)
 
 
+def _is_us_trading_day(d: date) -> bool:
+    """平日 & 祝日でない = 取引日"""
+    return d.weekday() < 5 and d not in _us_holidays(d.year)
+
+
+def _is_jp_trading_day(d: date) -> bool:
+    """平日 & 祝日でない = 取引日"""
+    return d.weekday() < 5 and d not in _jp_holidays(d.year)
+
+
+def _seconds_until_next_open_us() -> int:
+    """次の NYSE 開場 (9:30 ET) までの秒数を返す"""
+    now = datetime.now(_ET)
+    today = now.date()
+
+    # 今日がまだ開場前なら今日の 9:30 を候補にする
+    if _is_us_trading_day(today) and now.time() < _US_OPEN:
+        target = datetime.combine(today, _US_OPEN, tzinfo=_ET)
+        return max(int((target - now).total_seconds()), 0)
+
+    # 翌日以降で最初の取引日を探す (最大 10 日先まで)
+    d = today + timedelta(days=1)
+    for _ in range(10):
+        if _is_us_trading_day(d):
+            target = datetime.combine(d, _US_OPEN, tzinfo=_ET)
+            return max(int((target - now).total_seconds()), 0)
+        d += timedelta(days=1)
+
+    # フォールバック (ありえないが安全策)
+    return 3600
+
+
+def _seconds_until_next_open_jp() -> int:
+    """次の TSE 開場までの秒数を返す (前場 9:00 or 後場 12:30)"""
+    now = datetime.now(_JST)
+    today = now.date()
+
+    if _is_jp_trading_day(today):
+        # 前場前
+        if now.time() < _JP_AM_OPEN:
+            target = datetime.combine(today, _JP_AM_OPEN, tzinfo=_JST)
+            return max(int((target - now).total_seconds()), 0)
+        # 昼休み中 → 後場開始まで
+        if _JP_AM_CLOSE <= now.time() < _JP_PM_OPEN:
+            target = datetime.combine(today, _JP_PM_OPEN, tzinfo=_JST)
+            return max(int((target - now).total_seconds()), 0)
+
+    # 翌日以降で最初の取引日を探す
+    d = today + timedelta(days=1)
+    for _ in range(10):
+        if _is_jp_trading_day(d):
+            target = datetime.combine(d, _JP_AM_OPEN, tzinfo=_JST)
+            return max(int((target - now).total_seconds()), 0)
+        d += timedelta(days=1)
+
+    return 3600
+
+
 def adaptive_ttl(base_ttl: int = 300, ticker: str = "") -> int:
     """
-    開場中は base_ttl、閉場中は ×12 に延長。
+    開場中は base_ttl、閉場中は次の開場までの秒数を TTL にする。
     ticker からUS/JP市場を自動判定。
     """
-    if _JP_TICKER_RE.match(ticker):
-        market_open = is_jp_market_open()
+    is_jp = bool(_JP_TICKER_RE.match(ticker)) if ticker else False
+
+    if is_jp:
+        if is_jp_market_open():
+            return base_ttl
+        return max(_seconds_until_next_open_jp(), base_ttl)
     else:
-        market_open = is_us_market_open()
-    return base_ttl if market_open else base_ttl * _CLOSED_MULTIPLIER
+        if is_us_market_open():
+            return base_ttl
+        return max(_seconds_until_next_open_us(), base_ttl)
