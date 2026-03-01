@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { setAccessToken } from '@/lib/auth-store';
 import type { Session, User } from '@supabase/supabase-js';
@@ -33,11 +33,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ログイン時に /api/me を1回叩いて public.users にレコードを確保する
+  const ensuredRef = useRef(false);
+  const ensureUser = (token: string) => {
+    if (ensuredRef.current) return;
+    ensuredRef.current = true;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    fetch(`${apiUrl}/api/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {}); // fire-and-forget
+  };
+
   useEffect(() => {
     // 1. Get initial session from localStorage
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setAccessToken(s?.access_token ?? null);
+      if (s?.access_token) ensureUser(s.access_token);
       setIsLoading(false);
     });
 
@@ -46,6 +58,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       (_event, s) => {
         setSession(s);
         setAccessToken(s?.access_token ?? null);
+        if (s?.access_token) ensureUser(s.access_token);
       }
     );
 
