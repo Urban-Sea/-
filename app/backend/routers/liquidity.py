@@ -32,10 +32,10 @@ router = APIRouter(dependencies=[Depends(require_proxy)])
 # 並列実行 + インメモリキャッシュ
 # ============================================================
 _executor = ThreadPoolExecutor(max_workers=8)
-_PLUMBING_TTL = 1800   # 30分
-_EVENTS_TTL = 1800     # 30分
-_POLICY_TTL = 1800     # 30分
-_BACKTEST_TTL = 3600   # 1時間
+_PLUMBING_TTL = 21600   # 6時間 (FRED週次更新)
+_EVENTS_TTL = 21600     # 6時間
+_POLICY_TTL = 21600     # 6時間
+_BACKTEST_TTL = 21600   # 6時間
 
 
 # ============================================================

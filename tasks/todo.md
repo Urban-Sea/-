@@ -90,12 +90,12 @@
 | `stock:{key}` | 株価クオート/詳細 | 300s |
 | `ohlcv:{ticker}:{period}` | OHLCV データ | 300s |
 | `fx:usdjpy` | 為替レート | 300s |
-| `plumbing:summary` | 流動性サマリー | 1800s |
-| `liquidity:events` | 流動性イベント | 1800s |
-| `liquidity:policy` | 政策データ | 1800s |
-| `liquidity:backtest:{limit}` | バックテスト | 3600s |
-| `employment:risk_score` | 雇用リスクスコア | 3600s |
-| `employment:risk_history:{months}` | 雇用リスク履歴 | 3600s |
+| `plumbing:summary` | 流動性サマリー | 21600s (6h) |
+| `liquidity:events` | 流動性イベント | 21600s (6h) |
+| `liquidity:policy` | 政策データ | 21600s (6h) |
+| `liquidity:backtest:{limit}` | バックテスト | 21600s (6h) |
+| `employment:risk_score` | 雇用リスクスコア | 21600s (6h) |
+| `employment:risk_history:{months}` | 雇用リスク履歴 | 21600s (6h) |
 | `precomputed:{key}` | バッチ計算結果 | 86400s |
 
 ---
