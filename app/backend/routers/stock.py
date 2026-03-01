@@ -17,7 +17,6 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-import time
 
 import main as app_main
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance
@@ -39,10 +38,9 @@ def _to_yf(ticker: str) -> str:
 _ALLOWED_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
 _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
-# シンプルなインメモリキャッシュ（上限500エントリ）
-_cache: Dict[str, dict] = {}
-CACHE_TTL = 300  # 5分
-_CACHE_MAX_SIZE = 500
+# L1+L2 キャッシュ (インメモリ + Upstash Redis)
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
+_CACHE_TTL = 300  # 5分
 _executor = ThreadPoolExecutor(max_workers=10)
 
 
@@ -87,56 +85,15 @@ class StockInfo(BaseModel):
     updated_at: str
 
 
-def get_cached(key: str) -> Optional[dict]:
-    """キャッシュから取得"""
-    if key in _cache:
-        entry = _cache[key]
-        if time.time() - entry["timestamp"] < CACHE_TTL:
-            return entry["data"]
-        else:
-            del _cache[key]
-    return None
-
-
-def set_cache(key: str, data: dict):
-    """キャッシュに保存（上限超過時は期限切れエントリを削除）"""
-    now = time.time()
-    if len(_cache) >= _CACHE_MAX_SIZE:
-        expired = [k for k, v in _cache.items() if (now - v.get("timestamp", 0)) > CACHE_TTL]
-        for k in expired:
-            del _cache[k]
-        if len(_cache) >= _CACHE_MAX_SIZE:
-            oldest = min(_cache, key=lambda k: _cache[k].get("timestamp", 0))
-            del _cache[oldest]
-    _cache[key] = {
-        "data": data,
-        "timestamp": now
-    }
-
-
-from cache_utils import db_cache_get as _db_cache_get, db_cache_set as _raw_db_cache_set
-
-
-def _db_cache_set(ticker: str, data: dict):
-    """L2: Supabase stock_cache に upsert（stock.py互換ラッパー）"""
-    _raw_db_cache_set(ticker, data, ttl=CACHE_TTL)
-
-
 def _fetch_single_quote(ticker: str) -> dict:
-    """1銘柄の株価を取得（二段キャッシュ: L1→L2→yfinance）"""
+    """1銘柄の株価を取得（L1+L2 Redis キャッシュ → yfinance）"""
     ticker = ticker.upper()
-    cache_key = f"quote:{ticker}"
+    cache_key = f"stock:quote:{ticker}"
 
-    # L1: インメモリキャッシュ
-    cached = get_cached(cache_key)
+    # L1 インメモリ → L2 Redis
+    cached = _cache_get(cache_key)
     if cached:
         return cached
-
-    # L2: Supabase DB キャッシュ
-    db_cached = _db_cache_get(ticker)
-    if db_cached:
-        set_cache(cache_key, db_cached)  # L1にもセット
-        return db_cached
 
     # L3: yfinance API
     try:
@@ -150,15 +107,14 @@ def _fetch_single_quote(ticker: str) -> dict:
             change = current_price - prev_close if prev_close else 0
             change_pct = (change / prev_close * 100) if prev_close else 0
             quote = {
-                "ticker": ticker,  # ユーザー入力のティッカーを返す
+                "ticker": ticker,
                 "price": round(current_price, 2),
                 "change": round(change, 2),
                 "change_pct": round(change_pct, 2),
                 "volume": info.get("volume") or 0,
                 "name": info.get("shortName") or info.get("longName") or None,
             }
-            set_cache(cache_key, quote)  # L1
-            _db_cache_set(ticker, quote)  # L2
+            _cache_set(cache_key, quote, ttl=_CACHE_TTL)
             return quote
         return {"ticker": ticker, "error": "No price data"}
     except Exception:
@@ -225,8 +181,8 @@ async def get_stock_info(ticker: str):
     ticker = ticker.upper()
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker format")
-    cache_key = f"info:{ticker}"
-    cached = get_cached(cache_key)
+    cache_key = f"stock:info:{ticker}"
+    cached = _cache_get(cache_key)
     if cached:
         return StockInfo(**cached)
 
@@ -284,7 +240,7 @@ async def get_stock_info(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        set_cache(cache_key, result.model_dump())
+        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
         return result
 
     except HTTPException:
@@ -301,8 +257,8 @@ async def get_stock_quote(ticker: str):
     ticker = ticker.upper()
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker format")
-    cache_key = f"quote:{ticker}"
-    cached = get_cached(cache_key)
+    cache_key = f"stock:quote:{ticker}"
+    cached = _cache_get(cache_key)
     if cached:
         return StockQuote(**cached)
 
@@ -338,7 +294,7 @@ async def get_stock_quote(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        set_cache(cache_key, result.model_dump())
+        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
         return result
 
     except HTTPException:
@@ -365,8 +321,8 @@ async def get_stock_history(
         raise HTTPException(status_code=400, detail="Invalid period")
     if interval not in _ALLOWED_INTERVALS:
         raise HTTPException(status_code=400, detail="Invalid interval")
-    cache_key = f"history:{ticker}:{period}:{interval}"
-    cached = get_cached(cache_key)
+    cache_key = f"stock:history:{ticker}:{period}:{interval}"
+    cached = _cache_get(cache_key)
     if cached:
         return StockHistory(**cached)
 
@@ -397,7 +353,7 @@ async def get_stock_history(
             updated_at=datetime.now().isoformat(),
         )
 
-        set_cache(cache_key, result.model_dump())
+        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
         return result
 
     except HTTPException:

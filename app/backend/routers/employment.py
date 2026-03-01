@@ -11,6 +11,7 @@ import main
 import math
 import statistics
 from auth import require_proxy, require_auth
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
@@ -20,9 +21,8 @@ router = APIRouter(dependencies=[Depends(require_proxy)])
 # ============================================================
 
 _executor = ThreadPoolExecutor(max_workers=5)
-
-_risk_score_cache: dict = {"data": None, "expires": None}
-_risk_history_cache: dict = {}  # key: months → {"data": ..., "expires": ...}
+_RISK_SCORE_TTL = 3600   # 1時間
+_RISK_HISTORY_TTL = 3600  # 1時間
 
 
 class EconomicIndicator(BaseModel):
@@ -1080,10 +1080,10 @@ async def get_risk_score():
     if precomputed is not None:
         return precomputed
 
-    # Phase 4: キャッシュチェック
-    now = datetime.now()
-    if _risk_score_cache["data"] and _risk_score_cache["expires"] and _risk_score_cache["expires"] > now:
-        return _risk_score_cache["data"]
+    # キャッシュチェック（L1 インメモリ → L2 Redis）
+    cached = _cache_get("employment:risk_score")
+    if cached is not None:
+        return cached
 
     supabase = main.get_supabase()
     if not supabase:
@@ -1230,9 +1230,8 @@ async def get_risk_score():
             consumer_history=consumer_data,
         )
 
-        # Phase 4: キャッシュ保存 (1時間TTL)
-        _risk_score_cache["data"] = result
-        _risk_score_cache["expires"] = now + timedelta(hours=1)
+        # キャッシュ保存 (1時間TTL)
+        _cache_set("employment:risk_score", result, ttl=_RISK_SCORE_TTL)
 
         return result
 
@@ -1372,11 +1371,11 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
 
     最適化: Phase2(ページネ除去) + Phase3(並列実行) + Phase4(1hキャッシュ)
     """
-    # Phase 4: キャッシュチェック
-    now = datetime.now()
-    cached = _risk_history_cache.get(months)
-    if cached and cached.get("expires") and cached["expires"] > now:
-        return cached["data"]
+    # キャッシュチェック（L1 インメモリ → L2 Redis）
+    cache_key = f"employment:risk_history:{months}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     supabase = main.get_supabase()
     if not supabase:
@@ -1584,8 +1583,8 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
 
         result = {"history": history, "sp500": sp500_list}
 
-        # Phase 4: キャッシュ保存 (1時間TTL)
-        _risk_history_cache[months] = {"data": result, "expires": now + timedelta(hours=1)}
+        # キャッシュ保存 (1時間TTL)
+        _cache_set(cache_key, result, ttl=_RISK_HISTORY_TTL)
 
         return result
 

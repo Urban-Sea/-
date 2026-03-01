@@ -265,8 +265,13 @@ export async function requireAuth(
           issuer,
         });
         return await handleJwtPayload(payload, supabase);
+      } else if (isProduction && supabaseUrl) {
+        // ── 本番で JWKS が使えるのに kid なし → alg confusion 防止で拒否 ──
+        // Supabase ES256 トークンは必ず kid を持つ。
+        // kid なしトークンは HMAC 偽造の可能性があるため本番では拒否。
+        throw new AuthError(401, 'Invalid token');
       } else {
-        // ── kid なし → HMAC シークレットで検証（HS256）──
+        // ── kid なし → HMAC シークレットで検証（開発環境のみ）──
         if (!env.SUPABASE_JWT_SECRET) {
           throw new AuthError(503, 'Service misconfigured');
         }

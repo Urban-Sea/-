@@ -16,4 +16,6 @@
   // - SUPABASE_JWT_SECRET
   // - MFA_ENCRYPTION_KEY (hex 64 chars)
   // - ADMIN_EMAILS (comma-separated)
+  // - UPSTASH_REDIS_REST_URL
+  // - UPSTASH_REDIS_REST_TOKEN
 }

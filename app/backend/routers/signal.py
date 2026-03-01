@@ -34,25 +34,9 @@ def _detect_asset_class(ticker: str) -> AssetClass:
         return AssetClass.JP_STOCK
     return AssetClass.US_STOCK
 
-# インメモリキャッシュ（5分TTL、上限500エントリ）
-_signal_cache: dict = {}  # key: "ticker:mode" → {"data": ..., "expires": ...}
-_history_cache: dict = {}  # key: "ticker:period:mode" → {"data": ..., "expires": ...}
-_markers_cache: dict = {}  # key: "ticker:period" → {"data": ..., "expires": ...}
-_regime_cache: dict = {}   # key: "ticker" → {"data": ..., "expires": ...}
-_SIGNAL_TTL = timedelta(minutes=5)
-_CACHE_MAX_SIZE = 500
-
-
-def _evict_cache(cache: dict, max_size: int = _CACHE_MAX_SIZE) -> None:
-    """期限切れエントリを削除し、上限超過時は最古のエントリを削除"""
-    now = datetime.now()
-    expired = [k for k, v in cache.items() if v.get("expires") and v["expires"] < now]
-    for k in expired:
-        del cache[k]
-    if len(cache) > max_size:
-        sorted_keys = sorted(cache, key=lambda k: cache[k].get("expires", now))
-        for k in sorted_keys[:len(cache) - max_size]:
-            del cache[k]
+# L1+L2 キャッシュ (インメモリ + Upstash Redis)
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
+_SIGNAL_TTL = 300  # 5分 (秒)
 
 
 class CHoCHCondition(BaseModel):
@@ -162,11 +146,11 @@ async def get_signal(
     asset_class = _detect_asset_class(ticker)
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
 
-    # キャッシュチェック
-    cache_key = f"{ticker}:{mode}"
-    now = datetime.now()
-    if cache_key in _signal_cache and _signal_cache[cache_key]["expires"] > now:
-        return _signal_cache[cache_key]["data"]
+    # キャッシュチェック (L1 インメモリ → L2 Redis)
+    cache_key = f"signal:{ticker}:{mode}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         # CombinedEntryDetector V10を使用
@@ -240,8 +224,7 @@ async def get_signal(
             other_modes=other_modes,
         )
 
-        _evict_cache(_signal_cache)
-        _signal_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
+        _cache_set(cache_key, response.model_dump(), ttl=_SIGNAL_TTL)
         return response
 
     except Exception as e:
@@ -479,11 +462,11 @@ async def get_signal_history(
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
     benchmark_ticker = get_config(asset_class).regime.benchmark_ticker
 
-    # キャッシュチェック
-    cache_key = f"{ticker}:{period}:{mode}"
-    now = datetime.now()
-    if cache_key in _history_cache and _history_cache[cache_key]["expires"] > now:
-        return _history_cache[cache_key]["data"]
+    # キャッシュチェック (L1 インメモリ → L2 Redis)
+    cache_key = f"signal_hist:{ticker}:{period}:{mode}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         import pandas as pd
@@ -893,8 +876,7 @@ async def get_signal_history(
             "stats": stats,
         }
 
-        _evict_cache(_history_cache)
-        _history_cache[cache_key] = {"data": result, "expires": now + _SIGNAL_TTL}
+        _cache_set(cache_key, result, ttl=_SIGNAL_TTL)
         return result
 
     except HTTPException:
@@ -915,10 +897,11 @@ async def get_regime_for_ticker(ticker: str):
     """
     ticker = ticker.upper()
 
-    # キャッシュチェック
-    now = datetime.now()
-    if ticker in _regime_cache and _regime_cache[ticker]["expires"] > now:
-        return _regime_cache[ticker]["data"]
+    # キャッシュチェック (L1 インメモリ → L2 Redis)
+    regime_key = f"regime:{ticker}"
+    cached = _cache_get(regime_key)
+    if cached is not None:
+        return cached
 
     try:
         detector = RegimeDetector(use_4regime=True)
@@ -942,8 +925,7 @@ async def get_regime_for_ticker(ticker: str):
             "effect": result.effect_description,
         }
 
-        _evict_cache(_regime_cache)
-        _regime_cache[ticker] = {"data": response, "expires": now + _SIGNAL_TTL}
+        _cache_set(regime_key, response, ttl=_SIGNAL_TTL)
         return response
 
     except Exception as e:
@@ -970,11 +952,11 @@ async def get_chart_markers(
     asset_class = _detect_asset_class(ticker)
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
 
-    # キャッシュチェック
-    cache_key = f"{ticker}:{period}"
-    now = datetime.now()
-    if cache_key in _markers_cache and _markers_cache[cache_key]["expires"] > now:
-        return _markers_cache[cache_key]["data"]
+    # キャッシュチェック (L1 インメモリ → L2 Redis)
+    cache_key = f"markers:{ticker}:{period}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         import pandas as pd
@@ -1088,8 +1070,7 @@ async def get_chart_markers(
             "data_points": len(df),
         }
 
-        _evict_cache(_markers_cache)
-        _markers_cache[cache_key] = {"data": response, "expires": now + _SIGNAL_TTL}
+        _cache_set(cache_key, response, ttl=_SIGNAL_TTL)
         return response
 
     except HTTPException:

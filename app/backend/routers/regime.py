@@ -7,17 +7,17 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # 本格ロジックをインポート
 from analysis.regime_detector import RegimeDetector, RegimeResult
 from analysis.asset_class import AssetClass
 from auth import require_proxy
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
-# インメモリキャッシュ（5分TTL）
-_regime_cache: dict = {"data": None, "expires": None}
+_REGIME_TTL = 300  # 5分
 
 
 class RegimeResponse(BaseModel):
@@ -62,10 +62,10 @@ async def get_regime():
     - BEAR: ベンチマーク < 長期EMA & 短期EMA下降
     """
     try:
-        # キャッシュチェック（5分TTL）
-        now = datetime.now()
-        if _regime_cache["data"] and _regime_cache["expires"] > now:
-            return _regime_cache["data"]
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        cached = _cache_get("regime:us")
+        if cached is not None:
+            return RegimeResponse(**cached)
 
         # RegimeDetector V8（4Regime対応）を使用
         detector = RegimeDetector(use_4regime=True)
@@ -85,8 +85,7 @@ async def get_regime():
             asset_class=result.asset_class,
         )
 
-        _regime_cache["data"] = response
-        _regime_cache["expires"] = now + timedelta(minutes=5)
+        _cache_set("regime:us", response.model_dump(), ttl=_REGIME_TTL)
         return response
 
     except Exception as e:

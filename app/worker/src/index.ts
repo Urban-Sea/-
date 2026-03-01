@@ -121,9 +121,9 @@ export default {
       return new Response(null, { status: 204, headers: { ...cors, ...SECURITY_HEADERS } });
     }
 
-    // H7: IP レートリミット
+    // H7: IP レートリミット (Redis + インメモリフォールバック)
     const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
-    if (!checkRateLimit(clientIp)) {
+    if (!(await checkRateLimit(clientIp, env))) {
       return new Response(
         JSON.stringify({ detail: 'Too many requests' }),
         {

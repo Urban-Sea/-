@@ -35,7 +35,7 @@ class SecurityHeaderMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if _IS_PRODUCTION:
             response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
+                "max-age=31536000; includeSubDomains; preload"
             )
         return response
 
@@ -51,18 +51,18 @@ _PROXY_SECRET = os.getenv("PROXY_SECRET", "")
 
 
 class CSRFOriginMiddleware(BaseHTTPMiddleware):
-    """書き込みリクエストのOriginヘッダーを検証（CSRF防止）"""
+    """書き込みリクエストの PROXY_SECRET を検証（CSRF 防止）
+    本番では Origin バイパスなし — Cloud Run への正規リクエストは全て Worker 経由。
+    """
     async def dispatch(self, request: Request, call_next):
         if _IS_PRODUCTION and request.method in _MUTATING_METHODS:
-            origin = request.headers.get("origin", "")
-            # C1: X-Proxy-Secret の値を検証（存在チェックだけでは不十分）
             proxy_secret_header = request.headers.get("x-proxy-secret", "")
             has_valid_proxy = (
                 bool(_PROXY_SECRET)
                 and bool(proxy_secret_header)
                 and hmac.compare_digest(proxy_secret_header, _PROXY_SECRET)
             )
-            if not has_valid_proxy and origin not in _ALLOWED_ORIGINS:
+            if not has_valid_proxy:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Origin not allowed"},
@@ -167,7 +167,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_mfa.router, prefix="/api/admin/mfa", tags=["admin-mfa"])
 
 
-# ── JWT 診断エンドポイント（認証不要）──
+# ── JWT 診断エンドポイント ──
 import jwt as pyjwt
 from jwt import PyJWKClient as _DiagPyJWKClient
 
@@ -175,20 +175,28 @@ from jwt import PyJWKClient as _DiagPyJWKClient
 async def auth_check(
     authorization: str | None = fastapi_Header(None),
 ):
-    """JWT 検証診断。トークンの各ステップを検証して結果を返す。"""
+    """JWT 検証診断。本番では ok/ng のみ返す（情報漏洩防止）。"""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return {"ok": False, "error": "No Bearer token"}
+
+    # 本番: 最小限の結果のみ返す（偵察防止）
+    if _IS_PRODUCTION:
+        try:
+            from auth import require_auth
+            await require_auth(authorization=authorization)
+            return {"ok": True}
+        except Exception:
+            return {"ok": False, "error": "Invalid token"}
+
+    # 開発環境: 詳細な診断情報を返す
     _jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
     _supa_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     result: dict = {"step": "start", "ok": False}
-
-    if not authorization or not authorization.lower().startswith("bearer "):
-        result["error"] = "No Bearer token in Authorization header"
-        return result
 
     token = authorization[7:]
     result["step"] = "token_received"
     result["token_length"] = len(token)
     result["jwt_secret_configured"] = bool(_jwt_secret)
-    # NOTE: シークレット値は一切返さない（漏洩防止）
     result["supabase_url_configured"] = bool(_supa_url)
 
     # Step 1: ヘッダー + ペイロード確認（署名検証なし）
@@ -220,7 +228,6 @@ async def auth_check(
 
     try:
         if token_alg.startswith(("ES", "RS", "PS")):
-            # 非対称鍵: JWKS 公開鍵で検証
             if not _supa_url:
                 result["error"] = "SUPABASE_URL not configured — cannot fetch JWKS for asymmetric JWT"
                 return result
@@ -232,7 +239,6 @@ async def auth_check(
                 token, signing_key.key, algorithms=[token_alg], audience="authenticated",
             )
         else:
-            # 対称鍵: HMAC シークレットで検証
             if not _jwt_secret:
                 result["error"] = "SUPABASE_JWT_SECRET not configured on server"
                 return result
@@ -286,11 +292,8 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """詳細ヘルスチェック（内部情報は返さない）"""
-    return {
-        "status": "healthy",
-        "supabase": "connected" if supabase else "disconnected",
-    }
+    """ヘルスチェック（内部情報は返さない）"""
+    return {"status": "healthy"}
 
 
 

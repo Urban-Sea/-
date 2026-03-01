@@ -165,7 +165,7 @@ jobs:
             --max-instances 10 \
             --concurrency 80 \
             --timeout 300 \
-            --update-env-vars ENVIRONMENT=production \
+            --update-env-vars ENVIRONMENT=production,UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }},UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }} \
             --quiet
 
       - name: Show Cloud Run URL

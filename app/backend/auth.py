@@ -202,8 +202,16 @@ async def require_auth(
                     audience="authenticated",
                     **_issuer_kwargs,
                 )
+            elif _IS_PRODUCTION and _jwks_client:
+                # ── 本番で JWKS が使えるのに kid なし → alg confusion 防止で拒否 ──
+                # Supabase ES256 トークンは必ず kid を持つ。
+                # kid なしトークンは HMAC 偽造の可能性があるため本番では拒否。
+                logger.warning(
+                    "Rejected token without kid in production (alg=%s)", token_alg
+                )
+                raise HTTPException(status_code=401, detail="Invalid token")
             else:
-                # ── kid なし → HMAC シークレットで検証（HS256）──
+                # ── kid なし → HMAC シークレットで検証（開発環境のみ）──
                 if not _SUPABASE_JWT_SECRET:
                     logger.error("SUPABASE_JWT_SECRET not configured")
                     raise HTTPException(status_code=503, detail="Service misconfigured")

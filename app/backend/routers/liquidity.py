@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import main
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 from analysis.liquidity_score import (
     calculate_layer1_stress,
@@ -31,10 +32,10 @@ router = APIRouter(dependencies=[Depends(require_proxy)])
 # 並列実行 + インメモリキャッシュ
 # ============================================================
 _executor = ThreadPoolExecutor(max_workers=8)
-_plumbing_cache: dict = {"data": None, "expires": None}
-_backtest_cache: dict = {}  # key: limit → {"data": ..., "expires": ...}
-_events_cache: dict = {"data": None, "expires": None}
-_policy_cache: dict = {"data": None, "expires": None}
+_PLUMBING_TTL = 1800   # 30分
+_EVENTS_TTL = 1800     # 30分
+_POLICY_TTL = 1800     # 30分
+_BACKTEST_TTL = 3600   # 1時間
 
 
 # ============================================================
@@ -206,10 +207,10 @@ async def get_plumbing_summary():
     if precomputed is not None:
         return precomputed
 
-    # キャッシュチェック
-    now = datetime.now()
-    if _plumbing_cache["data"] and _plumbing_cache["expires"] and _plumbing_cache["expires"] > now:
-        return _plumbing_cache["data"]
+    # キャッシュチェック（L1 インメモリ → L2 Redis）
+    cached = _cache_get("plumbing:summary")
+    if cached is not None:
+        return cached
 
     supabase = main.get_supabase()
     if not supabase:
@@ -461,8 +462,7 @@ async def get_plumbing_summary():
             result["credit_spreads"] = spreads_q.data[0]
 
         # キャッシュ保存 (30分TTL)
-        _plumbing_cache["data"] = result
-        _plumbing_cache["expires"] = now + timedelta(minutes=30)
+        _cache_set("plumbing:summary", result, ttl=_PLUMBING_TTL)
 
         return result
 
@@ -614,10 +614,10 @@ async def get_market_events_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # キャッシュチェック (30分)
-        now = datetime.now()
-        if _events_cache["data"] and _events_cache["expires"] and _events_cache["expires"] > now:
-            return _events_cache["data"]
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        cached = _cache_get("liquidity:events")
+        if cached is not None:
+            return cached
 
         loop = asyncio.get_event_loop()
 
@@ -729,8 +729,7 @@ async def get_market_events_endpoint():
             "timestamp": datetime.now().isoformat(),
         }
 
-        _events_cache["data"] = event_result
-        _events_cache["expires"] = now + timedelta(minutes=30)
+        _cache_set("liquidity:events", event_result, ttl=_EVENTS_TTL)
 
         return event_result
 
@@ -755,10 +754,10 @@ async def get_policy_regime_endpoint():
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # キャッシュチェック (30分)
-        now = datetime.now()
-        if _policy_cache["data"] and _policy_cache["expires"] and _policy_cache["expires"] > now:
-            return _policy_cache["data"]
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        cached = _cache_get("liquidity:policy")
+        if cached is not None:
+            return cached
 
         loop = asyncio.get_event_loop()
         six_months_ago = (now - timedelta(days=182)).strftime('%Y-%m-%d')
@@ -836,8 +835,7 @@ async def get_policy_regime_endpoint():
         policy_result['fed_comment'] = generate_fed_action_comment(regime)
         policy_result['timestamp'] = datetime.now().isoformat()
 
-        _policy_cache["data"] = policy_result
-        _policy_cache["expires"] = now + timedelta(minutes=30)
+        _cache_set("liquidity:policy", policy_result, ttl=_POLICY_TTL)
 
         return policy_result
 
@@ -1023,11 +1021,11 @@ async def get_backtest_states(
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        # キャッシュチェック（1時間TTL）
-        now = datetime.now()
-        cache_key = str(limit)
-        if cache_key in _backtest_cache and _backtest_cache[cache_key]["expires"] > now:
-            return _backtest_cache[cache_key]["data"]
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        cache_key = f"liquidity:backtest:{limit}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # 7クエリ並列実行
         loop = asyncio.get_event_loop()
@@ -1290,7 +1288,7 @@ async def get_backtest_states(
             "event_timeline": event_timeline,
         }
 
-        _backtest_cache[cache_key] = {"data": result, "expires": now + timedelta(hours=1)}
+        _cache_set(cache_key, result, ttl=_BACKTEST_TTL)
         return result
 
     except Exception as e:

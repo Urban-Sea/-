@@ -17,6 +17,10 @@ export interface Env {
   // フィーチャーフラグ
   CRUD_IN_WORKER: string;   // "true" で CRUD を Worker 内処理
 
+  // Upstash Redis
+  UPSTASH_REDIS_REST_URL: string;
+  UPSTASH_REDIS_REST_TOKEN: string;
+
   // 環境
   ENVIRONMENT: string;      // "production" / "development"
 }

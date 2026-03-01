@@ -1,18 +1,23 @@
 """
-事前計算結果の高速読み取り
+事前計算結果の高速読み取り（Redis → Supabase フォールバック）
 
-バッチ処理で計算された結果がSupabaseに保存されている場合、
-重い計算をスキップして直接返す。24時間以内の結果のみ有効。
+L1: Redis（バッチが書き込み、TTL 24h）
+L2: Supabase precomputed_results テーブル（永続フォールバック）
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
 import main
+from redis_cache import cache_get, get_redis
+
+logger = logging.getLogger(__name__)
 
 
 def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
     """
-    事前計算結果を取得。有効期限内なら結果を返し、なければNoneを返す。
+    事前計算結果を取得。Redis → Supabase の順で探す。
 
     Args:
         key: "risk_score", "plumbing_summary", "market_events", "policy_regime"
@@ -21,6 +26,13 @@ def get_precomputed(key: str, max_age_seconds: int = 86400) -> Any | None:
     Returns:
         事前計算結果のdict、または None（フォールバック計算が必要）
     """
+    # L1: Redis（cache_get は L1 インメモリ → L2 Redis の順）
+    redis_key = f"precomputed:{key}"
+    cached = cache_get(redis_key)
+    if cached is not None:
+        return cached
+
+    # L2: Supabase フォールバック
     supabase = main.get_supabase()
     if not supabase:
         return None
