@@ -79,6 +79,7 @@ jobs:
           NEXT_PUBLIC_API_URL: https://open-regime-api.ryu3ta-ke-mo100307.workers.dev
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_KEY }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
 
       - name: Deploy to Pages
         working-directory: app/frontend
@@ -165,7 +166,7 @@ jobs:
             --max-instances 10 \
             --concurrency 80 \
             --timeout 300 \
-            --update-env-vars ENVIRONMENT=production,UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }},UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }} \
+            --update-env-vars ENVIRONMENT=production,UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }},UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }},SENTRY_DSN=${{ secrets.SENTRY_DSN }} \
             --quiet
 
       - name: Show Cloud Run URL

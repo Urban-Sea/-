@@ -14,12 +14,35 @@ from supabase import create_client, Client
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import sentry_sdk
 
 _logger = logging.getLogger(__name__)
 
 from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist, users, admin, admin_mfa
 
 _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
+
+
+# --- Sentry error monitoring ---
+def _sentry_before_send(event, hint):
+    """4xx HTTPException は Sentry に送らない（5K/月の無料枠を節約）"""
+    if "exc_info" in hint:
+        _, exc_value, _ = hint["exc_info"]
+        if isinstance(exc_value, HTTPException) and exc_value.status_code < 500:
+            return None
+    return event
+
+
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        environment=os.getenv("ENVIRONMENT", "development"),
+        traces_sample_rate=0.05,
+        send_default_pii=False,
+        before_send=_sentry_before_send,
+    )
+    _logger.info("Sentry initialized (env=%s)", os.getenv("ENVIRONMENT"))
 
 # レート制限 (60 req/min per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])

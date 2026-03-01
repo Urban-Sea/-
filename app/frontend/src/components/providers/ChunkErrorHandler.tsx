@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Sentry } from '@/lib/sentry';
 
 /**
  * B2: Cloudflare Pages デプロイ時の JS チャンク 404 エラーを検知して自動遷移。
@@ -50,6 +51,9 @@ export function ChunkErrorHandler() {
     function onError(event: ErrorEvent) {
       if (isChunkError(event.message || '')) {
         event.preventDefault();
+        Sentry.captureException(event.error || new Error(event.message), {
+          tags: { chunk_error: 'true' },
+        });
         tryReload();
       }
     }
@@ -58,6 +62,9 @@ export function ChunkErrorHandler() {
       const msg = event.reason?.message || String(event.reason || '');
       if (isChunkError(msg)) {
         event.preventDefault();
+        Sentry.captureException(event.reason || new Error(msg), {
+          tags: { chunk_error: 'true' },
+        });
         tryReload();
       }
     }

@@ -3,6 +3,7 @@
 import { SWRConfig } from 'swr';
 import { getAccessToken, setAccessToken, isRedirecting, markRedirecting } from './auth-store';
 import { supabase } from './supabase';
+import { Sentry } from './sentry';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
 
@@ -62,6 +63,12 @@ export function SWRProvider({ children }: { children: React.ReactNode }) {
         revalidateOnFocus: false,
         dedupingInterval: 2000,
         errorRetryCount: 2,
+        onError: (error: Error, key: string) => {
+          // 4xx はノイズなので Sentry に送らない（5xx・ネットワークエラーのみ）
+          if (!error.message?.match(/40[134]/)) {
+            Sentry.captureException(error, { tags: { swr_key: key } });
+          }
+        },
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
           // 401/403/404 はリトライしない
           if (error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('404')) {

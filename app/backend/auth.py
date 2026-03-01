@@ -18,6 +18,7 @@ from fastapi import Header, HTTPException
 import jwt as pyjwt  # PyJWT
 from jwt import PyJWKClient
 from cachetools import TTLCache
+import sentry_sdk
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,9 @@ async def require_auth(
                 "Supabase may not include this claim.",
                 sub[:8],
             )
+
+        # Sentry: エラー発生時にユーザーを特定するためのコンテキスト
+        sentry_sdk.set_user({"id": sub})
 
         return _resolve_user_by_jwt(sub, email)
 

@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { setAccessToken } from '@/lib/auth-store';
+import { Sentry } from '@/lib/sentry';
 import type { Session, User } from '@supabase/supabase-js';
 
 interface UserContextType {
@@ -49,6 +50,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setAccessToken(s?.access_token ?? null);
+      Sentry.setUser(s?.user ? { id: s.user.id } : null);
       if (s?.access_token) ensureUser(s.access_token);
       setIsLoading(false);
     });
@@ -58,6 +60,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       (_event, s) => {
         setSession(s);
         setAccessToken(s?.access_token ?? null);
+        Sentry.setUser(s?.user ? { id: s.user.id } : null);
         if (s?.access_token) ensureUser(s.access_token);
       }
     );
@@ -73,6 +76,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setAccessToken(null);
+    Sentry.setUser(null);
     window.location.href = '/login/';
   };
 
