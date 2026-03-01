@@ -163,7 +163,12 @@ export default {
       }
 
       // CRUD ルーティング
-      const crudResponse = routeCrud(url.pathname, request, env, cors);
+      // Worker 内部で処理するため X-Proxy-Secret を注入
+      // (以前はプロキシ時に付与していたが、内部処理ではブラウザから届かない)
+      const headers = new Headers(request.headers);
+      headers.set('X-Proxy-Secret', env.PROXY_SECRET);
+      const internalRequest = new Request(request, { headers });
+      const crudResponse = routeCrud(url.pathname, internalRequest, env, cors);
       if (crudResponse) return crudResponse;
     }
 
