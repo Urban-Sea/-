@@ -5,6 +5,15 @@
   "compatibility_date": "2026-02-01",
   "vars": {
     "ORIGIN": "https://empathetic-hope-production.up.railway.app",
-    "ALLOWED_ORIGIN": "https://open-regime.pages.dev,https://open-regime-admin.pages.dev"
+    "ALLOWED_ORIGIN": "https://open-regime.pages.dev,https://open-regime-admin.pages.dev",
+    "CRUD_IN_WORKER": "true",
+    "ENVIRONMENT": "production"
   }
+  // Secrets (set via `wrangler secret put`):
+  // - PROXY_SECRET
+  // - SUPABASE_URL
+  // - SUPABASE_KEY (service_role)
+  // - SUPABASE_JWT_SECRET
+  // - MFA_ENCRYPTION_KEY (hex 64 chars)
+  // - ADMIN_EMAILS (comma-separated)
 }

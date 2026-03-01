@@ -8,6 +8,10 @@
     "check": "wrangler check",
     "types": "wrangler types"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "jose": "^5.2.0"
+  },
   "devDependencies": {
     "wrangler": "^4.67.0",
     "typescript": "^5.7.0",
