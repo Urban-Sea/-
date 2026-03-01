@@ -141,6 +141,7 @@
 - [x] `.env.local` API URL を `https://api.open-regime.com` に変更
 - [x] `api.ts` フォールバック URL 更新
 - [x] ドキュメント更新（システム設計_詳細2.md）
+- [x] CF Access に `open-regime.com` 追加（公開前のアクセス制限）
 
 ## ドメインマッピング
 
@@ -149,3 +150,33 @@
 | `open-regime.com` | CF Pages | フロントエンド |
 | `api.open-regime.com` | CF Worker | API プロキシ |
 | `noreply@open-regime.com` | Resend SMTP | メール送信元 |
+
+## CF Access 設定（公開前）
+
+| ドメイン | CF Access | 備考 |
+|---------|-----------|------|
+| `open-regime.com` | あり | 公開時に外す |
+| `*.open-regime.pages.dev` | あり | プレビュー保護 |
+| `open-regime.pages.dev` | あり | 旧 URL 保護 |
+| `open-regime-admin.pages.dev` | あり（別アプリ） | 永続的に保護 |
+
+---
+
+# Step 5: Feature Gate 実装（未着手）
+
+> 設計仕様: `tasks/feature-gate.md` 参照
+
+- [ ] Worker: 回数制限ミドルウェア追加（Redis INCR）
+- [ ] Worker: 数量制限チェック追加（holdings, cash_balances）
+- [ ] Worker: Pro 限定エンドポイント制限追加
+- [ ] Frontend: `useMe()` で plan 取得 → 制限 UI 表示
+- [ ] Frontend: `<UpgradePrompt>` コンポーネント作成
+- [ ] Frontend: 運用モードセレクタの Free 制限
+- [ ] テスト: Free/Pro 両プランでの動作確認
+
+---
+
+# UI 改修タスク（未着手）
+
+- [ ] 用語解説の改修（既存の用語説明を見直し・拡充）
+- [ ] ダッシュボード・各タブのシステム解説改修（使い方・見方の説明を改善）
