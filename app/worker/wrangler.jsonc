@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-02-01",
   "vars": {
-    "ORIGIN": "https://empathetic-hope-production.up.railway.app",
+    "ORIGIN": "https://open-regime-backend-1073412395842.us-east1.run.app",
     "ALLOWED_ORIGIN": "https://open-regime.pages.dev,https://open-regime-admin.pages.dev",
     "CRUD_IN_WORKER": "true",
     "ENVIRONMENT": "production"

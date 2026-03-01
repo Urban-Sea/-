@@ -165,7 +165,7 @@ jobs:
             --max-instances 10 \
             --concurrency 80 \
             --timeout 300 \
-            --set-env-vars ENVIRONMENT=production \
+            --update-env-vars ENVIRONMENT=production \
             --quiet
 
       - name: Show Cloud Run URL
