@@ -18,18 +18,14 @@ CREATE TABLE IF NOT EXISTS batch_logs (
     details JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_batch_logs_started_at
+CREATE INDEX IF NOT EXISTS idx_batch_logs_started
     ON batch_logs (started_at DESC);
 
 ALTER TABLE batch_logs ENABLE ROW LEVEL SECURITY;
 
--- service_role (バッチ) は全操作可、anon は SELECT のみ
+-- anon key は SELECT のみ。書き込みは service_role が RLS バイパスするので不要。
 CREATE POLICY "batch_logs_select" ON batch_logs
     FOR SELECT USING (true);
-CREATE POLICY "batch_logs_insert" ON batch_logs
-    FOR INSERT WITH CHECK (true);
-CREATE POLICY "batch_logs_update" ON batch_logs
-    FOR UPDATE USING (true);
 
 
 -- =====================================================
@@ -47,15 +43,18 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created
     ON admin_audit_logs (created_at DESC);
+
+-- FK カバリングインデックス
+CREATE INDEX IF NOT EXISTS idx_audit_logs_admin_user_id
+    ON admin_audit_logs (admin_user_id);
 
 ALTER TABLE admin_audit_logs ENABLE ROW LEVEL SECURITY;
 
+-- anon key は SELECT のみ。書き込みは service_role が RLS バイパスするので不要。
 CREATE POLICY "audit_logs_select" ON admin_audit_logs
     FOR SELECT USING (true);
-CREATE POLICY "audit_logs_insert" ON admin_audit_logs
-    FOR INSERT WITH CHECK (true);
 
 
 -- =====================================================
@@ -72,9 +71,6 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 
 ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
 
+-- anon key は SELECT のみ。書き込みは service_role が RLS バイパスするので不要。
 CREATE POLICY "feature_flags_select" ON feature_flags
     FOR SELECT USING (true);
-CREATE POLICY "feature_flags_insert" ON feature_flags
-    FOR INSERT WITH CHECK (true);
-CREATE POLICY "feature_flags_update" ON feature_flags
-    FOR UPDATE USING (true);

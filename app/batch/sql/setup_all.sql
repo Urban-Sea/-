@@ -37,8 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_data_revisions_table_date
     ON data_revisions (table_name, record_date);
 CREATE INDEX IF NOT EXISTS idx_data_revisions_detected
     ON data_revisions (detected_at);
-CREATE INDEX IF NOT EXISTS idx_data_revisions_direction
-    ON data_revisions (direction);
+-- direction 単体インデックスはクエリで使用されないため削除済み
 
 
 -- ============================================================

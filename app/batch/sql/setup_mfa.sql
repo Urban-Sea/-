@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS admin_mfa (
 ALTER TABLE admin_mfa ENABLE ROW LEVEL SECURITY;
 -- anon/authenticated ユーザーには一切アクセスさせない
 -- Backend は service_role キーで RLS をバイパスする
+CREATE POLICY "deny_all" ON admin_mfa
+    FOR ALL USING (false) WITH CHECK (false);
 
 -- 2. admin_mfa_sessions: MFA セッショントークン管理
 CREATE TABLE IF NOT EXISTS admin_mfa_sessions (
@@ -34,6 +36,8 @@ CREATE INDEX IF NOT EXISTS idx_admin_mfa_sessions_hash
 
 -- RLS: service_role のみ
 ALTER TABLE admin_mfa_sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "deny_all" ON admin_mfa_sessions
+    FOR ALL USING (false) WITH CHECK (false);
 
 -- 期限切れセッション自動クリーンアップ用（オプション: pg_cron で定期実行）
 -- DELETE FROM admin_mfa_sessions WHERE expires_at < NOW();
