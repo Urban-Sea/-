@@ -1,28 +1,103 @@
-# セキュリティ修正 TODO
+# Cloud Run 移行 TODO (Step 2)
 
-## Batch 1 — ゼロリスク（情報漏洩 / バリデーション追加のみ）
-- [x] H3: `/api/auth/check` から jwt_secret_prefix 削除
-- [x] L1: holdings cash の `detail=str(e)` を修正
-- [x] M4: HoldingUpdate に shares/avg_price のバリデータ追加
-- [x] M5: TradeCreate に trade_date の日付形式バリデーション追加
-- [x] M6: create_trade で holding_id の所有者チェック追加
+## Phase 0: GCP セットアップ（手動）
 
-## Batch 2 — 低リスク（認証の厳格化、追加チェックのみ）
-- [x] C2: JWT issuer 検証を強制（decode に issuer= 追加）
-- [x] M3: allowed_algs を token_alg のみに限定
-- [x] C1: `kid` ヘッダーの有無でアルゴリズムパス分岐（attacker 制御を排除）
+- [ ] GCP プロジェクト作成（プロジェクト ID をメモ）
+- [ ] API 有効化: Cloud Run Admin, Artifact Registry, IAM Credentials
+- [ ] Artifact Registry リポジトリ作成 (us-east1, Docker, `open-regime`)
+- [ ] Workload Identity Federation 設定（下記コマンド参照）
+- [ ] GitHub Secrets 登録: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
 
-## Batch 3 — 中リスク（Worker 変更）
-- [x] C3: per-user エンドポイントのキャッシュを無効化（cache poisoning 排除）
-- [x] H2: Authorization ヘッダーは Origin に関係なく常に転送
-- [x] M1: 不正 Origin に CORS ヘッダーを返さない
+### WIF セットアップコマンド
 
-## Batch 4 — DB Linter 指摘修正
-- [x] 重複インデックス削除: `idx_audit_logs_created_at`, `idx_batch_logs_started_at`
-- [x] FK カバリングインデックス追加: `admin_audit_logs.admin_user_id`, `trades.holding_id`
-- [x] `update_updated_at` 関数の search_path 固定
-- [x] 過剰 RLS ポリシー削除: `audit_logs_insert`, `batch_logs_insert/update`, `feature_flags_insert/update`
-- [x] 未使用インデックス削除: `idx_revisions_date`, `idx_data_revisions_direction`
-- [x] セットアップ SQL 整合性修正 (`setup_admin.sql`, `setup_all.sql`)
-- [x] RLS ポリシーなしテーブルに deny_all 追加: `admin_mfa`, `admin_mfa_sessions`, `cash_balances`, `portfolio_snapshots`, `users`
+```bash
+PROJECT_ID=<your-project-id>
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+REPO=<github-user>/<github-repo>
+
+# WIF プール
+gcloud iam workload-identity-pools create "github" \
+  --project=$PROJECT_ID \
+  --location="global" \
+  --display-name="GitHub Actions"
+
+# OIDC プロバイダー
+gcloud iam workload-identity-pools providers create-oidc "github-actions" \
+  --project=$PROJECT_ID \
+  --location="global" \
+  --workload-identity-pool="github" \
+  --display-name="GitHub Actions" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+# サービスアカウント
+gcloud iam service-accounts create github-actions-deployer \
+  --project=$PROJECT_ID \
+  --display-name="GitHub Actions Deployer"
+
+# ロール付与
+for ROLE in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:github-actions-deployer@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="$ROLE"
+done
+
+# WIF ↔ SA バインディング
+gcloud iam service-accounts add-iam-policy-binding \
+  github-actions-deployer@${PROJECT_ID}.iam.gserviceaccount.com \
+  --project=$PROJECT_ID \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/${REPO}"
+```
+
+### GitHub Secrets に登録する値
+
+| Secret 名 | 値 |
+|-----------|-----|
+| `GCP_PROJECT_ID` | プロジェクト ID |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/github-actions` |
+| `GCP_SERVICE_ACCOUNT` | `github-actions-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
+
+## Phase 1: コード変更（完了済み）
+
+- [x] Dockerfile — Cloud Run PORT 対応
+- [x] .dockerignore 新規作成
+- [x] auth.py — レガシー X-User-Email パス削除
+- [x] main.py — CORS allow_headers から X-User-Email 削除
+- [x] proxy.ts — X-User-Email 転送削除
+- [x] cors.ts — Allow-Headers から X-User-Email 削除
+- [x] railway.json 削除
+- [x] deploy.yml — Backend デプロイジョブ追加 (WIF)
+
+## Phase 2: 初回デプロイ & 切り替え
+
+- [ ] Phase 0 完了後にコミット → main にプッシュ → CI が Cloud Run にデプロイ
+- [ ] Cloud Run 環境変数を手動設定:
+  ```bash
+  gcloud run services update open-regime-backend \
+    --region us-east1 \
+    --set-env-vars \
+      PROXY_SECRET=<Worker と同じ値>,\
+      SUPABASE_URL=<Supabase URL>,\
+      SUPABASE_KEY=<service_role key>,\
+      SUPABASE_JWT_SECRET=<JWT secret>,\
+      ADMIN_EMAILS=<管理者メール>,\
+      MFA_ENCRYPTION_KEY=<MFA暗号化キー>
+  ```
+- [ ] Cloud Run 直接テスト: `curl https://<url>/health`
+- [ ] wrangler.jsonc の ORIGIN を Cloud Run URL に変更 → プッシュ
+- [ ] スモークテスト（regime, signal/SPY, stock/SPY, liquidity/overview, employment/risk-score）
+- [ ] 1 週間問題なければ Railway 廃止
+
+## Phase 3: クリーンアップ（1 週間後）
+
+- [ ] CRUD ルーター削除（holdings, trades, watchlist, users, admin, admin_mfa）
+- [ ] main.py から該当 include_router 行を削除
+- [ ] requirements.txt から pyotp, qrcode[pil] 削除
+- [ ] Railway プロジェクト廃止
+
+---
+
+## 残りのセキュリティ TODO
+
 - [ ] Supabase Auth: Leaked Password Protection 有効化（Dashboard → Auth → Settings）

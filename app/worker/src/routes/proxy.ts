@@ -47,9 +47,7 @@ export async function handleProxy(
   const authHeader = request.headers.get('Authorization');
   if (authHeader) proxyHeaders.set('Authorization', authHeader);
 
-  // Admin ヘッダー転送 (CORS で Origin チェック済み)
-  const userEmail = request.headers.get('X-User-Email');
-  if (userEmail) proxyHeaders.set('X-User-Email', userEmail);
+  // Admin MFA ヘッダー転送 (CORS で Origin チェック済み)
   const mfaToken = request.headers.get('X-MFA-Token');
   if (mfaToken) proxyHeaders.set('X-MFA-Token', mfaToken);
 

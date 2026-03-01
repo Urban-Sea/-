@@ -1,20 +1,15 @@
 """
-認証ミドルウェア — Dual-mode: Supabase Auth JWT + Legacy X-User-Email
+認証ミドルウェア — Supabase Auth JWT
 
-Phase 1 (JWT — 新規):
-  フロントエンドが Supabase Auth で取得した JWT を Authorization: Bearer ヘッダーで送信。
-  Backend は SUPABASE_JWT_SECRET で署名検証し、sub + email からユーザーを解決する。
-
-Phase 2 (Legacy — フォールバック):
-  Cloudflare Access 時代の X-User-Email + X-Proxy-Secret ヘッダー検証。
-  移行完了後に削除予定。
+フロントエンドが Supabase Auth で取得した JWT を Authorization: Bearer ヘッダーで送信。
+Backend は JWKS 公開鍵 (ES256) または SUPABASE_JWT_SECRET (HS256) で署名検証し、
+sub + email からユーザーを解決する。
 
 require_auth() は users テーブルの UUID を返す（メールアドレスではない）。
-初回ログイン時にユーザーを自動作成し、古いメールベースの user_id を UUID に移行する。
+初回ログイン時にユーザーを自動作成する。
 """
 
 import os
-import re
 import hmac
 import logging
 from datetime import datetime, timezone
@@ -44,19 +39,9 @@ if _SUPABASE_URL:
         lifespan=3600,  # 1時間キャッシュ
     )
 
-# メールアドレスの簡易バリデーション
-_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-
-# email → UUID キャッシュ（5分TTL, 最大1000件 — M1: 無制限dict脆弱性修正）
-_user_cache: TTLCache = TTLCache(maxsize=1000, ttl=300)
 # auth_provider_id (Supabase Auth UUID) → users.id キャッシュ
 _provider_id_cache: TTLCache = TTLCache(maxsize=1000, ttl=300)
 
-# 初回ログイン時に自動移行するテーブル一覧
-_USER_TABLES = [
-    "holdings", "trades", "cash_balances",
-    "portfolio_snapshots", "user_watchlists", "user_settings",
-]
 
 
 async def require_proxy(
@@ -176,92 +161,15 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
 
 
 # ──────────────────────────────────────────────
-# Legacy 認証パス (Cloudflare Access)
-# ──────────────────────────────────────────────
-
-def _resolve_user_id(email: str) -> str:
-    """
-    メールアドレスから users テーブルの UUID を解決する。
-    未登録なら自動作成し、古いメールベースの user_id を UUID に移行する。
-    """
-    # キャッシュチェック
-    if email in _user_cache:
-        return _user_cache[email]
-
-    from main import get_supabase
-    supabase = get_supabase()
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Database not connected")
-
-    # users テーブル検索
-    result = supabase.table("users").select("id, is_active").eq("email", email).limit(1).execute()
-
-    if result.data:
-        user_id = result.data[0]["id"]
-        # アカウント凍結チェック
-        if result.data[0].get("is_active") is False:
-            raise HTTPException(status_code=403, detail="Account deactivated")
-        # last_login_at を更新（キャッシュミス時 = セッション初回のみ）
-        now_iso = datetime.now(timezone.utc).isoformat()
-        try:
-            supabase.table("users").update(
-                {"last_login_at": now_iso}
-            ).eq("id", user_id).execute()
-        except Exception as e:
-            logger.warning("Failed to update last_login_at: %s", e)
-    else:
-        # 初回ログイン: ユーザー自動作成
-        now_iso = datetime.now(timezone.utc).isoformat()
-        try:
-            create = supabase.table("users").insert({
-                "email": email,
-                "auth_provider": "cloudflare_access",
-                "last_login_at": now_iso,
-            }).execute()
-            user_id = create.data[0]["id"]
-        except Exception as e:
-            # 競合: 別リクエストが先に作成済み
-            logger.warning("User creation race for email=%s: %s", email[:3] + "***", e)
-            retry = supabase.table("users").select("id").eq("email", email).limit(1).execute()
-            if not retry.data:
-                raise HTTPException(status_code=500, detail="Failed to create user")
-            user_id = retry.data[0]["id"]
-
-        # 古いメールベースの user_id を UUID に自動移行（このユーザー分のみ）
-        migrated = []
-        for table in _USER_TABLES:
-            try:
-                res = supabase.table(table).update(
-                    {"user_id": user_id}
-                ).eq("user_id", email).execute()
-                if res.data:
-                    migrated.append(f"{table}({len(res.data)})")
-            except Exception as e:
-                logger.warning(f"Migration skip {table}: {e}")
-
-        if migrated:
-            logger.info(f"Migrated user data: {email} -> {user_id} [{', '.join(migrated)}]")
-        else:
-            logger.info(f"New user created: {email} -> {user_id}")
-
-    _user_cache[email] = user_id
-    return user_id
-
-
-# ──────────────────────────────────────────────
 # メインの認証依存関数
 # ──────────────────────────────────────────────
 
 async def require_auth(
     authorization: str | None = Header(None),
-    x_user_email: str | None = Header(None),
-    x_proxy_secret: str | None = Header(None),
 ) -> str:
     """
-    Dual-mode 認証: users テーブルの UUID を返す。
-
-    1. Authorization: Bearer <jwt> (Supabase Auth — 優先)
-    2. X-User-Email + X-Proxy-Secret (Legacy CF Access — フォールバック)
+    JWT 認証: users テーブルの UUID を返す。
+    Authorization: Bearer <jwt> (Supabase Auth)
     """
     # ── Path 1: Supabase Auth JWT ──
     if authorization and authorization.lower().startswith("bearer "):
@@ -340,32 +248,6 @@ async def require_auth(
             )
 
         return _resolve_user_by_jwt(sub, email)
-
-    # ── Path 2: Legacy X-User-Email + X-Proxy-Secret ──
-    if _IS_PRODUCTION:
-        if not _PROXY_SECRET:
-            logger.error("PROXY_SECRET is not configured in production!")
-            raise HTTPException(status_code=503, detail="Service misconfigured")
-        if not x_proxy_secret or not hmac.compare_digest(x_proxy_secret, _PROXY_SECRET):
-            # JWT もレガシーヘッダーもない場合
-            if not x_user_email:
-                raise HTTPException(status_code=401, detail="Authentication required")
-            raise HTTPException(status_code=403, detail="Forbidden")
-
-    if x_user_email:
-        # C5: レガシーパス使用の非推奨ログ
-        logger.warning(
-            "DEPRECATED: X-User-Email auth used (email=%s). Migrate to JWT.",
-            x_user_email[:3] + "***",
-        )
-        email = x_user_email.strip().lower()
-        if len(email) > 254 or not _EMAIL_RE.match(email):
-            raise HTTPException(status_code=400, detail="Invalid email format")
-        return _resolve_user_id(email)
-
-    if not _IS_PRODUCTION:
-        # 開発環境: ヘッダーなしでも通過（デフォルトユーザー）
-        return _resolve_user_id("dev@localhost")
 
     raise HTTPException(
         status_code=401,

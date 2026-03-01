@@ -1,4 +1,4 @@
-name: Deploy Worker + Pages
+name: Deploy
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - 'app/worker/**'
       - 'app/frontend/**'
       - 'app/admin-frontend/**'
+      - 'app/backend/**'
 
 jobs:
   changes:
@@ -16,6 +17,7 @@ jobs:
       worker: ${{ steps.filter.outputs.worker }}
       frontend: ${{ steps.filter.outputs.frontend }}
       admin: ${{ steps.filter.outputs.admin }}
+      backend: ${{ steps.filter.outputs.backend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -28,6 +30,8 @@ jobs:
               - 'app/frontend/**'
             admin:
               - 'app/admin-frontend/**'
+            backend:
+              - 'app/backend/**'
 
   deploy-worker:
     name: Deploy Cloudflare Worker
@@ -111,3 +115,62 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-backend:
+    name: Deploy to Cloud Run
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REGION: us-east1
+      SERVICE_NAME: open-regime-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
+
+      - name: Build and push Docker image
+        working-directory: app/backend
+        run: |
+          IMAGE=us-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/open-regime/backend
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          IMAGE=us-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/open-regime/backend
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image $IMAGE:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --concurrency 80 \
+            --timeout 300 \
+            --set-env-vars ENVIRONMENT=production \
+            --quiet
+
+      - name: Show Cloud Run URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format 'value(status.url)')
+          echo "::notice::Cloud Run URL: $URL"
