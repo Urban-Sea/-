@@ -8,6 +8,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from market_hours import adaptive_ttl
+
 DEFAULT_TTL = 300  # 5 minutes
 
 
@@ -47,7 +49,7 @@ def fetch_ohlcv_cached(ticker: str, period: str = "6mo", ttl: int = DEFAULT_TTL)
         # キャッシュに保存
         data_for_cache = df.copy()
         data_for_cache["Date"] = data_for_cache["Date"].dt.strftime("%Y-%m-%d")
-        cache_set(cache_key, data_for_cache.to_dict(orient="records"), ttl=ttl)
+        cache_set(cache_key, data_for_cache.to_dict(orient="records"), ttl=adaptive_ttl(ttl, ticker))
 
         return df
     except Exception as e:

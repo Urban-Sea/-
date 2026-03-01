@@ -40,6 +40,7 @@ _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
 # L1+L2 キャッシュ (インメモリ + Upstash Redis)
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
+from market_hours import adaptive_ttl
 _CACHE_TTL = 300  # 5分
 _executor = ThreadPoolExecutor(max_workers=10)
 
@@ -114,7 +115,7 @@ def _fetch_single_quote(ticker: str) -> dict:
                 "volume": info.get("volume") or 0,
                 "name": info.get("shortName") or info.get("longName") or None,
             }
-            _cache_set(cache_key, quote, ttl=_CACHE_TTL)
+            _cache_set(cache_key, quote, ttl=adaptive_ttl(_CACHE_TTL, ticker))
             return quote
         return {"ticker": ticker, "error": "No price data"}
     except Exception:
@@ -240,7 +241,7 @@ async def get_stock_info(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
+        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
         return result
 
     except HTTPException:
@@ -294,7 +295,7 @@ async def get_stock_quote(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
+        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
         return result
 
     except HTTPException:
@@ -353,7 +354,7 @@ async def get_stock_history(
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=_CACHE_TTL)
+        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
         return result
 
     except HTTPException:

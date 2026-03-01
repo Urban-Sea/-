@@ -36,6 +36,7 @@ def _detect_asset_class(ticker: str) -> AssetClass:
 
 # L1+L2 キャッシュ (インメモリ + Upstash Redis)
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
+from market_hours import adaptive_ttl
 _SIGNAL_TTL = 300  # 5分 (秒)
 
 
@@ -224,7 +225,7 @@ async def get_signal(
             other_modes=other_modes,
         )
 
-        _cache_set(cache_key, response.model_dump(), ttl=_SIGNAL_TTL)
+        _cache_set(cache_key, response.model_dump(), ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
         return response
 
     except Exception as e:
@@ -876,7 +877,7 @@ async def get_signal_history(
             "stats": stats,
         }
 
-        _cache_set(cache_key, result, ttl=_SIGNAL_TTL)
+        _cache_set(cache_key, result, ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
         return result
 
     except HTTPException:
@@ -925,7 +926,7 @@ async def get_regime_for_ticker(ticker: str):
             "effect": result.effect_description,
         }
 
-        _cache_set(regime_key, response, ttl=_SIGNAL_TTL)
+        _cache_set(regime_key, response, ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
         return response
 
     except Exception as e:
@@ -1070,7 +1071,7 @@ async def get_chart_markers(
             "data_points": len(df),
         }
 
-        _cache_set(cache_key, response, ttl=_SIGNAL_TTL)
+        _cache_set(cache_key, response, ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
         return response
 
     except HTTPException:
