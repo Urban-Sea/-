@@ -112,3 +112,40 @@
 ## 残りのセキュリティ TODO
 
 - [ ] Supabase Auth: Leaked Password Protection 有効化（Dashboard → Auth → Settings）
+
+---
+
+# Step 4.5: Resend SMTP 導入 ✅ 完了
+
+- [x] Resend アカウント作成 + API Key 生成
+- [x] Supabase Custom SMTP 設定（`noreply@open-regime.com`）
+- [x] テストメール送信・動作確認
+
+---
+
+# Step 4.6: カスタムドメイン導入 ✅ 完了
+
+> 目的: 独自ドメインでフロントエンド・API・メールを統一
+> ドメイン: `open-regime.com`（Cloudflare Registrar, $10.46/年）
+
+## 完了した作業
+
+- [x] Cloudflare Registrar でドメイン取得（`open-regime.com`）
+- [x] CF Pages カスタムドメイン設定（`open-regime.com`）
+- [x] CF Worker カスタムドメイン設定（`api.open-regime.com`）
+- [x] Resend ドメイン追加 + DNS 認証（SPF/DKIM）
+- [x] DMARC レコード追加
+- [x] Supabase SMTP Sender email を `noreply@open-regime.com` に変更
+- [x] Supabase Auth Site URL / Redirect URL 更新
+- [x] `wrangler.jsonc` ALLOWED_ORIGIN に `https://open-regime.com` 追加
+- [x] `.env.local` API URL を `https://api.open-regime.com` に変更
+- [x] `api.ts` フォールバック URL 更新
+- [x] ドキュメント更新（システム設計_詳細2.md）
+
+## ドメインマッピング
+
+| ドメイン | サービス | 用途 |
+|---------|---------|------|
+| `open-regime.com` | CF Pages | フロントエンド |
+| `api.open-regime.com` | CF Worker | API プロキシ |
+| `noreply@open-regime.com` | Resend SMTP | メール送信元 |
