@@ -1385,7 +1385,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         loop = asyncio.get_event_loop()
 
         # Phase 2: 日付フィルタで取得行数を削減 (ページネーション除去)
-        start_date = (now - timedelta(days=months * 31 + 365)).strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=months * 31 + 365)).strftime("%Y-%m-%d")
 
         def fetch_nfp():
             return supabase.table("economic_indicators") \
