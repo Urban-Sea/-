@@ -95,7 +95,7 @@ function EconomicPhaseHero({ data }: { data: EmploymentRiskScore }) {
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">総合</p>
               <p className="text-[10px] text-muted-foreground font-mono">{data.total_score}/100</p>
             </div>
-            {categories.map((cat) => {
+            {categories?.map((cat) => {
               const pct = Math.round((cat.score / cat.max_score) * 100);
               const catColor = cat.name === '雇用' ? 'text-blue-600 dark:text-blue-400'
                 : cat.name === '消費' ? 'text-amber-600 dark:text-amber-400'
@@ -279,11 +279,13 @@ function DashboardTab({ data }: { data: EmploymentRiskScore }) {
     <div className="space-y-4">
       <EconomicPhaseHero data={data} />
       <KeyMetricsBar data={data} />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <CategoryCard category={data.categories[0]} number="CAT 1" color="blue" stagger={3} />
-        {data.categories[1] && <CategoryCard category={data.categories[1]} number="CAT 2" color="amber" stagger={4} />}
-        {data.categories[2] && <CategoryCard category={data.categories[2]} number="CAT 3" color="purple" stagger={5} />}
-      </div>
+      {data.categories?.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <CategoryCard category={data.categories[0]} number="CAT 1" color="blue" stagger={3} />
+          {data.categories[1] && <CategoryCard category={data.categories[1]} number="CAT 2" color="amber" stagger={4} />}
+          {data.categories[2] && <CategoryCard category={data.categories[2]} number="CAT 3" color="purple" stagger={5} />}
+        </div>
+      )}
       <SahmRulePanel sahm={data.sahm_rule} />
       {data.alert_factors.length > 0 && (
         <GlassCard stagger={6}>
