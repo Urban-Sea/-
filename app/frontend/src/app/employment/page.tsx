@@ -110,7 +110,7 @@ function EconomicPhaseHero({ data }: { data: EmploymentRiskScore }) {
             })}
           </div>
         </div>
-        {sahm_rule.triggered && (
+        {sahm_rule?.triggered && (
           <div className="mt-5 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-600 dark:text-red-300 leading-relaxed plumb-shimmer-bg">
             サームルール発動中: Sahm値 {sahm_rule.sahm_value?.toFixed(2)} ≥ 0.50 — 景気後退シグナル
             {sahm_rule.peak_out && ' (ピークアウト検知: 前月より改善)'}
@@ -127,7 +127,7 @@ function KeyMetricsBar({ data }: { data: EmploymentRiskScore }) {
   const nfpChange = latest_nfp?.nfp_change;
   const u3 = latest_nfp?.u3_rate;
   const claims = latest_claims?.initial_claims;
-  const sahm = sahm_rule.sahm_value;
+  const sahm = sahm_rule?.sahm_value;
 
   const nfpColor = nfpChange == null ? '' : nfpChange < 0 ? 'text-red-600 dark:text-red-400' : nfpChange < 100 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
   const u3Color = u3 == null ? '' : u3 > 5.0 ? 'text-red-600 dark:text-red-400' : u3 > 4.5 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
@@ -287,7 +287,7 @@ function DashboardTab({ data }: { data: EmploymentRiskScore }) {
         </div>
       )}
       <SahmRulePanel sahm={data.sahm_rule} />
-      {data.alert_factors.length > 0 && (
+      {data.alert_factors?.length > 0 && (
         <GlassCard stagger={6}>
           <div className="p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400 mb-3">警戒要因</h3>
@@ -994,7 +994,9 @@ function EmploymentContent() {
 
   if (isLoading) return <LoadingSkeleton />;
   if (riskError) return <ErrorState error={riskError instanceof Error ? riskError.message : 'データの取得に失敗しました'} onRetry={handleRefresh} />;
-  if (!data) return null;
+  if (!data || !data.phase || !data.categories || !data.sahm_rule) {
+    return <ErrorState error="データ構造が不正です。再取得してください。" onRetry={handleRefresh} />;
+  }
 
   return (
     <div className="space-y-4 pb-10">

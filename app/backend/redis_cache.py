@@ -90,18 +90,28 @@ def cache_get(key: str) -> Optional[Any]:
     return None
 
 
+def _serialize(data: Any) -> Any:
+    """Pydantic モデルを dict に変換。dict/list/プリミティブはそのまま返す。"""
+    if hasattr(data, "model_dump"):
+        return data.model_dump()
+    if hasattr(data, "dict"):
+        return data.dict()
+    return data
+
+
 def cache_set(key: str, data: Any, ttl: int = 300) -> None:
     """L1 と L2 の両方に保存。"""
     now = time.time()
+    serializable = _serialize(data)
 
     # L1
-    _l1_cache[key] = {"data": data, "expires": now + ttl}
+    _l1_cache[key] = {"data": serializable, "expires": now + ttl}
     _evict_l1()
 
     # L2
     redis = get_redis()
     if redis:
         try:
-            redis.set(key, json.dumps(data, default=str), ex=ttl)
+            redis.set(key, json.dumps(serializable, default=str), ex=ttl)
         except Exception as e:
             logger.debug(f"Redis SET error for {key}: {e}")
