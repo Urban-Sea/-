@@ -5,7 +5,7 @@ import { getAccessToken, setAccessToken, isRedirecting, markRedirecting } from '
 import { supabase } from './supabase';
 import { Sentry } from './sentry';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.open-regime.com';
 
 async function swrFetcher<T>(endpoint: string): Promise<T> {
   const url = `${API_URL}${endpoint}`;

@@ -76,7 +76,7 @@ jobs:
         working-directory: app/frontend
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://open-regime-api.ryu3ta-ke-mo100307.workers.dev
+          NEXT_PUBLIC_API_URL: https://api.open-regime.com
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_KEY }}
           NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
@@ -108,7 +108,7 @@ jobs:
         working-directory: app/admin-frontend
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://open-regime-api.ryu3ta-ke-mo100307.workers.dev
+          NEXT_PUBLIC_API_URL: https://api.open-regime.com
 
       - name: Deploy to Pages
         working-directory: app/admin-frontend
