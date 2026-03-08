@@ -21,8 +21,16 @@ export async function handleProxy(
   const isCacheable = request.method === 'GET' && ttl > 0;
   const cacheKeyUrl = url.toString();
 
+  // Cache purge: ?_purge=1 で該当キーを削除して再取得
+  const purge = url.searchParams.get('_purge') === '1';
+  if (purge && isCacheable) {
+    const cache = caches.default;
+    const purgeKey = new Request(cacheKeyUrl.replace('?_purge=1', '').replace('&_purge=1', ''), { method: 'GET' });
+    await cache.delete(purgeKey);
+  }
+
   // Try cache first
-  if (isCacheable) {
+  if (isCacheable && !purge) {
     const cache = caches.default;
     const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
     const cached = await cache.match(cacheKey);
