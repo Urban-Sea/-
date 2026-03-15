@@ -1636,6 +1636,8 @@ async def get_risk_history(
                 logger.info(f"risk-history overlay: total={rt_total} emp={rt_emp} con={rt_con} str={rt_str}")
             except Exception as exc:
                 logger.exception(f"risk-history overlay failed: {exc}")
+                # デバッグ: 失敗時もエラー情報を最終月に付与
+                history[-1]["_overlay_error"] = str(exc)
 
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
