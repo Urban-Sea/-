@@ -1086,27 +1086,8 @@ def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
 
 # ----- メインエンドポイント -----
 
-@router.get("/risk-score")
-async def get_risk_score(_skip_cache: bool = False):
-    """
-    景気警戒タブ：100点満点のリセッションリスクスコア
-    雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
-
-    最適化: Phase1(クエリ統合9→5) + Phase3(並列実行) + Phase4(1hキャッシュ)
-    高速パス: バッチ事前計算結果があれば即座に返す
-    """
-    if not _skip_cache:
-        # 高速パス: 事前計算結果をチェック
-        from precomputed import get_precomputed
-        precomputed = get_precomputed("risk_score")
-        if precomputed is not None:
-            return precomputed
-
-        # キャッシュチェック（L1 インメモリ → L2 Redis）
-        cached = _cache_get("employment:risk_score")
-        if cached is not None:
-            return cached
-
+async def _compute_risk_score_fresh():
+    """リスクスコアをDB直接計算（キャッシュ/precomputedなし）。内部呼び出し用。"""
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -1247,7 +1228,28 @@ async def get_risk_score(_skip_cache: bool = False):
         return result
 
     except Exception as e:
+        logger.exception("risk-score computation failed")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/risk-score")
+async def get_risk_score():
+    """
+    景気警戒タブ：100点満点のリセッションリスクスコア
+    雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
+    """
+    # 高速パス: 事前計算結果をチェック
+    from precomputed import get_precomputed
+    precomputed = get_precomputed("risk_score")
+    if precomputed is not None:
+        return precomputed
+
+    # キャッシュチェック（L1 インメモリ → L2 Redis）
+    cached = _cache_get("employment:risk_score")
+    if cached is not None:
+        return cached
+
+    return await _compute_risk_score_fresh()
 
 
 # ============================================================
@@ -1593,7 +1595,7 @@ async def get_risk_history(
         # 最新月をリアルタイムスコアで差し替え
         # （履歴版はデータラグで直近月が不正確になるため）
         try:
-            realtime = await get_risk_score(_skip_cache=True)
+            realtime = await _compute_risk_score_fresh()
             logger.info(f"risk-history: realtime type={type(realtime).__name__}")
             if hasattr(realtime, "model_dump"):
                 rt = realtime.model_dump()
