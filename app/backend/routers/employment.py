@@ -1592,9 +1592,8 @@ async def get_risk_history(
                 "sahm_value": sahm_value,
             })
 
-        # 最新月をリアルタイム計算で差し替え
-        # （履歴版はデータラグで直近月が不正確になるため）
-        if history:
+        # 最新月をリアルタイム計算で差し替え（デバッグ用: 一時無効化）
+        if False and history:
             try:
                 # risk-history内で取得済みのデータからリアルタイム相当のスコアを計算
                 latest_nfp_rows = nfp_rows[-24:] if nfp_rows else []
