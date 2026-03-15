@@ -678,8 +678,28 @@ def _calc_employment_discrepancy_v2(nfp_data: list[dict], claims_data: list[dict
             gap_icsa = min(30, (icsa_val - 220000) / 5000)
             gaps.append(("ICSA", gap_icsa, 0.3))
 
+    # 各ソースの状況サマリを構築
+    source_notes: list[str] = []
+    adp_rows_check = manual_by_metric.get("ADP_CHANGE", [])
+    if len(adp_rows_check) >= 3:
+        adp_avg = statistics.mean([r["value"] for r in adp_rows_check[:3]])
+        source_notes.append(f"ADP 3M平均{adp_avg:.0f}K")
+    else:
+        source_notes.append(f"ADP {len(adp_rows_check)}件（3件必要）")
+    ch_rows_check = manual_by_metric.get("CHALLENGER_CUTS", [])
+    if ch_rows_check:
+        source_notes.append(f"Challenger直近{ch_rows_check[0]['value']:,.0f}件")
+    else:
+        source_notes.append("Challengerデータなし")
+    if icsa_avgs:
+        source_notes.append(f"ICSA {icsa_avgs[0]:,.0f}")
+
     if not gaps:
-        return RiskSubScore(name="雇用乖離", score=0, max_score=8, detail="代替データなし", status="normal")
+        return RiskSubScore(
+            name="雇用乖離", score=0, max_score=8,
+            detail=f"乖離未検出 — NFP 3M平均{nfp_3m_avg:.0f}K / {' / '.join(source_notes)}",
+            status="normal",
+        )
 
     total_weight = sum(w for _, _, w in gaps)
     weighted_gap = sum(g * w for _, g, w in gaps) / total_weight
@@ -696,10 +716,11 @@ def _calc_employment_discrepancy_v2(nfp_data: list[dict], claims_data: list[dict
         score = 0
 
     sources = ", ".join(n for n, _, _ in gaps)
+    gap_dir = "NFP>民間" if weighted_gap > 0 else "NFP<民間"
     status = "danger" if score >= 8 else "warning" if score >= 3 else "normal"
     return RiskSubScore(
         name="雇用乖離", score=score, max_score=8,
-        detail=f"ADP等とNFPの乖離度 {disc_score:.0f}%（70%超で警戒、参照: {sources}）",
+        detail=f"乖離度{disc_score:.0f}%（{gap_dir}, gap{weighted_gap:+.0f}K）70%超で警戒 / {' / '.join(source_notes)}",
         status=status,
     )
 
