@@ -1592,45 +1592,29 @@ async def get_risk_history(
                 "sahm_value": sahm_value,
             })
 
-        # 最新月をリアルタイム計算で差し替え（デバッグ用: 一時無効化）
-        if False and history:
+        # 最新月をリアルタイム計算で差し替え
+        # （履歴版はデータラグで直近月が不正確になるため）
+        if history:
             try:
-                # risk-history内で取得済みのデータからリアルタイム相当のスコアを計算
-                latest_nfp_rows = nfp_rows[-24:] if nfp_rows else []
-                latest_nfp_desc = list(reversed(latest_nfp_rows))
+                latest_nfp_desc = list(reversed(nfp_rows[-24:])) if nfp_rows else []
+                latest_claims_desc = sorted(claims_rows, key=lambda x: x.get("week_ending", ""), reverse=True)
+                consumer_desc = sorted(consumer_rows, key=lambda x: x.get("reference_period", ""), reverse=True)
 
-                # 雇用 (50)
-                rt_nfp_trend = _calc_nfp_trend(latest_nfp_desc)
+                # 雇用 (50) — manual_inputs なしで計算（乖離は0点）
+                rt_nfp = _calc_nfp_trend(latest_nfp_desc)
                 rt_sahm, _ = _calc_sahm_rule(latest_nfp_desc)
-                latest_claims = sorted(claims_rows, key=lambda x: x.get("week_ending", ""), reverse=True)
-                rt_claims = _calc_claims_level(latest_claims)
-
-                # manual_inputs取得（ADP/Challenger用）
-                def fetch_manual():
-                    return supabase.table("manual_inputs") \
-                        .select("metric,reference_date,value") \
-                        .in_("metric", ["ADP_CHANGE", "CHALLENGER_CUTS", "TRUFLATION"]) \
-                        .order("reference_date", desc=True).limit(30).execute()
-                manual_result = await loop.run_in_executor(_executor, fetch_manual)
-                manual_by_metric: dict[str, list[dict]] = {}
-                for row in (manual_result.data or []):
-                    manual_by_metric.setdefault(row["metric"], []).append(row)
-
-                rt_disc = _calc_employment_discrepancy_v2(latest_nfp_desc, latest_claims, manual_by_metric)
-                rt_emp = min(rt_nfp_trend.score + rt_sahm.score + rt_claims.score + rt_disc.score, 50)
+                rt_claims = _calc_claims_level(latest_claims_desc)
+                rt_emp = min(rt_nfp.score + rt_sahm.score + rt_claims.score, 50)
 
                 # 消費 (25)
-                consumer_desc = sorted(consumer_rows, key=lambda x: x.get("reference_period", ""), reverse=True)
-                consumer_for_calc = [d for d in consumer_desc if d.get("indicator") in ("W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL")]
-                rt_income = _calc_real_income(consumer_for_calc)
-                rt_sentiment = _calc_consumer_sentiment(consumer_for_calc)
-                rt_delinquency = _calc_credit_delinquency(consumer_for_calc)
-                rt_infl = _calc_inflation_discrepancy_v2(consumer_for_calc, manual_by_metric)
-                rt_con = min(rt_income.score + rt_sentiment.score + rt_delinquency.score + rt_infl.score, 25)
+                rt_income = _calc_real_income(consumer_desc)
+                rt_sent = _calc_consumer_sentiment(consumer_desc)
+                rt_drc = _calc_credit_delinquency(consumer_desc)
+                rt_con = min(rt_income.score + rt_sent.score + rt_drc.score, 25)
 
                 # 構造 (25)
-                jolts_desc = sorted([d for d in consumer_rows if d.get("indicator") == "JOLTS"], key=lambda x: x.get("reference_period", ""), reverse=True)
-                unemploy_desc = sorted([d for d in consumer_rows if d.get("indicator") == "UNEMPLOY"], key=lambda x: x.get("reference_period", ""), reverse=True)
+                jolts_desc = [d for d in consumer_desc if d.get("indicator") == "JOLTS"]
+                unemploy_desc = [d for d in consumer_desc if d.get("indicator") == "UNEMPLOY"]
                 market_desc = sorted(sp500_rows, key=lambda x: x.get("date", ""), reverse=True)[:2]
                 rt_job = _calc_job_openings_ratio(jolts_desc, unemploy_desc)
                 rt_u6u3 = _calc_u6_u3_spread(latest_nfp_desc)
@@ -1639,7 +1623,6 @@ async def get_risk_history(
                 rt_str = min(rt_job.score + rt_u6u3.score + rt_lfpr.score + rt_kshape.score, 25)
 
                 rt_total = min(rt_emp + rt_con + rt_str, 100)
-                rt_phase = _get_phase(rt_total)
 
                 history[-1] = {
                     "date": history[-1]["date"],
@@ -1647,12 +1630,12 @@ async def get_risk_history(
                     "employment_score": rt_emp,
                     "consumer_score": rt_con,
                     "structure_score": rt_str,
-                    "phase": rt_phase.code,
+                    "phase": _get_phase(rt_total).code,
                     "sahm_value": history[-1].get("sahm_value"),
                 }
-                logger.info(f"risk-history: overlay latest month total={rt_total} (emp={rt_emp} con={rt_con} str={rt_str})")
+                logger.info(f"risk-history overlay: total={rt_total} emp={rt_emp} con={rt_con} str={rt_str}")
             except Exception as exc:
-                logger.warning(f"risk-history: realtime overlay failed: {exc}")
+                logger.exception(f"risk-history overlay failed: {exc}")
 
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
