@@ -1191,20 +1191,9 @@ async def get_risk_score():
             components=[job_ratio, u6u3, lfpr, k_shape],
         )
 
-        # ===== 総合スコア（除外按分で100点正規化） =====
+        # ===== 総合スコア =====
         raw_total = employment_score + consumer_score + structure_score
-
-        inactive_max = 0
-        for cat in [employment_cat, consumer_cat, structure_cat]:
-            for comp in cat.components:
-                if comp.score == 0 and ("未実装" in comp.detail or "代替データなし" in comp.detail):
-                    inactive_max += comp.max_score
-        active_max = 100 - inactive_max
-
-        if active_max > 0 and active_max < 100:
-            total_score = min(round(raw_total / active_max * 100), 100)
-        else:
-            total_score = min(raw_total, 100)
+        total_score = min(raw_total, 100)
 
         # ===== アラート生成 =====
         alert_factors = []
@@ -1554,10 +1543,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
             structure = min(job_s + u6u3_s + lfpr_s + k_shape_s, 25)
 
             raw_total = employment + consumer + structure
-
-            k_inactive = 3 if current_ratio is None else 0
-            active_max = 100 - k_inactive - 5
-            total = min(round(raw_total / active_max * 100), 100) if active_max > 0 else raw_total
+            total = min(raw_total, 100)
 
             sahm_value = None
             if len(all_u3_values) >= 3:

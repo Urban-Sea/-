@@ -387,12 +387,32 @@ export default function EconChartCanvas({
       if (nearestIdx >= 0 && nearestIdx < visibleCount) {
         let tooltipY = padding.top + 14;
         ctx.font = axisFont;
-        // Date label
+
+        // Measure tooltip width to decide left/right placement
         const primarySliced = series[0]?.data.slice(start, end);
+        let maxTextWidth = 0;
+        if (primarySliced?.[nearestIdx]) {
+          maxTextWidth = ctx.measureText(primarySliced[nearestIdx].x).width;
+        }
+        for (const s of series) {
+          const sliced = s.data.slice(start, end);
+          const val = sliced[nearestIdx]?.y;
+          if (val != null) {
+            const fmt = s.yAxisSide === 'right' ? (yAxisRightFormat || yAxisFormat) : yAxisFormat;
+            const tw = ctx.measureText(`${s.label}: ${fmt(val)}`).width;
+            if (tw > maxTextWidth) maxTextWidth = tw;
+          }
+        }
+        // Flip tooltip to left side if it would overflow the right edge
+        const tooltipX = (mx + 8 + maxTextWidth > width - padding.right)
+          ? mx - maxTextWidth - 8
+          : mx + 8;
+
+        // Date label
         if (primarySliced?.[nearestIdx]) {
           ctx.fillStyle = legendColor;
           ctx.textAlign = 'left';
-          ctx.fillText(primarySliced[nearestIdx].x, mx + 8, tooltipY);
+          ctx.fillText(primarySliced[nearestIdx].x, tooltipX, tooltipY);
           tooltipY += 14;
         }
         // Values
@@ -402,7 +422,7 @@ export default function EconChartCanvas({
           if (val != null) {
             ctx.fillStyle = s.color;
             const fmt = s.yAxisSide === 'right' ? (yAxisRightFormat || yAxisFormat) : yAxisFormat;
-            ctx.fillText(`${s.label}: ${fmt(val)}`, mx + 8, tooltipY);
+            ctx.fillText(`${s.label}: ${fmt(val)}`, tooltipX, tooltipY);
             tooltipY += 13;
 
             // Dot on the line
