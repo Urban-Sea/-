@@ -34,26 +34,47 @@ REVISION_DATE_COL: Dict[str, str] = {
     "economic_indicators": "reference_period",
 }
 
+# 複合キーテーブル: 日付カラムだけではユニークにならないテーブル
+# キーは (date_col, extra_key_col) で既存データを一意に特定する
+REVISION_COMPOSITE_KEY: Dict[str, str] = {
+    "economic_indicators": "indicator",
+}
+
 # 許容誤差（浮動小数点の丸め差異を無視）
 REVISION_TOLERANCE = 0.0001
 
 
-def _fetch_existing(table: str, dates: List[str], select: str, date_col: str = "date") -> Dict[str, dict]:
-    """既存データを日付キーで取得。ページネーション対応。"""
+def _fetch_existing(
+    table: str, dates: List[str], select: str,
+    date_col: str = "date", extra_key_col: Optional[str] = None,
+) -> Dict[str, dict]:
+    """既存データをキーで取得。ページネーション対応。
+
+    extra_key_col が指定された場合、辞書キーは "date_col|extra_key_col" の複合キーになる。
+    """
     if not dates:
         return {}
 
     sb = get_supabase()
     existing: Dict[str, dict] = {}
 
+    # extra_key_col がある場合は select に含める
+    actual_select = select
+    if extra_key_col and extra_key_col not in select:
+        actual_select = extra_key_col + "," + select
+
     # Supabase の in_() は最大数百件程度なのでバッチ分割
     for i in range(0, len(dates), 200):
         chunk = dates[i : i + 200]
-        r = sb.table(table).select(select) \
+        r = sb.table(table).select(actual_select) \
             .in_(date_col, chunk) \
             .execute()
         for row in (r.data or []):
-            existing[row[date_col]] = row
+            if extra_key_col:
+                key = f"{row[date_col]}|{row[extra_key_col]}"
+            else:
+                key = row[date_col]
+            existing[key] = row
 
     return existing
 
@@ -69,9 +90,10 @@ def _detect_revisions(
         return []
 
     date_col = REVISION_DATE_COL.get(table, "date")
+    extra_key_col = REVISION_COMPOSITE_KEY.get(table)
     dates = [r[date_col] for r in new_rows if r.get(date_col)]
     select_cols = date_col + "," + ",".join(watch_cols)
-    existing = _fetch_existing(table, dates, select_cols, date_col=date_col)
+    existing = _fetch_existing(table, dates, select_cols, date_col=date_col, extra_key_col=extra_key_col)
 
     if not existing:
         return []
@@ -79,7 +101,11 @@ def _detect_revisions(
     revisions: List[dict] = []
     for row in new_rows:
         d = row.get(date_col)
-        old = existing.get(d)
+        if extra_key_col:
+            lookup_key = f"{d}|{row.get(extra_key_col)}"
+        else:
+            lookup_key = d
+        old = existing.get(lookup_key)
         if not old:
             continue
 
@@ -103,10 +129,15 @@ def _detect_revisions(
             pct = (diff / abs(old_f) * 100) if old_f != 0 else None
             direction = "上方修正" if diff > 0 else "下方修正"
 
+            # column_name に indicator を含めて区別可能にする
+            col_label = col
+            if extra_key_col:
+                col_label = f"{row.get(extra_key_col)}:{col}"
+
             revisions.append({
                 "table_name": table,
                 "record_date": d,
-                "column_name": col,
+                "column_name": col_label,
                 "old_value": round(old_f, 6),
                 "new_value": round(new_f, 6),
                 "change_amount": round(diff, 6),

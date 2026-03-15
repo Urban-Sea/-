@@ -1,0 +1,33 @@
+name: Weekly Batch
+
+on:
+  schedule:
+    # 毎週土曜 8:00 JST = 金曜 23:00 UTC
+    # 金曜の米雇用統計（第1金曜）やFRBデータ更新後に実行
+    - cron: '0 23 * * 5'
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  batch:
+    name: Weekly data fetch + Layer recalculation + precompute
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r app/backend/requirements.txt
+
+      - name: Run weekly batch
+        run: python app/batch/run.py --weekly --verbose
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}

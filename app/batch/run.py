@@ -262,6 +262,10 @@ def _run_weekly(start: str, end: str):
     rows = fetch_employment_indicators(start, end)
     upsert_economic_indicators(rows)
 
+    # 消費者・構造指標（実質個人所得, 消費者信頼感, クレカ延滞率, コアCPI, 失業者数）
+    rows = fetch_consumer_indicators(start, end)
+    upsert_economic_indicators(rows)
+
     # 週次データ更新後は Layer 再計算
     _run_calc()
 

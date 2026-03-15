@@ -12,11 +12,14 @@
 
 import sys
 import csv
+from datetime import datetime
 from pathlib import Path
 
 # プロジェクトルートからconfig読み込み
 sys.path.insert(0, str(Path(__file__).parent))
 from config import get_supabase
+
+REVISION_TOLERANCE = 0.0001
 
 METRICS = {
     "ADP_CHANGE": "ADP雇用変化（千人）",
@@ -83,6 +86,36 @@ def add_metric(args):
     note = args[3] if len(args) > 3 else None
 
     supabase = get_supabase()
+
+    # 修正検知: 既存データがあれば比較
+    existing = supabase.table("manual_inputs") \
+        .select("value") \
+        .eq("metric", metric_key) \
+        .eq("reference_date", date_str) \
+        .execute()
+
+    old_value = None
+    if existing.data:
+        old_value = float(existing.data[0]["value"])
+        diff = value - old_value
+        if abs(diff) > REVISION_TOLERANCE:
+            pct = (diff / abs(old_value) * 100) if old_value != 0 else None
+            direction = "上方修正" if diff > 0 else "下方修正"
+            revision = {
+                "table_name": "manual_inputs",
+                "record_date": date_str,
+                "column_name": metric_key,
+                "old_value": round(old_value, 6),
+                "new_value": round(value, 6),
+                "change_amount": round(diff, 6),
+                "change_pct": round(pct, 4) if pct is not None else None,
+                "direction": direction,
+                "batch_run_id": f"manual-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            }
+            supabase.table("data_revisions").insert(revision).execute()
+            print(f"📝 {direction}: {old_value} → {value} ({diff:+.1f}, {pct:+.2f}%)" if pct else
+                  f"📝 {direction}: {old_value} → {value} ({diff:+.1f})")
+
     row = {
         "metric": metric_key,
         "reference_date": date_str,
@@ -91,11 +124,16 @@ def add_metric(args):
     if note:
         row["notes"] = note
 
-    result = supabase.table("manual_inputs").upsert(
+    supabase.table("manual_inputs").upsert(
         row, on_conflict="metric,reference_date"
     ).execute()
 
-    print(f"✅ {metric_key} {date_str} = {value}")
+    if old_value is not None and abs(value - old_value) <= REVISION_TOLERANCE:
+        print(f"✅ {metric_key} {date_str} = {value} (変更なし)")
+    elif old_value is not None:
+        print(f"✅ {metric_key} {date_str} = {value} (修正記録済み)")
+    else:
+        print(f"✅ {metric_key} {date_str} = {value} (新規)")
 
 
 def load_adp():
@@ -135,8 +173,48 @@ def load_adp():
     for c in changes[-12:]:
         print(f"  {c['reference_date']}: {c['value']:+.1f}K")
 
-    # Supabaseに投入
+    # 修正検知: 既存データを取得
     supabase = get_supabase()
+    existing_rows = supabase.table("manual_inputs") \
+        .select("reference_date,value") \
+        .eq("metric", "ADP_CHANGE") \
+        .order("reference_date").execute()
+    existing_map = {r["reference_date"]: float(r["value"]) for r in (existing_rows.data or [])}
+
+    # 修正検知して data_revisions に記録
+    revisions = []
+    batch_run_id = f"manual-load-adp-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    for c in changes:
+        old_val = existing_map.get(c["reference_date"])
+        if old_val is None:
+            continue
+        new_val = float(c["value"])
+        diff = new_val - old_val
+        if abs(diff) <= REVISION_TOLERANCE:
+            continue
+        pct = (diff / abs(old_val) * 100) if old_val != 0 else None
+        revisions.append({
+            "table_name": "manual_inputs",
+            "record_date": c["reference_date"],
+            "column_name": "ADP_CHANGE",
+            "old_value": round(old_val, 6),
+            "new_value": round(new_val, 6),
+            "change_amount": round(diff, 6),
+            "change_pct": round(pct, 4) if pct is not None else None,
+            "direction": "上方修正" if diff > 0 else "下方修正",
+            "batch_run_id": batch_run_id,
+        })
+
+    if revisions:
+        for i in range(0, len(revisions), 50):
+            supabase.table("data_revisions").insert(revisions[i:i + 50]).execute()
+        print(f"\n📝 修正検知: {len(revisions)}件")
+        for r in revisions[:5]:
+            print(f"  {r['record_date']}: {r['old_value']} → {r['new_value']} ({r['direction']})")
+        if len(revisions) > 5:
+            print(f"  ... 他 {len(revisions) - 5}件")
+
+    # Supabaseに投入
     batch_size = 50
     total_upserted = 0
     for i in range(0, len(changes), batch_size):
