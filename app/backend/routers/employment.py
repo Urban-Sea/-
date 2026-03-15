@@ -1087,7 +1087,7 @@ def _calc_k_shape_proxy(market_data: list[dict]) -> RiskSubScore:
 # ----- メインエンドポイント -----
 
 @router.get("/risk-score")
-async def get_risk_score():
+async def get_risk_score(_skip_cache: bool = False):
     """
     景気警戒タブ：100点満点のリセッションリスクスコア
     雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
@@ -1095,16 +1095,17 @@ async def get_risk_score():
     最適化: Phase1(クエリ統合9→5) + Phase3(並列実行) + Phase4(1hキャッシュ)
     高速パス: バッチ事前計算結果があれば即座に返す
     """
-    # 高速パス: 事前計算結果をチェック
-    from precomputed import get_precomputed
-    precomputed = get_precomputed("risk_score")
-    if precomputed is not None:
-        return precomputed
+    if not _skip_cache:
+        # 高速パス: 事前計算結果をチェック
+        from precomputed import get_precomputed
+        precomputed = get_precomputed("risk_score")
+        if precomputed is not None:
+            return precomputed
 
-    # キャッシュチェック（L1 インメモリ → L2 Redis）
-    cached = _cache_get("employment:risk_score")
-    if cached is not None:
-        return cached
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        cached = _cache_get("employment:risk_score")
+        if cached is not None:
+            return cached
 
     supabase = main.get_supabase()
     if not supabase:
@@ -1373,19 +1374,22 @@ def _simplified_k_shape_score(ratio: float | None) -> int:
 
 
 @router.get("/risk-history")
-async def get_risk_history(months: int = Query(120, description="取得月数")):
+async def get_risk_history(
+    months: int = Query(120, description="取得月数"),
+    purge: int = Query(0, description="1でキャッシュ破棄"),
+):
     """
     月次リスクスコア履歴を動的計算。
     各月について雇用(50)+消費(25)+構造(25)=100点のスコアを算出。
-    未実装項目(K字型3点, インフレ乖離5点)は除外按分で100点正規化。
 
     最適化: Phase2(ページネ除去) + Phase3(並列実行) + Phase4(1hキャッシュ)
     """
     # キャッシュチェック（L1 インメモリ → L2 Redis）
     cache_key = f"employment:risk_history:{months}"
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        return cached
+    if not purge:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
 
     supabase = main.get_supabase()
     if not supabase:
@@ -1589,7 +1593,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         # 最新月をリアルタイムスコアで差し替え
         # （履歴版はデータラグで直近月が不正確になるため）
         try:
-            realtime = await get_risk_score()
+            realtime = await get_risk_score(_skip_cache=True)
             logger.info(f"risk-history: realtime type={type(realtime).__name__}")
             if hasattr(realtime, "model_dump"):
                 rt = realtime.model_dump()
