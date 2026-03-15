@@ -1586,6 +1586,33 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 "sahm_value": sahm_value,
             })
 
+        # 最新月をリアルタイムスコアで差し替え
+        # （履歴版はデータラグで直近月が不正確になるため）
+        try:
+            realtime = await get_risk_score()
+            if hasattr(realtime, "model_dump"):
+                rt = realtime.model_dump()
+            elif hasattr(realtime, "dict"):
+                rt = realtime.dict()
+            elif isinstance(realtime, dict):
+                rt = realtime
+            else:
+                rt = None
+
+            if rt and history:
+                cat_scores = {c["name"]: c["score"] for c in rt.get("categories", [])}
+                history[-1] = {
+                    "date": history[-1]["date"],
+                    "total_score": rt.get("total_score", history[-1]["total_score"]),
+                    "employment_score": cat_scores.get("雇用", history[-1]["employment_score"]),
+                    "consumer_score": cat_scores.get("消費", history[-1]["consumer_score"]),
+                    "structure_score": cat_scores.get("構造", history[-1]["structure_score"]),
+                    "phase": rt.get("phase", {}).get("code", history[-1]["phase"]) if isinstance(rt.get("phase"), dict) else history[-1]["phase"],
+                    "sahm_value": history[-1].get("sahm_value"),
+                }
+        except Exception:
+            pass  # リアルタイム取得失敗時は履歴版のまま
+
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
         result = {"history": history, "sp500": sp500_list}
