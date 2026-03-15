@@ -1594,11 +1594,19 @@ async def get_risk_history(
 
         # 最新月をリアルタイム計算で差し替え
         # （履歴版はデータラグで直近月が不正確になるため）
+        # risk-historyのconsumer_rowsはlimit 1000で最新データが欠落するため
+        # overlay用に最新データを追加取得する
         if history:
             try:
+                # 最新150件を追加取得（リアルタイム版と同じ範囲）
+                overlay_indicators = supabase.table("economic_indicators") \
+                    .select("indicator,reference_period,current_value") \
+                    .in_("indicator", ["W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL", "JOLTS", "UNEMPLOY"]) \
+                    .order("reference_period", desc=True).limit(150).execute()
+                overlay_consumer = overlay_indicators.data or []
+
                 latest_nfp_desc = list(reversed(nfp_rows[-24:])) if nfp_rows else []
                 latest_claims_desc = sorted(claims_rows, key=lambda x: x.get("week_ending", ""), reverse=True)
-                consumer_desc = sorted(consumer_rows, key=lambda x: x.get("reference_period", ""), reverse=True)
 
                 # 雇用 (50) — manual_inputs なしで計算（乖離は0点）
                 rt_nfp = _calc_nfp_trend(latest_nfp_desc)
@@ -1607,14 +1615,16 @@ async def get_risk_history(
                 rt_emp = min(rt_nfp.score + rt_sahm.score + rt_claims.score, 50)
 
                 # 消費 (25)
-                rt_income = _calc_real_income(consumer_desc)
-                rt_sent = _calc_consumer_sentiment(consumer_desc)
-                rt_drc = _calc_credit_delinquency(consumer_desc)
-                rt_con = min(rt_income.score + rt_sent.score + rt_drc.score, 25)
+                consumer_for_calc = [d for d in overlay_consumer if d.get("indicator") in ("W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL")]
+                rt_income = _calc_real_income(consumer_for_calc)
+                rt_sent = _calc_consumer_sentiment(consumer_for_calc)
+                rt_drc = _calc_credit_delinquency(consumer_for_calc)
+                rt_infl = _calc_inflation_discrepancy_v2(consumer_for_calc, {})
+                rt_con = min(rt_income.score + rt_sent.score + rt_drc.score + rt_infl.score, 25)
 
                 # 構造 (25)
-                jolts_desc = [d for d in consumer_desc if d.get("indicator") == "JOLTS"]
-                unemploy_desc = [d for d in consumer_desc if d.get("indicator") == "UNEMPLOY"]
+                jolts_desc = [d for d in overlay_consumer if d.get("indicator") == "JOLTS"]
+                unemploy_desc = [d for d in overlay_consumer if d.get("indicator") == "UNEMPLOY"]
                 market_desc = sorted(sp500_rows, key=lambda x: x.get("date", ""), reverse=True)[:2]
                 rt_job = _calc_job_openings_ratio(jolts_desc, unemploy_desc)
                 rt_u6u3 = _calc_u6_u3_spread(latest_nfp_desc)
@@ -1636,8 +1646,6 @@ async def get_risk_history(
                 logger.info(f"risk-history overlay: total={rt_total} emp={rt_emp} con={rt_con} str={rt_str}")
             except Exception as exc:
                 logger.exception(f"risk-history overlay failed: {exc}")
-                # デバッグ: 失敗時もエラー情報を最終月に付与
-                history[-1]["_overlay_error"] = str(exc)
 
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
