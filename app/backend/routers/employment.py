@@ -1590,6 +1590,7 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
         # （履歴版はデータラグで直近月が不正確になるため）
         try:
             realtime = await get_risk_score()
+            logger.info(f"risk-history: realtime type={type(realtime).__name__}")
             if hasattr(realtime, "model_dump"):
                 rt = realtime.model_dump()
             elif hasattr(realtime, "dict"):
@@ -1598,8 +1599,10 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                 rt = realtime
             else:
                 rt = None
+                logger.warning(f"risk-history: unexpected realtime type: {type(realtime)}")
 
             if rt and history:
+                logger.info(f"risk-history: overlay total_score={rt.get('total_score')}, cats={[c.get('name') for c in rt.get('categories', [])]}")
                 cat_scores = {c["name"]: c["score"] for c in rt.get("categories", [])}
                 history[-1] = {
                     "date": history[-1]["date"],
@@ -1610,8 +1613,8 @@ async def get_risk_history(months: int = Query(120, description="取得月数"))
                     "phase": rt.get("phase", {}).get("code", history[-1]["phase"]) if isinstance(rt.get("phase"), dict) else history[-1]["phase"],
                     "sahm_value": history[-1].get("sahm_value"),
                 }
-        except Exception:
-            pass  # リアルタイム取得失敗時は履歴版のまま
+        except Exception as exc:
+            logger.warning(f"risk-history: realtime overlay failed: {exc}")
 
         sp500_list = [{"date": f"{k}-01", "close": v} for k, v in sorted(sp500_by_month.items())]
 
