@@ -379,7 +379,7 @@ class BOSDetector:
         BOSGrade.EXTENSION: 0.9,
         BOSGrade.REVERSAL: 1.0,
         BOSGrade.CONTINUATION: 0.6,
-        BOSGrade.NONE: 0.4,
+        BOSGrade.NONE: 0.9,  # Backtest: NONE win=57.5%, avg=+17.35% → 0.9*0.5=0.45
     }
 
     def compute_confidence_score(

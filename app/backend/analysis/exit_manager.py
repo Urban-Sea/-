@@ -112,20 +112,20 @@ class Position:
 class ExitManager:
     """5層Exit Systemマネージャー"""
 
-    # 最終版: シンプル＆長めホールド
-    # Entry: BOS + 8EMA backtest
-    # Exit: 利確 or Structure Stop（8%） or Time（30日）
-    # 8 EMA割れは警告のみ（自動決済しない）
+    # V12: PatB最適化パラメータ（バックテスト検証済み）
+    # Entry: CHoCH翌日Open（Fix6）
+    # Exit: Structure Stop Close確定（Fix1）+ CHoCH部分Exit 50%（Fix3）
+    # 実績: avg 19.67%, med 5.15, win 67.7%, PF 10.21, Sharpe 0.286
     DEFAULT_PARAMS = {
         "max_hold_days": 30,           # 最大保有日数（長め - トレンドフォロー）
         "trail_start_pct": 15,         # トレイリング開始%（T1到達後）
         "trail_distance_pct": 8,       # トレイル距離%（余裕を持つ）
         "ema_8_exit": False,           # 8EMA割れはExit無効（警告のみ）
         "ema_8_consecutive_days": 999, # 実質無効
-        "structure_exit": True,        # Structure割れでExit（8%固定）
-        # 以下は全て無効化
-        "choch_exit_pct": 0,
-        "choch_min_diff_pct": 999,
+        "structure_exit": True,        # Structure割れでExit（Close確定）
+        # Fix3: Bearish CHoCH（Lower High）で50%部分Exit
+        "choch_exit_pct": 50,
+        "choch_min_diff_pct": 1.5,
         "ema_cascade_partial_pct": 0,
         "ema_cascade_min_days": 999,
         "profit_cushion_pct": 0,
@@ -238,8 +238,8 @@ class ExitManager:
         if l2_signal:
             signals.append(l2_signal)
 
-        # Layer 3: Structure Stop
-        l3_signal = self._check_structure_stop(position, low, swing_lows)
+        # Layer 3: Structure Stop (Close確定)
+        l3_signal = self._check_structure_stop(position, low, swing_lows, close=close)
         if l3_signal:
             signals.append(l3_signal)
 
@@ -346,17 +346,23 @@ class ExitManager:
         self,
         position: Position,
         low: float,
-        swing_lows: List[float]
+        swing_lows: List[float],
+        close: float = 0.0,
     ) -> Optional[ExitSignal]:
         """
-        Layer 3: Structure Stop（スイングロー割れ）
+        Layer 3: Structure Stop（スイングロー割れ — Close確定）
+
+        V12: Low下抜けではなくClose確定で判定。
+        バックテスト検証: ヒゲだけの下抜け（Liquidity Sweep）を
+        無駄な損切りとして除外し、ATR Floor件数を33%削減。
         """
-        if low <= position.structure_stop:
+        check_price = close if close > 0 else low
+        if check_price <= position.structure_stop:
             return ExitSignal(
                 exit_type=ExitType.STRUCTURE_STOP,
                 exit_pct=100,
                 trigger_price=position.structure_stop,
-                reason=f"Structure Stop: ${low:.2f} <= ${position.structure_stop:.2f}",
+                reason=f"Structure Stop: ${check_price:.2f} <= ${position.structure_stop:.2f}（Close確定）",
                 urgency=ExitUrgency.CRITICAL,
                 layer=3
             )

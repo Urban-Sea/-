@@ -26,6 +26,7 @@ from analysis.asset_class import AssetClass, normalize_ticker_yfinance, get_conf
 from analysis.market_structure import MarketStructure
 from analysis.order_block_detector import OrderBlockDetector
 from analysis.ote_calculator import OTECalculator
+from analysis.premium_discount_detector import PremiumDiscountCalculator
 from auth import require_proxy
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
@@ -110,6 +111,9 @@ class SignalResponse(BaseModel):
     # V11: BOS Confidence
     bos_confidence: float = 1.0     # 0.4〜1.0
     bos_grade: str = "NONE"         # EXTENSION / REVERSAL / CONTINUATION / NONE
+
+    # V12: Entry Timing
+    entry_timing: str = "NEXT_OPEN"  # 翌営業日の寄付き成行
 
 
 def entry_mode_from_str(mode_str: str) -> EntryMode:
@@ -232,6 +236,7 @@ async def get_signal(
             other_modes=other_modes,
             bos_confidence=result.bos_confidence,
             bos_grade=result.bos_grade,
+            entry_timing=result.entry_timing,
         )
 
         _cache_set(cache_key, response.model_dump(), ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
@@ -1129,6 +1134,29 @@ async def get_chart_markers(
         except Exception:
             pass
 
+        # V12: Premium/Discount Zone（Dealing Range内の現在価格位置）
+        pd_zone = None
+        try:
+            if 'ms' not in locals():
+                ms = MarketStructure(df)
+            coarse_highs, coarse_lows = ms.swings('coarse')
+            current_price = float(df['Close'].iloc[-1])
+            pd_calc = PremiumDiscountCalculator()
+            pd_result = pd_calc.calculate(coarse_highs, coarse_lows, current_price)
+            if pd_result:
+                pd_zone = {
+                    "swing_high": pd_result.swing_high,
+                    "swing_low": pd_result.swing_low,
+                    "equilibrium": pd_result.equilibrium,
+                    "current_price": pd_result.current_price,
+                    "position": pd_result.position,
+                    "zone": pd_result.zone,
+                    "swing_high_date": pd_result.swing_high_date,
+                    "swing_low_date": pd_result.swing_low_date,
+                }
+        except Exception:
+            pass
+
         response = {
             "ticker": ticker,
             "period": period,
@@ -1138,6 +1166,7 @@ async def get_chart_markers(
             "fvg": fvg_list,
             "order_blocks": ob_list,
             "ote_zones": ote_list,
+            "premium_discount": pd_zone,
             "data_points": len(df),
         }
 

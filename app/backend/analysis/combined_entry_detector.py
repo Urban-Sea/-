@@ -107,6 +107,9 @@ class EntryAnalysis:
     bos_confidence: float = 1.0     # 0.4〜1.0
     bos_grade: str = "NONE"         # EXTENSION / REVERSAL / CONTINUATION / NONE
 
+    # V12: Entry Timing（バックテスト検証: Open入りで avg+2.79%, PF 5.73→7.90）
+    entry_timing: str = "NEXT_OPEN"  # NEXT_OPEN: 翌営業日の寄付き成行
+
 
 class CombinedEntryDetector:
     """Combined Entry + 運用モード判定（マルチアセット対応、V9 Regime対応）"""
@@ -273,7 +276,10 @@ class CombinedEntryDetector:
             combined_ready, rs_trend, mode
         )
 
-        # V11: BOS Confidence計算（ゲート不変、サイズ調整のみ）
+        # V11: BOS Grade計算（情報表示のみ。サイズ調整は無効化）
+        # バックテスト検証: NONEグレード(win 69.5%)がREVERSAL(win 65.6%)より
+        # 勝率が高く、Confidenceによるサイズ調整は逆効果（weighted avg -5.53%）。
+        # Gradeは情報表示として残し、サイズ調整には使わない。
         bos_confidence = 1.0
         bos_grade_str = "NONE"
         try:
@@ -290,13 +296,14 @@ class CombinedEntryDetector:
                 bos_analysis = bos_det.classify_bos_grade(
                     bos_signals, choch_bos_signals, closes, ema_21_list, idx
                 )
-                bos_confidence = bos_det.compute_confidence_score(bos_analysis, idx)
                 bos_grade_str = bos_analysis.grade.value
+                # confidence計算は残すが情報表示のみ（サイズ乗数に使わない）
+                bos_confidence = bos_det.compute_confidence_score(bos_analysis, idx)
         except Exception:
-            pass  # BOS confidence計算失敗時はデフォルト値(1.0)を使用
+            pass
 
-        # BOS confidenceでposition_size_pctを調整
-        adjusted_size_pct = int(size_pct * bos_confidence)
+        # サイズ調整なし（confidence=1.0固定でも計算結果は変わらない）
+        adjusted_size_pct = size_pct
 
         # 他モード参考
         other_modes = {}
@@ -305,7 +312,7 @@ class CombinedEntryDetector:
                 allowed, sz, _ = self._apply_mode(combined_ready, rs_trend, m)
                 other_modes[m.value] = {
                     "entry_allowed": allowed,
-                    "position_size_pct": int(sz * bos_confidence),
+                    "position_size_pct": sz,
                 }
 
         return EntryAnalysis(
@@ -653,4 +660,6 @@ class CombinedEntryDetector:
             # V11: BOS Confidence
             "bos_confidence": result.bos_confidence,
             "bos_grade": result.bos_grade,
+            # V12: Entry Timing
+            "entry_timing": result.entry_timing,
         }

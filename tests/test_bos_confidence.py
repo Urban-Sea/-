@@ -1,9 +1,13 @@
 """
-Phase 1 テスト: BOS Confidence 計算 + entry_allowed ゲート不変検証
+BOS Confidence テスト: Grade分類 + Confidence計算の検証
 
 - compute_confidence_score が正しい範囲（0.4〜1.0）を返すこと
 - entry_allowed がV10と同一であること（ゲート不変）
-- position_size_pct ≤ raw_position_size_pct であること
+- BOS Grade分類が正しく動作すること
+
+注: バックテスト検証によりConfidenceによるサイズ調整は無効化済み（V12）。
+  NONEグレード(win 69.5%)がREVERSAL(win 65.6%)より勝率が高く逆効果のため。
+  Gradeは情報表示のみ。計算ロジックは将来の再設計に備えて残す。
 """
 
 import sys
@@ -67,8 +71,8 @@ class TestComputeConfidence:
 
         assert 0.4 <= confidence <= 1.0, f"Confidence {confidence} out of range"
 
-    def test_grade_none_low_confidence(self):
-        """GRADE_NONEの場合、confidenceは低い"""
+    def test_grade_none_moderate_confidence(self):
+        """GRADE_NONEの場合、confidenceは中程度（0.45）"""
         det = BOSDetector()
         analysis = BOSAnalysis(
             grade=BOSGrade.NONE,
@@ -79,8 +83,8 @@ class TestComputeConfidence:
             details={},
         )
         confidence = det.compute_confidence_score(analysis, 100)
-        # NONE(0.4) * recency(0.5) = 0.2 → but min floor is base*recency
-        assert confidence <= 0.4
+        # NONE(0.9) * recency(0.5) = 0.45
+        assert 0.4 <= confidence <= 0.5
 
     def test_reversal_with_choch_high_confidence(self):
         """REVERSAL + CHoCH + 直近BOS → 高confidence"""

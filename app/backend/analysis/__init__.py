@@ -8,6 +8,7 @@ from .bos_detector import BOSDetector, BOSType, BOSGrade, BOSSignal, BOSAnalysis
 from .regime_detector import RegimeDetector, RegimeResult, detect_regime
 from .order_block_detector import OrderBlockDetector, OrderBlock
 from .ote_calculator import OTECalculator, OTEZone
+from .premium_discount_detector import PremiumDiscountCalculator, PremiumDiscountZone
 from .combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
 from .exit_manager import ExitManager, ExitType, ExitUrgency, ExitDecision, Position
 
@@ -41,6 +42,9 @@ __all__ = [
     # OTE (V11)
     "OTECalculator",
     "OTEZone",
+    # Premium/Discount (V12)
+    "PremiumDiscountCalculator",
+    "PremiumDiscountZone",
     # Entry
     "CombinedEntryDetector",
     "EntryMode",
