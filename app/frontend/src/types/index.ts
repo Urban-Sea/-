@@ -571,6 +571,38 @@ export interface FVGMarker {
   gap_pct: number;
 }
 
+export interface OrderBlockMarker {
+  zone_high: number;
+  zone_low: number;
+  direction: 'BULLISH' | 'BEARISH';
+  freshness: number;
+  cisd_confirmed: boolean;
+  start_date: string;
+  status: string;
+}
+
+export interface OTEZoneMarker {
+  upper: number;
+  lower: number;
+  fib_62: number;
+  fib_79: number;
+  swing_a: number;
+  swing_b: number;
+  direction: string;
+  status: string;
+}
+
+export interface PremiumDiscountZone {
+  swing_high: number;
+  swing_low: number;
+  equilibrium: number;
+  current_price: number;
+  position: number;
+  zone: 'PREMIUM' | 'DISCOUNT' | 'EQUILIBRIUM';
+  swing_high_date: string | null;
+  swing_low_date: string | null;
+}
+
 export interface ChartMarkersResponse {
   ticker: string;
   period: string;
@@ -578,6 +610,9 @@ export interface ChartMarkersResponse {
   bos: BOSMarker[];
   choch: CHoCHMarker[];
   fvg: FVGMarker[];
+  order_blocks: OrderBlockMarker[];
+  ote_zones: OTEZoneMarker[];
+  premium_discount: PremiumDiscountZone | null;
   data_points: number;
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useTheme } from 'next-themes';
-import type { BOSMarker, CHoCHMarker, FVGMarker } from '@/types';
+import type { BOSMarker, CHoCHMarker, FVGMarker, OrderBlockMarker, OTEZoneMarker, PremiumDiscountZone } from '@/types';
 
 interface CandleData {
   date: string;
@@ -22,9 +22,15 @@ interface CandlestickChartProps {
   showBOS?: boolean;
   showCHoCH?: boolean;
   showFVG?: boolean;
+  showOB?: boolean;
+  showOTE?: boolean;
+  showPD?: boolean;
   bosMarkers?: BOSMarker[];
   chochMarkers?: CHoCHMarker[];
   fvgMarkers?: FVGMarker[];
+  obMarkers?: OrderBlockMarker[];
+  oteMarkers?: OTEZoneMarker[];
+  pdZone?: PremiumDiscountZone | null;
 }
 
 const MIN_VISIBLE = 20;
@@ -37,9 +43,15 @@ export default function CandlestickChart({
   showBOS = false,
   showCHoCH = false,
   showFVG = false,
+  showOB = false,
+  showOTE = false,
+  showPD = false,
   bosMarkers = [],
   chochMarkers = [],
   fvgMarkers = [],
+  obMarkers = [],
+  oteMarkers = [],
+  pdZone = null,
 }: CandlestickChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { theme } = useTheme();
@@ -163,6 +175,89 @@ export default function CandlestickChart({
       ctx.fillText(formatPrice(price), width - padding.right + 6, y + 3);
     }
 
+    // Premium/Discount Zone (background layer)
+    if (showPD && pdZone) {
+      const yHigh = yScale(pdZone.swing_high);
+      const yLow = yScale(pdZone.swing_low);
+      const yEq = yScale(pdZone.equilibrium);
+      const xLeft = padding.left;
+      const xRight = width - padding.right;
+      const chartTop = padding.top;
+      const chartBottom = padding.top + priceChartHeight;
+      // Always show EQ line if it's within visible price range
+      if (yEq > chartTop && yEq < chartBottom) {
+        // Premium tint (clipped to chart area)
+        const tintTop = Math.max(yHigh, chartTop);
+        const tintMid = Math.min(Math.max(yEq, chartTop), chartBottom);
+        if (tintTop < tintMid) {
+          ctx.fillStyle = 'rgba(244,63,94,0.03)';
+          ctx.fillRect(xLeft, tintTop, xRight - xLeft, tintMid - tintTop);
+        }
+        // Discount tint (clipped to chart area)
+        const tintBottom = Math.min(yLow, chartBottom);
+        if (tintMid < tintBottom) {
+          ctx.fillStyle = 'rgba(34,197,94,0.03)';
+          ctx.fillRect(xLeft, tintMid, xRight - xLeft, tintBottom - tintMid);
+        }
+        // EQ line
+        ctx.strokeStyle = 'rgba(244,63,94,0.35)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(xLeft, yEq); ctx.lineTo(xRight, yEq); ctx.stroke();
+        ctx.setLineDash([]);
+        // Swing bounds (only if visible)
+        ctx.strokeStyle = 'rgba(150,150,150,0.15)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 4]);
+        if (yHigh > chartTop && yHigh < chartBottom) {
+          ctx.beginPath(); ctx.moveTo(xLeft, yHigh); ctx.lineTo(xRight, yHigh); ctx.stroke();
+        }
+        if (yLow > chartTop && yLow < chartBottom) {
+          ctx.beginPath(); ctx.moveTo(xLeft, yLow); ctx.lineTo(xRight, yLow); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        // Labels
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(244,63,94,0.5)';
+        ctx.fillText(`EQ ${formatPrice(pdZone.equilibrium)}`, xLeft + 4, yEq - 4);
+        const zoneColor = pdZone.zone === 'PREMIUM' ? 'rgba(244,63,94,0.5)'
+                         : pdZone.zone === 'DISCOUNT' ? 'rgba(34,197,94,0.5)'
+                         : 'rgba(150,150,150,0.5)';
+        ctx.fillStyle = zoneColor;
+        ctx.font = 'bold 8px -apple-system, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(pdZone.zone, xRight - 4, yEq + (pdZone.zone === 'PREMIUM' ? -8 : 12));
+      }
+    }
+
+    // OTE Zone (background band) — show up to 3 active zones
+    if (showOTE && oteMarkers.length > 0) {
+      const activeOtes = oteMarkers.filter(m => m.status === 'ACTIVE').slice(-3);
+      activeOtes.forEach(ote => {
+        const yFib62 = yScale(ote.fib_62);
+        const yFib79 = yScale(ote.fib_79);
+        const xLeft = padding.left;
+        const xRight = width - padding.right;
+        ctx.fillStyle = 'rgba(59,130,246,0.06)';
+        ctx.fillRect(xLeft, yFib79, xRight - xLeft, yFib62 - yFib79);
+        ctx.strokeStyle = 'rgba(59,130,246,0.45)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(xLeft, yFib62); ctx.lineTo(xRight, yFib62); ctx.stroke();
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(xLeft, yFib79); ctx.lineTo(xRight, yFib79); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.fillStyle = 'rgba(59,130,246,0.6)';
+        ctx.textAlign = 'right';
+        ctx.fillText('0.618', xRight - 2, yFib62 - 3);
+        ctx.fillText('0.786', xRight - 2, yFib79 - 3);
+        ctx.font = 'bold 8px -apple-system, sans-serif';
+        ctx.fillText('OTE', xRight - 2, (yFib62 + yFib79) / 2 + 3);
+      });
+    }
+
     // FVG Zones
     if (showFVG && fvgMarkers.length > 0) {
       fvgMarkers.forEach(fvg => {
@@ -188,6 +283,39 @@ export default function CandlestickChart({
         ctx.moveTo(xStart, gapBottom); ctx.lineTo(xEnd, gapBottom);
         ctx.stroke();
         ctx.setLineDash([]);
+      });
+    }
+
+    // Order Block Zones
+    if (showOB && obMarkers.length > 0) {
+      obMarkers.forEach(ob => {
+        if (ob.status !== 'ACTIVE') return;
+        const idx = dateIndexMap.get(ob.start_date);
+        if (idx === undefined) return;
+        const y1 = yScale(ob.zone_high);
+        const y2 = yScale(ob.zone_low);
+        const xStart = xScale(idx);
+        const xEnd = xScale(visibleData.length - 1);
+        const isBull = ob.direction === 'BULLISH';
+        const baseColor = isBull ? '34,211,238' : '251,113,133';
+        const alpha = 0.06 + ob.freshness * 0.12;
+        const grad = ctx.createLinearGradient(xStart, 0, xEnd, 0);
+        grad.addColorStop(0, `rgba(${baseColor},${alpha})`);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(xStart, y1, xEnd - xStart, y2 - y1);
+        ctx.strokeStyle = `rgba(${baseColor},0.4)`;
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash(ob.cisd_confirmed ? [] : [2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(xStart, y1); ctx.lineTo(xEnd, y1);
+        ctx.moveTo(xStart, y2); ctx.lineTo(xEnd, y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = 'bold 7px -apple-system, sans-serif';
+        ctx.fillStyle = `rgba(${baseColor},0.7)`;
+        ctx.textAlign = 'left';
+        ctx.fillText('OB', xStart + 3, y1 + 9);
       });
     }
 
@@ -422,6 +550,23 @@ export default function CandlestickChart({
       const visibleChoch = chochMarkers.filter(m => dateIndexMap.has(m.date)).length;
       ctx.fillStyle = 'rgba(168,85,247,0.5)';
       ctx.fillText(`CHoCH:${visibleChoch}`, titleX, 20);
+      titleX += 55;
+    }
+    if (showOB) {
+      const visibleOb = obMarkers.filter(m => dateIndexMap.has(m.start_date)).length;
+      ctx.fillStyle = 'rgba(34,211,238,0.5)';
+      ctx.fillText(`OB:${visibleOb}`, titleX, 20);
+      titleX += 40;
+    }
+    if (showOTE) {
+      const activeOte = oteMarkers.filter(m => m.status === 'ACTIVE').length;
+      ctx.fillStyle = 'rgba(59,130,246,0.5)';
+      ctx.fillText(`OTE:${activeOte}`, titleX, 20);
+      titleX += 45;
+    }
+    if (showPD && pdZone) {
+      ctx.fillStyle = 'rgba(244,63,94,0.5)';
+      ctx.fillText(`P/D:${pdZone.zone}`, titleX, 20);
     }
 
     // Scrollbar
@@ -438,7 +583,7 @@ export default function CandlestickChart({
       roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [data, ticker, showEMA, showBOS, showCHoCH, showFVG, bosMarkers, chochMarkers, fvgMarkers, isDark]);
+  }, [data, ticker, showEMA, showBOS, showCHoCH, showFVG, showOB, showOTE, showPD, bosMarkers, chochMarkers, fvgMarkers, obMarkers, oteMarkers, pdZone, isDark]);
 
   // Draw on data/options change
   useEffect(() => {

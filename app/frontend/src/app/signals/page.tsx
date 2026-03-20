@@ -18,7 +18,7 @@ type Mode = 'balanced' | 'aggressive' | 'conservative';
 type Tab = 'entry' | 'holding' | 'history' | 'system';
 type Period = '1d' | '5d' | '1mo' | '3mo' | '6mo' | 'ytd' | '1y' | '5y' | 'max';
 type ChartType = 'line' | 'candlestick';
-type ChartOption = 'ema' | 'fvg' | 'bos' | 'choch';
+type ChartOption = 'ema' | 'fvg' | 'bos' | 'choch' | 'ob' | 'ote' | 'pd';
 
 const modeLabels: Record<Mode, { label: string; desc: string }> = {
   balanced: { label: '標準', desc: 'RS下落時はエントリー禁止。最もバランスが良い。' },
@@ -53,6 +53,9 @@ const chartOptionLabels: Record<ChartOption, { label: string; title: string }> =
   fvg: { label: 'FVG', title: '価格ギャップ' },
   bos: { label: 'BOS', title: '構造変化' },
   choch: { label: 'CHoCH', title: 'トレンド転換' },
+  ob: { label: 'OB', title: 'オーダーブロック' },
+  ote: { label: 'OTE', title: '最適エントリーゾーン' },
+  pd: { label: 'P/D', title: 'プレミアム/ディスカウント' },
 };
 
 export default function SignalsPageWrapper() {
@@ -704,6 +707,9 @@ function SignalsPage() {
                             ? opt === 'ema' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
                             : opt === 'fvg' ? 'bg-purple-400/20 text-purple-700 dark:text-purple-400'
                             : opt === 'bos' ? 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
+                            : opt === 'ob' ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-400'
+                            : opt === 'ote' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                            : opt === 'pd' ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400'
                             : 'bg-purple-500/20 text-purple-700 dark:text-purple-400'
                             : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                         }`}
@@ -738,9 +744,15 @@ function SignalsPage() {
                     showBOS={chartOptions.has('bos')}
                     showCHoCH={chartOptions.has('choch')}
                     showFVG={chartOptions.has('fvg')}
+                    showOB={chartOptions.has('ob')}
+                    showOTE={chartOptions.has('ote')}
+                    showPD={chartOptions.has('pd')}
                     bosMarkers={chartMarkers?.bos || []}
                     chochMarkers={chartMarkers?.choch || []}
                     fvgMarkers={chartMarkers?.fvg || []}
+                    obMarkers={chartMarkers?.order_blocks || []}
+                    oteMarkers={chartMarkers?.ote_zones || []}
+                    pdZone={chartMarkers?.premium_discount || null}
                   />
                 ) : (
                   <LineChartCanvas
@@ -767,6 +779,15 @@ function SignalsPage() {
                 )}
                 {chartType === 'candlestick' && chartOptions.has('fvg') && (
                   <span className="flex items-center gap-1.5"><span className="w-3 h-2 bg-purple-400/30 border border-purple-400/50 rounded-sm" /> FVG</span>
+                )}
+                {chartType === 'candlestick' && chartOptions.has('ob') && (
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-2 bg-cyan-400/30 border border-cyan-400/50 rounded-sm" /> OB</span>
+                )}
+                {chartType === 'candlestick' && chartOptions.has('ote') && (
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-2 bg-blue-400/30 border border-blue-400/50 rounded-sm" /> OTE</span>
+                )}
+                {chartType === 'candlestick' && chartOptions.has('pd') && (
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-rose-400" /> P/D</span>
                 )}
               </div>
             </div>
