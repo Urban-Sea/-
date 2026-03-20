@@ -6,6 +6,8 @@ from .market_structure import MarketStructure, SwingPoint as MSSwingPoint, GRANU
 from .choch_detector import CHoCHDetector, CHoCHType, CHoCHQuality, CHoCHSignal
 from .bos_detector import BOSDetector, BOSType, BOSGrade, BOSSignal, BOSAnalysis
 from .regime_detector import RegimeDetector, RegimeResult, detect_regime
+from .order_block_detector import OrderBlockDetector, OrderBlock
+from .ote_calculator import OTECalculator, OTEZone
 from .combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
 from .exit_manager import ExitManager, ExitType, ExitUrgency, ExitDecision, Position
 
@@ -33,6 +35,12 @@ __all__ = [
     "RegimeDetector",
     "RegimeResult",
     "detect_regime",
+    # Order Block (V11)
+    "OrderBlockDetector",
+    "OrderBlock",
+    # OTE (V11)
+    "OTECalculator",
+    "OTEZone",
     # Entry
     "CombinedEntryDetector",
     "EntryMode",

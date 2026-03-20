@@ -23,6 +23,9 @@ from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, E
 from analysis.bos_detector import BOSDetector
 from analysis.regime_detector import RegimeDetector
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance, get_config
+from analysis.market_structure import MarketStructure
+from analysis.order_block_detector import OrderBlockDetector
+from analysis.ote_calculator import OTECalculator
 from auth import require_proxy
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
@@ -1037,8 +1040,10 @@ async def get_chart_markers(
                     filled = True
                     break
             if not filled:
-                # indexを削除してからリストに追加
+                # V11: CE (Consequent Encroachment) = FVGの中間ライン
+                ce_level = round((fvg["top"] + fvg["bottom"]) / 2, 2)
                 fvg_clean = {k: v for k, v in fvg.items() if k != "index"}
+                fvg_clean["ce_level"] = ce_level
                 fvg_list.append(fvg_clean)
 
         # 最新10個に制限
@@ -1067,6 +1072,63 @@ async def get_chart_markers(
                     "previous_price": round(float(c.previous_price), 2),
                 })
 
+        # V11: Order Block検出
+        ob_list = []
+        try:
+            # BOS/CHoCHイベントをbreak_eventsに変換
+            break_events = []
+            for b in bos_signals:
+                break_events.append({'index': b.index, 'direction': b.bos_type.value})
+            for c in choch_signals:
+                break_events.append({'index': c.index, 'direction': c.choch_type.value})
+
+            ob_detector = OrderBlockDetector()
+            active_obs = ob_detector.detect(df, break_events)
+            for ob in active_obs:
+                ob_list.append({
+                    "zone_high": round(ob.zone_high, 2),
+                    "zone_low": round(ob.zone_low, 2),
+                    "direction": ob.direction,
+                    "freshness": ob.freshness,
+                    "cisd_confirmed": ob.cisd_confirmed,
+                    "start_date": ob.date,
+                    "status": ob.status,
+                })
+        except Exception:
+            pass
+
+        # V11: OTE Zone計算
+        ote_list = []
+        try:
+            ms = MarketStructure(df)
+            med_highs, med_lows = ms.swings('medium')
+
+            choch_events_for_ote = []
+            for c in choch_signals:
+                choch_events_for_ote.append({
+                    'index': c.index,
+                    'type': c.choch_type.value,
+                    'price': c.price,
+                    'previous_swing': c.previous_price,
+                })
+
+            ote_calc = OTECalculator()
+            current_idx = len(df) - 1
+            ote_zones = ote_calc.calculate(choch_events_for_ote, med_highs, med_lows, current_idx)
+            for z in ote_zones:
+                ote_list.append({
+                    "upper": round(z.upper, 2),
+                    "lower": round(z.lower, 2),
+                    "fib_62": round(z.fib_62, 2),
+                    "fib_79": round(z.fib_79, 2),
+                    "swing_a": round(z.swing_a, 2),
+                    "swing_b": round(z.swing_b, 2),
+                    "direction": z.direction,
+                    "status": z.status,
+                })
+        except Exception:
+            pass
+
         response = {
             "ticker": ticker,
             "period": period,
@@ -1074,6 +1136,8 @@ async def get_chart_markers(
             "bos": bos_list,
             "choch": choch_list,
             "fvg": fvg_list,
+            "order_blocks": ob_list,
+            "ote_zones": ote_list,
             "data_points": len(df),
         }
 
