@@ -44,10 +44,12 @@ try:
     from .asset_class import AssetClass, JPBenchmark, get_config
     from .regime_detector import RegimeDetector
     from .choch_detector import CHoCHDetector, CHoCHType
+    from .bos_detector import BOSDetector
 except ImportError:
     from analysis.asset_class import AssetClass, JPBenchmark, get_config
     from analysis.regime_detector import RegimeDetector
     from analysis.choch_detector import CHoCHDetector, CHoCHType
+    from analysis.bos_detector import BOSDetector
 
 
 class EntryMode(Enum):
@@ -100,6 +102,10 @@ class EntryAnalysis:
     benchmark_price: float = 0.0
     benchmark_ema_long: float = 0.0
     ema_short_slope: float = 0.0
+
+    # V11: BOS Confidence（ゲート不変、サイズ調整のみ）
+    bos_confidence: float = 1.0     # 0.4〜1.0
+    bos_grade: str = "NONE"         # EXTENSION / REVERSAL / CONTINUATION / NONE
 
 
 class CombinedEntryDetector:
@@ -267,6 +273,31 @@ class CombinedEntryDetector:
             combined_ready, rs_trend, mode
         )
 
+        # V11: BOS Confidence計算（ゲート不変、サイズ調整のみ）
+        bos_confidence = 1.0
+        bos_grade_str = "NONE"
+        try:
+            bos_det = BOSDetector(swing_lookback=3)
+            highs = stock_df['High'].tolist()
+            lows = stock_df['Low'].tolist()
+            closes = stock_df['Close'].tolist()
+            ema_21_list = stock_df['EMA_21'].tolist() if 'EMA_21' in stock_df.columns else []
+
+            bos_signals = bos_det.detect_bos(highs, lows)
+            choch_bos_signals = bos_det.detect_choch(highs, lows)
+
+            if ema_21_list:
+                bos_analysis = bos_det.classify_bos_grade(
+                    bos_signals, choch_bos_signals, closes, ema_21_list, idx
+                )
+                bos_confidence = bos_det.compute_confidence_score(bos_analysis, idx)
+                bos_grade_str = bos_analysis.grade.value
+        except Exception:
+            pass  # BOS confidence計算失敗時はデフォルト値(1.0)を使用
+
+        # BOS confidenceでposition_size_pctを調整
+        adjusted_size_pct = int(size_pct * bos_confidence)
+
         # 他モード参考
         other_modes = {}
         for m in EntryMode:
@@ -274,7 +305,7 @@ class CombinedEntryDetector:
                 allowed, sz, _ = self._apply_mode(combined_ready, rs_trend, m)
                 other_modes[m.value] = {
                     "entry_allowed": allowed,
-                    "position_size_pct": sz,
+                    "position_size_pct": int(sz * bos_confidence),
                 }
 
         return EntryAnalysis(
@@ -291,7 +322,7 @@ class CombinedEntryDetector:
             rs_trend=rs_trend,
             mode=mode.value,
             entry_allowed=entry_allowed,
-            position_size_pct=size_pct,
+            position_size_pct=adjusted_size_pct,
             mode_note=note,
             ticker=ticker,
             price=round(price, 2),
@@ -305,6 +336,8 @@ class CombinedEntryDetector:
             benchmark_price=round(regime_result.benchmark_close, 2) if regime_result else 0.0,
             benchmark_ema_long=round(regime_result.benchmark_ema_long, 2) if regime_result else 0.0,
             ema_short_slope=round(regime_result.ema_short_slope, 4) if regime_result else 0.0,
+            bos_confidence=round(bos_confidence, 2),
+            bos_grade=bos_grade_str,
         )
 
     def _detect_current_regime(self, benchmark_df: Optional[pd.DataFrame]):
@@ -617,4 +650,7 @@ class CombinedEntryDetector:
             "regime": result.regime,
             # V10: 株価カテゴリ情報
             "price_category": result.price_category,
+            # V11: BOS Confidence
+            "bos_confidence": result.bos_confidence,
+            "bos_grade": result.bos_grade,
         }

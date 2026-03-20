@@ -104,6 +104,10 @@ class SignalResponse(BaseModel):
     mode_note: str
     other_modes: Dict[str, ModeResult]
 
+    # V11: BOS Confidence
+    bos_confidence: float = 1.0     # 0.4〜1.0
+    bos_grade: str = "NONE"         # EXTENSION / REVERSAL / CONTINUATION / NONE
+
 
 def entry_mode_from_str(mode_str: str) -> EntryMode:
     """文字列からEntryModeに変換"""
@@ -223,6 +227,8 @@ async def get_signal(
             position_size_pct=result.position_size_pct,
             mode_note=result.mode_note,
             other_modes=other_modes,
+            bos_confidence=result.bos_confidence,
+            bos_grade=result.bos_grade,
         )
 
         _cache_set(cache_key, response.model_dump(), ttl=adaptive_ttl(_SIGNAL_TTL, ticker))

@@ -227,6 +227,24 @@ class CHoCHDetector:
             return False, bars_since_choch
 
 
+    def detect_choch_from_structure(self, ms) -> List[CHoCHSignal]:
+        """
+        MarketStructure経由でCHoCH検出（V11）。
+
+        既存ロジック（detect_choch）と完全同一の判定。
+        swingの計算をMarketStructureに委譲する点のみ異なる。
+
+        Args:
+            ms: MarketStructure インスタンス
+
+        Returns:
+            CHoCHSignalリスト（時系列順）
+        """
+        # MarketStructure.all_swingsはfine粒度の全swingをindex昇順で返す
+        swings = ms.all_swings
+        return self.detect_choch(ms.df, swings)
+
+
 def create_choch_detector(swing_lookback: int = 3) -> CHoCHDetector:
     """CHoCH Detector作成"""
     return CHoCHDetector(swing_lookback=swing_lookback)

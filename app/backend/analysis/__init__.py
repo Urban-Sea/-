@@ -2,6 +2,7 @@
 # 本格ロジック（demoから移植）
 
 from .asset_class import AssetClass, JPBenchmark, get_config
+from .market_structure import MarketStructure, SwingPoint as MSSwingPoint, GRANULARITY_MAP
 from .choch_detector import CHoCHDetector, CHoCHType, CHoCHQuality, CHoCHSignal
 from .bos_detector import BOSDetector, BOSType, BOSGrade, BOSSignal, BOSAnalysis
 from .regime_detector import RegimeDetector, RegimeResult, detect_regime
@@ -13,6 +14,10 @@ __all__ = [
     "AssetClass",
     "JPBenchmark",
     "get_config",
+    # MarketStructure (V11)
+    "MarketStructure",
+    "MSSwingPoint",
+    "GRANULARITY_MAP",
     # CHoCH
     "CHoCHDetector",
     "CHoCHType",

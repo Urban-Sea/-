@@ -374,6 +374,58 @@ class BOSDetector:
             details=details
         )
 
+    # Grade → base score mapping (V11 Phase 1)
+    GRADE_SCORE = {
+        BOSGrade.EXTENSION: 0.9,
+        BOSGrade.REVERSAL: 1.0,
+        BOSGrade.CONTINUATION: 0.6,
+        BOSGrade.NONE: 0.4,
+    }
+
+    def compute_confidence_score(
+        self,
+        bos_analysis: BOSAnalysis,
+        current_idx: int,
+    ) -> float:
+        """
+        BOS Confidence Score（0.4〜1.0）を計算。
+
+        position_size_pct にこのスコアを乗算してサイズ調整に使う。
+        entry_allowed のゲート条件には一切影響しない。
+
+        計算式:
+            base = GRADE_SCORE[grade]
+            recency = 直近BOSの新しさ（1.0 / 0.8 / 0.6 / 0.5）
+            choch_bonus = REVERSAL以上 + 直近CHoCHなら +0.1
+            confidence = min(1.0, base * recency + choch_bonus)
+
+        Args:
+            bos_analysis: classify_bos_grade の結果
+            current_idx: 現在のインデックス
+
+        Returns:
+            0.4〜1.0 の confidence score
+        """
+        base = self.GRADE_SCORE.get(bos_analysis.grade, 0.4)
+
+        # recency: 直近BOSほど高信頼
+        if bos_analysis.recent_bos:
+            latest = max(b.index for b in bos_analysis.recent_bos)
+            bars_ago = current_idx - latest
+            if bars_ago <= 5:
+                recency = 1.0
+            elif bars_ago <= 10:
+                recency = 0.8
+            else:
+                recency = 0.6
+        else:
+            recency = 0.5
+
+        # CHoCH bonus: REVERSAL以上のgrade + 直近CHoCHがある場合
+        choch_bonus = 0.1 if bos_analysis.has_recent_choch and base >= 0.9 else 0.0
+
+        return min(1.0, base * recency + choch_bonus)
+
     def find_recent_swing_low(
         self,
         lows: List[float],
@@ -538,6 +590,79 @@ class BOSDetector:
 # ============================================================
 # ユーティリティ関数
 # ============================================================
+
+    def detect_bos_from_structure(self, ms) -> List[BOSSignal]:
+        """
+        MarketStructure経由でBOS検出（V11）。
+
+        既存ロジック（detect_bos）と完全同一の判定。
+        swingの計算をMarketStructureに委譲する点のみ異なる。
+
+        Args:
+            ms: MarketStructure インスタンス
+
+        Returns:
+            BOSSignalリスト（時系列順）
+        """
+        ms_highs, ms_lows = ms.swings('fine')
+
+        # MarketStructure SwingPoint → BOSDetector SwingPoint に変換
+        swing_highs = [
+            SwingPoint(index=s.index, price=s.price, point_type='HIGH')
+            for s in ms_highs
+        ]
+        swing_lows = [
+            SwingPoint(index=s.index, price=s.price, point_type='LOW')
+            for s in ms_lows
+        ]
+
+        # 以下は detect_bos と同一のBOS判定ロジック
+        bos_signals = []
+
+        last_sh = None
+        for sh in swing_highs:
+            if last_sh and sh.price > last_sh.price:
+                strength = (sh.price - last_sh.price) / last_sh.price * 100
+                bos_signals.append(BOSSignal(
+                    index=sh.index,
+                    bos_type=BOSType.BULLISH,
+                    price=sh.price,
+                    broken_level=last_sh.price,
+                    strength_pct=strength,
+                ))
+            last_sh = sh
+
+        last_sl = None
+        for sl in swing_lows:
+            if last_sl and sl.price < last_sl.price:
+                strength = (last_sl.price - sl.price) / last_sl.price * 100
+                bos_signals.append(BOSSignal(
+                    index=sl.index,
+                    bos_type=BOSType.BEARISH,
+                    price=sl.price,
+                    broken_level=last_sl.price,
+                    strength_pct=strength,
+                ))
+            last_sl = sl
+
+        bos_signals.sort(key=lambda x: x.index)
+        return bos_signals
+
+    def detect_choch_from_structure(self, ms) -> List[CHoCHSignal]:
+        """
+        MarketStructure経由でCHoCH検出（V11）。
+
+        Args:
+            ms: MarketStructure インスタンス
+
+        Returns:
+            CHoCHSignalリスト（時系列順）
+        """
+        highs = ms.df['High'].tolist()
+        lows = ms.df['Low'].tolist()
+        # 既存ロジックをそのまま呼び出す（内部でCHoCHDetectorを使用）
+        return self.detect_choch(highs, lows)
+
 
 def create_detector(
     swing_lookback: int = 3,
