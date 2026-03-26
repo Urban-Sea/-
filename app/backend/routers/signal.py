@@ -919,6 +919,10 @@ async def get_signal_history(
                     regime=ep["regime"],
                     choch_signals=exit_choch_signals,
                 )
+                if result is None:
+                    continue  # データ不足でトレード未完了
+                if result.exit_idx <= ep["entry_idx"]:
+                    continue  # 0日保有（データ末尾エントリー）はスキップ
                 ret_pct = (result.exit_price - ep["entry_price"]) / ep["entry_price"] * 100
                 exit_date = df['Date'].iloc[result.exit_idx] if result.exit_idx < len(df) else ep["date"]
                 trade_results.append({

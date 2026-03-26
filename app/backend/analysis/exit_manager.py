@@ -167,6 +167,9 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
             entry_price, current_close, min(stop_at, max_day) - entry_idx, nearest)
 
     # trade mode: Time Stop
+    # Guard: エントリーがデータ末尾付近でループ未実行の場合はトレード未完了
+    if max_day <= entry_idx:
+        return None
     exit_price = df['Close'].iloc[max_day]
     if choch_exit_price is not None:
         blended = choch_exit_price * 0.5 + exit_price * 0.5
