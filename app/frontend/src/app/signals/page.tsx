@@ -926,16 +926,21 @@ function SignalsPage() {
                   <div className="flex items-center gap-3 mb-5">
                     <span className="text-base font-bold text-foreground">Exit分析パネル</span>
                     <span className="text-sm text-muted-foreground">PatB 4層 Exit システム</span>
-                    {historyLoading && <StatusChip label="取得中..." color="purple" />}
+                    <button
+                      onClick={handleFetchSignalHistory}
+                      disabled={historyLoading}
+                      className="ml-auto px-3 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-50 plumb-glass text-muted-foreground hover:text-foreground border border-border hover:border-foreground/20"
+                    >
+                      {historyLoading ? '取得中...' : '更新'}
+                    </button>
                   </div>
 
                   {(() => {
-                    // データソース: trade_results（完了）+ live_exit_statuses（アクティブ）
                     const trades = signalHistory?.trade_results ?? [];
                     const actives = signalHistory?.live_exit_statuses?.filter(s => !s.trade_completed) ?? [];
                     const ccy = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
+                    const isBuyNow = signal?.entry_allowed === true;
 
-                    // Exit理由の日本語マッピング
                     const exitReasonJP: Record<string, string> = {
                       'ATR_Floor': '損切り（ATR Floor割れ）',
                       'ATR_Floor(partial)': '損切り（部分決済後ATR Floor）',
@@ -947,10 +952,9 @@ function SignalsPage() {
                       'Time_Stop(partial)': '期限到達（部分決済込み）',
                     };
 
-                    // 最新アクティブの判定
+                    // アクティブポジションの判定
                     const latestActive = actives.length > 0 ? actives[actives.length - 1] : null;
-                    const getActiveVerdict = (s: typeof latestActive) => {
-                      if (!s) return null;
+                    const getActiveVerdict = (s: NonNullable<typeof latestActive>) => {
                       if (s.atr_floor_triggered) return { action: '全売却', color: 'red' as const, sellPct: 100, reason: `ATR Floor ${ccy}${s.atr_floor_price.toFixed(2)} 割れ` };
                       if (s.bearish_choch_detected && s.ema_death_cross) return { action: '全売却', color: 'red' as const, sellPct: 100, reason: 'Mirror Full: CHoCH + EMAデスクロス確定' };
                       if (s.bearish_choch_detected) return { action: '50% 売却', color: 'orange' as const, sellPct: 50, reason: 'Bearish CHoCH検出 — EMAデスクロスで残りも売却' };
@@ -959,55 +963,89 @@ function SignalsPage() {
                       return { action: '保有継続', color: 'emerald' as const, sellPct: 0, reason: '全Exit条件クリア — 安全' };
                     };
 
-                    // Hero用
-                    const hasData = trades.length > 0 || actives.length > 0;
+                    // Hero状態: アクティブ > BUY判定中 > NO POSITION
                     const heroVerdict = latestActive ? getActiveVerdict(latestActive) : null;
-                    const heroColor = heroVerdict?.color ?? (trades.length > 0 ? 'zinc' : 'zinc');
+                    const heroState = heroVerdict ? heroVerdict.color : isBuyNow ? 'blue' as const : 'zinc' as const;
                     const verdictStyles = {
                       red: { text: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/[0.06]', border: 'border-red-500/30', glow: '#ef4444' },
                       orange: { text: 'text-orange-500 dark:text-orange-400', bg: 'bg-orange-500/[0.06]', border: 'border-orange-500/30', glow: '#f97316' },
                       emerald: { text: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/30', glow: '#10b981' },
+                      blue: { text: 'text-blue-500 dark:text-blue-400', bg: 'bg-blue-500/[0.06]', border: 'border-blue-500/30', glow: '#3b82f6' },
                       zinc: { text: 'text-zinc-400 dark:text-zinc-600', bg: '', border: 'border-zinc-200 dark:border-zinc-800', glow: '' },
                     };
-                    const vs = verdictStyles[heroColor];
+                    const vs = verdictStyles[heroState];
 
                     return (
                       <>
                         {/* ── Hero Verdict ── */}
-                        {signalHistory && (
-                          <div className={`relative text-center py-8 rounded-xl mb-4 border overflow-hidden ${vs.border}`}>
-                            {heroColor !== 'zinc' && <div className={`absolute inset-0 ${vs.bg}`} />}
-                            {heroColor !== 'zinc' && (
-                              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20" style={{ background: vs.glow }} />
+                        <div className={`relative text-center py-8 rounded-xl mb-4 border overflow-hidden ${vs.border}`}>
+                          {heroState !== 'zinc' && <div className={`absolute inset-0 ${vs.bg}`} />}
+                          {heroState !== 'zinc' && (
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20" style={{ background: vs.glow }} />
+                          )}
+                          <div className="relative">
+                            {heroVerdict ? (
+                              <>
+                                <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>
+                                  {heroVerdict.action}
+                                </div>
+                                <div className="mt-2 text-sm text-muted-foreground">{heroVerdict.reason}</div>
+                                {heroVerdict.sellPct > 0 && (
+                                  <div className={`mt-2 text-lg font-bold font-mono ${vs.text}`}>売却比率: {heroVerdict.sellPct}%</div>
+                                )}
+                                <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap">
+                                  <span>BUY: {latestActive!.entry_date} @ {ccy}{latestActive!.entry_price.toFixed(2)}</span>
+                                  <span className="w-px h-3 bg-border" />
+                                  <span>{latestActive!.holding_days}日保有</span>
+                                  <span className="w-px h-3 bg-border" />
+                                  <span className={`font-mono font-semibold ${latestActive!.unrealized_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                    {latestActive!.unrealized_pct >= 0 ? '+' : ''}{latestActive!.unrealized_pct.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </>
+                            ) : isBuyNow ? (
+                              <>
+                                <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>EXIT判定待ち</div>
+                                <div className="mt-2 text-sm text-muted-foreground">現在BUYシグナル発生中 — 買い付け後にExit監視開始</div>
+                                <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap">
+                                  <span>現在価格: <span className="font-mono font-semibold text-foreground">{ccy}{signal.price.toFixed(2)}</span></span>
+                                  <span className="w-px h-3 bg-border" />
+                                  <span>サイズ: <span className="font-mono font-semibold text-foreground">{signal.position_size_pct}%</span></span>
+                                  <span className="w-px h-3 bg-border" />
+                                  <span>レジーム: <span className={`font-semibold ${getRegimeColor(signal.regime)}`}>{signal.regime}</span></span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>NO POSITION</div>
+                                <div className="mt-2 text-sm text-muted-foreground">
+                                  {trades.length > 0 ? 'BUYシグナル待ち — 下にトレード履歴あり' : 'エントリーシグナル待ち'}
+                                </div>
+                              </>
                             )}
-                            <div className="relative">
-                              {heroVerdict ? (
-                                <>
-                                  <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>
-                                    {heroVerdict.action}
-                                  </div>
-                                  <div className="mt-2 text-sm text-muted-foreground">{heroVerdict.reason}</div>
-                                  {heroVerdict.sellPct > 0 && (
-                                    <div className={`mt-2 text-lg font-bold font-mono ${vs.text}`}>売却比率: {heroVerdict.sellPct}%</div>
-                                  )}
-                                  <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap">
-                                    <span>BUY: {latestActive!.entry_date} @ {ccy}{latestActive!.entry_price.toFixed(2)}</span>
-                                    <span className="w-px h-3 bg-border" />
-                                    <span>{latestActive!.holding_days}日保有</span>
-                                    <span className="w-px h-3 bg-border" />
-                                    <span className={`font-mono font-semibold ${latestActive!.unrealized_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                      {latestActive!.unrealized_pct >= 0 ? '+' : ''}{latestActive!.unrealized_pct.toFixed(1)}%
-                                    </span>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>NO POSITION</div>
-                                  <div className="mt-2 text-sm text-muted-foreground">
-                                    {trades.length > 0 ? `直近${trades.length}件のトレード履歴あり` : 'BUYシグナル履歴なし'}
-                                  </div>
-                                </>
-                              )}
+                          </div>
+                        </div>
+
+                        {/* ── 現在BUY中: 今買ったらのシミュレーション ── */}
+                        {isBuyNow && !latestActive && (
+                          <div className="plumb-glass rounded-xl p-4 mb-4">
+                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">今買った場合の Exit 監視ポイント</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">ATR Floor（損切り）</div>
+                                <div className="text-xs text-muted-foreground">エントリー価格 - ATR×3.0</div>
+                                <div className="text-[10px] text-muted-foreground mt-1">終値でこのラインを割ったら即損切り</div>
+                              </div>
+                              <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">Mirror（反転検出）</div>
+                                <div className="text-xs text-muted-foreground">Bearish CHoCH → 50%売却</div>
+                                <div className="text-[10px] text-muted-foreground mt-1">+ EMAデスクロスで残り全売却</div>
+                              </div>
+                              <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">Trail Stop（利確）</div>
+                                <div className="text-xs text-muted-foreground">EMA21×1.05超えで有効化</div>
+                                <div className="text-[10px] text-muted-foreground mt-1">レジーム別の倍率で追従</div>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -1122,12 +1160,9 @@ function SignalsPage() {
                           </div>
                         )}
 
-                        {/* ── Empty states ── */}
-                        {signalHistory && !hasData && !historyLoading && (
-                          <div className="text-center py-10 text-muted-foreground text-sm">過去1年間のBUYシグナルが見つかりませんでした</div>
-                        )}
-                        {!signalHistory && !historyLoading && (
-                          <div className="text-center py-10 text-muted-foreground text-sm">データを取得中...</div>
+                        {/* ── Empty state ── */}
+                        {!signalHistory && !historyLoading && !isBuyNow && (
+                          <div className="text-center py-6 text-muted-foreground text-sm">データを取得中...</div>
                         )}
                       </>
                     );
