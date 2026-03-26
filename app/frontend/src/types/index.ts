@@ -533,6 +533,41 @@ export interface SignalHistoryStats {
   win_rate_5d: number | null;
   win_rate_10d: number | null;
   win_rate_20d: number | null;
+  // PatB Exit stats
+  patb_trades?: number;
+  patb_avg_pnl?: number;
+  patb_median_pnl?: number;
+  patb_win_rate?: number;
+  patb_pf?: number | null;
+  patb_avg_hold_days?: number;
+}
+
+export interface TradeResult {
+  entry_date: string;
+  exit_date: string;
+  entry_price: number;
+  exit_price: number;
+  exit_reason: string;
+  return_pct: number;
+  holding_days: number;
+}
+
+export interface LiveExitStatus {
+  entry_date: string;
+  entry_price: number;
+  entry_regime: string;
+  holding_days: number;
+  unrealized_pct: number;
+  atr_floor_price: number;
+  atr_floor_triggered: boolean;
+  partial_exit_done: boolean;
+  bearish_choch_detected: boolean;
+  ema_death_cross: boolean;
+  trail_active: boolean;
+  trail_stop_price: number | null;
+  highest_price: number;
+  nearest_exit_reason: string | null;
+  trade_completed: boolean;
 }
 
 export interface SignalHistoryResponse {
@@ -542,9 +577,10 @@ export interface SignalHistoryResponse {
   timestamp: string;
   signals: HistoricalSignal[];
   stats: SignalHistoryStats;
-  // Timeline signals (full history with all types)
   timeline?: TimelineSignal[];
   total_signals?: number;
+  trade_results?: TradeResult[];
+  live_exit_statuses?: LiveExitStatus[];
 }
 
 // Chart marker types
@@ -630,6 +666,7 @@ export interface BatchResult {
     trend: 'UP' | 'FLAT' | 'DOWN';
   };
   regime?: string;
+  exit_atr_floor?: number;
   error: boolean;
   error_message?: string;
 }

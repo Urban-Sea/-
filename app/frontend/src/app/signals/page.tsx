@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Crosshair, Package, History, BookOpen } from 'lucide-react';
+import { Crosshair, Package, History, BookOpen, ShieldAlert } from 'lucide-react';
 import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ import { useUser } from '@/components/providers/UserProvider';
 import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
 
 type Mode = 'balanced' | 'aggressive' | 'conservative';
-type Tab = 'entry' | 'holding' | 'history' | 'system';
+type Tab = 'entry' | 'exit_analysis' | 'holding' | 'history' | 'system';
 type Period = '1d' | '5d' | '1mo' | '3mo' | '6mo' | 'ytd' | '1y' | '5y' | 'max';
 type ChartType = 'line' | 'candlestick';
 type ChartOption = 'ema' | 'fvg' | 'bos' | 'choch' | 'ob' | 'ote' | 'pd';
@@ -182,6 +182,14 @@ function SignalsPage() {
       } catch { /* ignore */ }
     }
   }, []);
+
+  // Exit分析タブ選択時に自動フェッチ
+  useEffect(() => {
+    if (activeTab === 'exit_analysis' && !signalHistory && !historyLoading && ticker) {
+      handleFetchSignalHistory();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const addQuickTicker = useCallback(async (t: string) => {
     const tick = t.trim().toUpperCase();
@@ -410,7 +418,8 @@ function SignalsPage() {
                 setSignal(null);
                 setError(null);
                 try {
-                  const res = await getBatchSignals(quickTickers, mode);
+                  const allTickers = [...quickTickers, ...jpTickers.map(t => t.ticker)];
+                  const res = await getBatchSignals(allTickers, mode);
                   setBatchResults(res);
                 } catch (err) {
                   setError(err instanceof Error ? err.message : '一括分析に失敗しました');
@@ -621,6 +630,11 @@ function SignalsPage() {
                       <div className="grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
                         <span>統合判定: <span className={`font-semibold ${r.combined_ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'}`}>{r.combined_ready ? '達成' : '未達'}</span></span>
                         <span>RS: <span className={`font-semibold ${rsColors[rsTrend]}`}>{rsLabels[rsTrend]}</span></span>
+                        {r.entry_allowed && r.exit_atr_floor != null && (
+                          <span>ATR Floor: <span className="font-mono font-semibold text-red-500 dark:text-red-400">
+                            {/^\d/.test(r.ticker) ? '¥' : '$'}{r.exit_atr_floor.toFixed(2)}
+                          </span></span>
+                        )}
                       </div>
                     </>
                   )}
@@ -797,6 +811,7 @@ function SignalsPage() {
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="plumb-tabs">
             <TabsList variant="line" className="plumb-glass rounded-lg px-1 py-0.5 w-full justify-start border-none">
               <TabsTrigger value="entry" className="text-[11px] font-mono uppercase tracking-wider"><Crosshair className="w-3.5 h-3.5 mr-1.5" />エントリー判定</TabsTrigger>
+              <TabsTrigger value="exit_analysis" className="text-[11px] font-mono uppercase tracking-wider"><ShieldAlert className="w-3.5 h-3.5 mr-1.5" />Exit分析</TabsTrigger>
               <TabsTrigger value="holding" className="text-[11px] font-mono uppercase tracking-wider"><Package className="w-3.5 h-3.5 mr-1.5" />保有分析</TabsTrigger>
               <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider"><History className="w-3.5 h-3.5 mr-1.5" />過去シグナル</TabsTrigger>
               <TabsTrigger value="system" className="text-[11px] font-mono uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5 mr-1.5" />システム解説</TabsTrigger>
@@ -886,6 +901,132 @@ function SignalsPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              </GlassCard>
+            </TabsContent>
+
+            {/* ── Tab: Exit Analysis ── */}
+            <TabsContent value="exit_analysis">
+              <GlassCard stagger={1}>
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <span className="text-base font-bold text-foreground">Exit分析（PatB 4層）</span>
+                    <StatusChip label="evaluate_current" color="purple" />
+                    {signalHistory?.live_exit_statuses && (
+                      <span className="text-sm text-muted-foreground">({signalHistory.live_exit_statuses.length}件)</span>
+                    )}
+                    <button
+                      onClick={handleFetchSignalHistory}
+                      disabled={historyLoading}
+                      className="ml-auto px-4 py-1.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30"
+                    >
+                      {historyLoading ? '取得中...' : '分析実行'}
+                    </button>
+                  </div>
+
+                  {/* PatB 統計サマリー */}
+                  {signalHistory?.stats?.patb_trades && (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+                      <Metric label="トレード数" value={`${signalHistory.stats.patb_trades}`} />
+                      <Metric label="勝率" value={`${signalHistory.stats.patb_win_rate}%`} />
+                      <Metric label="PF" value={`${signalHistory.stats.patb_pf ?? '∞'}`} />
+                      <Metric label="平均損益" value={`${signalHistory.stats.patb_avg_pnl}%`} />
+                      <Metric label="平均保有" value={`${signalHistory.stats.patb_avg_hold_days}日`} />
+                    </div>
+                  )}
+
+                  {/* 各エントリーのライブ Exit ステータス */}
+                  {signalHistory?.live_exit_statuses && signalHistory.live_exit_statuses.length > 0 ? (
+                    <div className="space-y-3">
+                      {signalHistory.live_exit_statuses.slice().reverse().map((s, i) => {
+                        const trade = signalHistory.trade_results?.find(
+                          t => t.entry_date === s.entry_date
+                        );
+                        const ccy = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
+
+                        return (
+                          <div key={i} className={`plumb-glass rounded-lg p-4 ${s.trade_completed ? 'opacity-70' : ''}`}>
+                            {/* ヘッダー */}
+                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-mono text-muted-foreground">
+                                  {s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}
+                                </span>
+                                <StatusChip label={s.entry_regime} color="blue" />
+                                <span className="text-xs px-1.5 py-0.5 rounded plumb-glass text-muted-foreground">
+                                  {s.holding_days}日保有
+                                </span>
+                                {s.trade_completed && trade && (
+                                  <StatusChip
+                                    label={`${trade.exit_reason} ${trade.return_pct > 0 ? '+' : ''}${trade.return_pct.toFixed(1)}%`}
+                                    color={trade.return_pct > 0 ? 'green' : 'red'}
+                                  />
+                                )}
+                              </div>
+                              <span className={`text-sm font-bold font-mono ${
+                                s.unrealized_pct > 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+                              }`}>
+                                {s.unrealized_pct > 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
+                              </span>
+                            </div>
+
+                            {/* 4層 Exit ステータス */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              {/* ATR Floor */}
+                              <div className={`rounded-lg px-3 py-2 ${s.atr_floor_triggered ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'plumb-glass text-muted-foreground'}`}>
+                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">ATR Floor</div>
+                                <div className="font-mono font-semibold text-foreground">{ccy}{s.atr_floor_price.toFixed(2)}</div>
+                                {s.atr_floor_triggered && <div className="text-red-400 font-bold mt-0.5">TRIGGERED</div>}
+                              </div>
+
+                              {/* Mirror */}
+                              <div className={`rounded-lg px-3 py-2 ${s.bearish_choch_detected || s.ema_death_cross ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400' : 'plumb-glass text-muted-foreground'}`}>
+                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">Mirror</div>
+                                <div>CHoCH: <span className={s.bearish_choch_detected ? 'text-orange-400 font-semibold' : ''}>{s.bearish_choch_detected ? '検出' : '—'}</span></div>
+                                <div>EMA DC: <span className={s.ema_death_cross ? 'text-orange-400 font-semibold' : ''}>{s.ema_death_cross ? '発生' : '—'}</span></div>
+                                {s.partial_exit_done && <div className="text-orange-400 font-semibold mt-0.5">50%利確済</div>}
+                              </div>
+
+                              {/* Trail Stop */}
+                              <div className={`rounded-lg px-3 py-2 ${s.trail_active ? 'bg-purple-500/10 border border-purple-500/20 text-purple-400' : 'plumb-glass text-muted-foreground'}`}>
+                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">Trail Stop</div>
+                                {s.trail_active ? (
+                                  <>
+                                    <div className="font-mono font-semibold text-foreground">
+                                      {s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '計算中'}
+                                    </div>
+                                    <div className="text-[10px] mt-0.5">最高値: {ccy}{s.highest_price.toFixed(2)}</div>
+                                  </>
+                                ) : (
+                                  <div>未有効化</div>
+                                )}
+                              </div>
+
+                              {/* 総合判定 */}
+                              <div className={`rounded-lg px-3 py-2 ${s.nearest_exit_reason ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' : 'plumb-glass text-muted-foreground'}`}>
+                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">判定</div>
+                                {s.nearest_exit_reason ? (
+                                  <div className="font-semibold text-yellow-400">{s.nearest_exit_reason}</div>
+                                ) : s.trade_completed ? (
+                                  <div className="font-semibold text-muted-foreground">完了</div>
+                                ) : (
+                                  <div className="font-semibold text-emerald-400">保有継続</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : signalHistory && !historyLoading ? (
+                    <div className="text-center py-10 text-muted-foreground text-sm">
+                      過去のBUYシグナルが見つかりませんでした
+                    </div>
+                  ) : !signalHistory && !historyLoading ? (
+                    <div className="text-center py-10 text-muted-foreground text-sm">
+                      「分析実行」をクリックしてExit分析を取得
+                    </div>
+                  ) : null}
                 </div>
               </GlassCard>
             </TabsContent>

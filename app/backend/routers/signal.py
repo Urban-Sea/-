@@ -21,6 +21,8 @@ import yfinance as yf
 # 本格ロジックをインポート
 from analysis.combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
 from analysis.bos_detector import BOSDetector
+from analysis.choch_detector import CHoCHDetector
+from analysis.exit_manager import evaluate_trade, evaluate_current
 from analysis.regime_detector import RegimeDetector
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance, get_config
 from analysis.market_structure import MarketStructure
@@ -281,6 +283,7 @@ class BatchResult(BaseModel):
     position_size_pct: int = 0
     relative_strength: Optional[Dict[str, Any]] = None
     regime: Optional[str] = None
+    exit_atr_floor: Optional[float] = None
     error: bool = False
     error_message: Optional[str] = None
 
@@ -304,6 +307,7 @@ async def analyze_batch(request: BatchRequest):
     - **tickers**: 銘柄コードリスト (例: ["NVDA", "TSLA", "META"])
     - **mode**: aggressive=攻め, balanced=バランス, conservative=守り
     """
+    import pandas as pd
     entry_mode = entry_mode_from_str(request.mode)
     results = []
     entry_ready_count = 0
@@ -313,22 +317,37 @@ async def analyze_batch(request: BatchRequest):
         try:
             asset_class = _detect_asset_class(ticker)
             yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
+
+            # DataFrame を先に取得 → entry と ATR Floor で共有
+            stock = yf.Ticker(yf_ticker)
+            stock_df = stock.history(period="6mo")
+            if stock_df.empty:
+                results.append(BatchResult(ticker=ticker, error=True, error_message="No data"))
+                continue
+
             detector = CombinedEntryDetector(
                 asset_class=asset_class,
                 use_v9_regime=True,
                 use_v10_price_category=True
             )
-            result = detector.analyze(yf_ticker, entry_mode)
+            result = detector.analyze(yf_ticker, entry_mode, stock_df=stock_df)
 
             # 企業名取得
             batch_name: Optional[str] = None
             try:
-                batch_name = yf.Ticker(yf_ticker).info.get("shortName")
+                batch_name = stock.info.get("shortName")
             except Exception:
                 pass
 
             if result.entry_allowed:
                 entry_ready_count += 1
+
+            # ATR Floor 計算 (BUY の場合のみ)
+            exit_atr_floor = None
+            if result.entry_allowed and result.price and 'ATR' in stock_df.columns:
+                atr_val = stock_df['ATR'].iloc[-1]
+                if pd.notna(atr_val):
+                    exit_atr_floor = round(result.price - float(atr_val) * 3.0, 2)
 
             results.append(BatchResult(
                 ticker=ticker,
@@ -343,6 +362,7 @@ async def analyze_batch(request: BatchRequest):
                     "trend": result.rs_trend,
                 },
                 regime=result.regime,
+                exit_atr_floor=exit_atr_floor,
                 error=False,
             ))
         except Exception as e:
@@ -580,6 +600,10 @@ async def get_signal_history(
         bos_signals = bos_detector.detect_bos(highs, lows)
         choch_signals = bos_detector.detect_choch(highs, lows)
 
+        # ExitManager用: CHoCHDetector (evaluate_trade が .type 属性を参照)
+        exit_choch_detector = CHoCHDetector(swing_lookback=3)
+        exit_choch_signals = exit_choch_detector.detect_choch(df)
+
         # V10準拠: CHoCHをリスト形式で保持（直近N個を検索するため）
         choch_list = []  # [(index, type_str), ...]
         for choch in choch_signals:
@@ -598,6 +622,7 @@ async def get_signal_history(
         # シグナル配列（タイムライン用）
         timeline = []
         legacy_signals = []  # 後方互換用
+        entry_points = []  # ExitManager用: [{entry_idx, entry_price, entry_atr, regime}, ...]
 
         # ストリーク追跡
         entry_streak = None
@@ -633,6 +658,17 @@ async def get_signal_history(
                 "detail": f"買いシグナル（RS: {s['rs_trend']}）EMA収束 {s.get('ema_conv', 0):.2f}ATR",
                 "rs_trend": s["rs_trend"],
                 "size_pct": s["size_pct"],
+            })
+            # ExitManager用: エントリーポイント記録（Open entry = 翌日Open想定だがClose近似）
+            entry_idx = s.get("start_idx", 0)
+            entry_atr = float(df['ATR'].iloc[entry_idx]) if not pd.isna(df['ATR'].iloc[entry_idx]) else 0
+            regime = spy_regime_map.get(s["start_date"], "BULL")
+            entry_points.append({
+                "entry_idx": entry_idx,
+                "entry_price": s["start_price"],
+                "entry_atr": entry_atr if entry_atr > 0 else s["start_price"] * 0.05,
+                "regime": regime,
+                "date": s["start_date"],
             })
             entry_streak = None
 
@@ -734,6 +770,7 @@ async def get_signal_history(
                         "start_price": close, "end_price": close,
                         "rs_trend": rs_trend, "size_pct": size_pct,
                         "ema_conv": ema_conv, "days": 1,
+                        "start_idx": i,
                     }
                 else:
                     entry_streak["end_date"] = date_str
@@ -847,6 +884,81 @@ async def get_signal_history(
         _flush_rsi()
         _flush_exit()
 
+        # ===== ExitManager: 各エントリーに対してevaluate_tradeを実行 =====
+        trade_results = []
+        for ep in entry_points:
+            try:
+                result = evaluate_trade(
+                    df=df,
+                    entry_idx=ep["entry_idx"],
+                    entry_price=ep["entry_price"],
+                    entry_atr=ep["entry_atr"],
+                    regime=ep["regime"],
+                    choch_signals=exit_choch_signals,
+                )
+                ret_pct = (result.exit_price - ep["entry_price"]) / ep["entry_price"] * 100
+                exit_date = df['Date'].iloc[result.exit_idx] if result.exit_idx < len(df) else ep["date"]
+                trade_results.append({
+                    "entry_date": ep["date"],
+                    "exit_date": exit_date,
+                    "entry_price": ep["entry_price"],
+                    "exit_price": result.exit_price,
+                    "exit_reason": result.exit_reason,
+                    "return_pct": ret_pct,
+                    "holding_days": result.exit_idx - ep["entry_idx"],
+                })
+                # タイムラインにTRADE_EXITイベントを追加
+                timeline.append({
+                    "date": exit_date,
+                    "type": "TRADE_EXIT",
+                    "price": round(result.exit_price, 2),
+                    "detail": f"{result.exit_reason} → {ret_pct:+.1f}%（{result.exit_idx - ep['entry_idx']}日保有）",
+                    "exit_reason": result.exit_reason,
+                    "return_pct": round(ret_pct, 2),
+                    "holding_days": result.exit_idx - ep["entry_idx"],
+                    "entry_date": ep["date"],
+                    "entry_price": round(ep["entry_price"], 2),
+                })
+            except Exception:
+                pass
+
+        # ===== 各エントリーに対して evaluate_current を実行（今日時点のExit状態） =====
+        live_exit_statuses = []
+        current_idx = len(df) - 1
+
+        for ep in entry_points:
+            try:
+                hs = evaluate_current(
+                    df=df,
+                    entry_idx=ep["entry_idx"],
+                    entry_price=ep["entry_price"],
+                    entry_atr=ep["entry_atr"],
+                    regime=ep["regime"],
+                    choch_signals=exit_choch_signals,
+                    current_idx=current_idx,
+                )
+                live_exit_statuses.append({
+                    "entry_date": ep["date"],
+                    "entry_price": ep["entry_price"],
+                    "entry_regime": ep["regime"],
+                    "holding_days": hs.holding_days,
+                    "unrealized_pct": round(hs.unrealized_pct, 2),
+                    "atr_floor_price": round(hs.atr_floor_price, 2),
+                    "atr_floor_triggered": hs.atr_floor_triggered,
+                    "partial_exit_done": hs.partial_exit_done,
+                    "bearish_choch_detected": hs.bearish_choch_detected,
+                    "ema_death_cross": hs.ema_death_cross,
+                    "trail_active": hs.trail_active,
+                    "trail_stop_price": round(hs.trail_stop_price, 2) if hs.trail_stop_price else None,
+                    "highest_price": round(hs.highest_price, 2),
+                    "nearest_exit_reason": hs.nearest_exit_reason,
+                    "trade_completed": any(
+                        t["entry_date"] == ep["date"] for t in trade_results
+                    ),
+                })
+            except Exception:
+                pass
+
         # 時系列ソート
         timeline.sort(key=lambda x: x['date'])
 
@@ -856,6 +968,7 @@ async def get_signal_history(
             "total_signals": len(timeline),
             "entry_count": len(entry_signals),
             "exit_count": len([s for s in timeline if s['type'] == 'EXIT']),
+            "trade_exit_count": len(trade_results),
             "rsi_high_count": len([s for s in timeline if s['type'] == 'RSI_HIGH']),
             "avg_pnl_5d": None,
             "avg_pnl_10d": None,
@@ -864,6 +977,19 @@ async def get_signal_history(
             "win_rate_10d": None,
             "win_rate_20d": None,
         }
+
+        # PatB Exit統計
+        if trade_results:
+            rets = [t["return_pct"] for t in trade_results]
+            wins = [r for r in rets if r > 0]
+            losses = [r for r in rets if r <= 0]
+            pf = sum(wins) / abs(sum(losses)) if losses and sum(losses) != 0 else float('inf')
+            stats["patb_trades"] = len(trade_results)
+            stats["patb_avg_pnl"] = round(float(np.mean(rets)), 2)
+            stats["patb_median_pnl"] = round(float(np.median(rets)), 2)
+            stats["patb_win_rate"] = round(len(wins) / len(rets) * 100, 1)
+            stats["patb_pf"] = round(pf, 2) if pf != float('inf') else None
+            stats["patb_avg_hold_days"] = round(float(np.mean([t["holding_days"] for t in trade_results])), 1)
 
         if legacy_signals:
             pnl_5d_list = [s["pnl_5d"] for s in legacy_signals if s["pnl_5d"] is not None]
@@ -889,6 +1015,8 @@ async def get_signal_history(
             "timeline": timeline,  # 全シグナル（demo準拠）
             "total_signals": len(timeline),
             "stats": stats,
+            "trade_results": trade_results,
+            "live_exit_statuses": live_exit_statuses,
         }
 
         _cache_set(cache_key, result, ttl=adaptive_ttl(_SIGNAL_TTL, ticker))
