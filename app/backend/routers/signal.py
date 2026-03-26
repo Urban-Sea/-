@@ -939,22 +939,22 @@ async def get_signal_history(
                 )
                 live_exit_statuses.append({
                     "entry_date": ep["date"],
-                    "entry_price": ep["entry_price"],
+                    "entry_price": float(ep["entry_price"]),
                     "entry_regime": ep["regime"],
-                    "holding_days": hs.holding_days,
-                    "unrealized_pct": round(hs.unrealized_pct, 2),
-                    "atr_floor_price": round(hs.atr_floor_price, 2),
-                    "atr_floor_triggered": hs.atr_floor_triggered,
-                    "partial_exit_done": hs.partial_exit_done,
-                    "bearish_choch_detected": hs.bearish_choch_detected,
-                    "ema_death_cross": hs.ema_death_cross,
-                    "trail_active": hs.trail_active,
-                    "trail_stop_price": round(hs.trail_stop_price, 2) if hs.trail_stop_price else None,
-                    "highest_price": round(hs.highest_price, 2),
+                    "holding_days": int(hs.holding_days),
+                    "unrealized_pct": round(float(hs.unrealized_pct), 2),
+                    "atr_floor_price": round(float(hs.atr_floor_price), 2),
+                    "atr_floor_triggered": bool(hs.atr_floor_triggered),
+                    "partial_exit_done": bool(hs.partial_exit_done),
+                    "bearish_choch_detected": bool(hs.bearish_choch_detected),
+                    "ema_death_cross": bool(hs.ema_death_cross),
+                    "trail_active": bool(hs.trail_active),
+                    "trail_stop_price": round(float(hs.trail_stop_price), 2) if hs.trail_stop_price else None,
+                    "highest_price": round(float(hs.highest_price), 2),
                     "nearest_exit_reason": hs.nearest_exit_reason,
-                    "trade_completed": any(
+                    "trade_completed": bool(any(
                         t["entry_date"] == ep["date"] for t in trade_results
-                    ),
+                    )),
                 })
             except Exception:
                 pass
