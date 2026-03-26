@@ -157,9 +157,9 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
             if not pd.isna(e8) and not pd.isna(e21):
                 ema_death = e8 < e21
 
-        # 最も近いExit条件を判定
+        # 最も近いExit条件を判定（実際に252日以上保有した場合のみ）
         nearest = None
-        if stop_at >= max_day:
+        if stop_at - entry_idx >= 252:
             nearest = "Time_Stop"
         return _build_holding_status(
             atr_floor, False, choch_exit_price, ema_death,
