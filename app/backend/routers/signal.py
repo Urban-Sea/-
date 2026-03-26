@@ -351,19 +351,20 @@ async def analyze_batch(request: BatchRequest):
             if result.entry_allowed:
                 entry_ready_count += 1
 
-            # Exit サマリー計算 (BUY の場合のみ)
+            # Exit サマリー計算（全銘柄）
             exit_atr_floor = None
             exit_data: Dict[str, Any] = {}
-            if result.entry_allowed and result.price:
-                # ATR Floor
+            current_price = result.price or (float(stock_df['Close'].iloc[-1]) if not stock_df.empty else None)
+            if current_price:
+                # ATR Floor（BUYの場合はエントリー価格基準、それ以外は現在価格基準）
                 if 'ATR' in stock_df.columns:
                     atr_val = stock_df['ATR'].iloc[-1]
                     if pd.notna(atr_val):
-                        exit_atr_floor = round(result.price - float(atr_val) * 3.0, 2)
+                        exit_atr_floor = round(current_price - float(atr_val) * 3.0, 2)
                 # Exit サマリー (EMA + CHoCH + Structure)
                 try:
                     from routers.exit import compute_exit_summary
-                    exit_data = compute_exit_summary(stock_df, result.price)
+                    exit_data = compute_exit_summary(stock_df, current_price)
                 except Exception:
                     pass
 

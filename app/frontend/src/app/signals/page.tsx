@@ -623,10 +623,10 @@ function SignalsPage() {
                       </div>
                       <div className="mb-2 flex items-center gap-2 flex-wrap">
                         <StatusChip label={r.entry_allowed ? '買いシグナル' : 'エントリーなし'} color={r.entry_allowed ? 'green' : 'blue'} />
-                        {r.entry_allowed && r.exit_status && (
+                        {r.exit_status && (
                           <StatusChip
-                            label={r.exit_status === 'SAFE' ? '安全' : r.exit_status === 'WARNING' ? '注意' : '危険'}
-                            color={r.exit_status === 'SAFE' ? 'green' : r.exit_status === 'WARNING' ? 'orange' : 'red'}
+                            label={r.exit_status === 'SAFE' ? 'Exit安全' : r.exit_status === 'WARNING' ? 'Exit注意' : 'Exit危険'}
+                            color={r.exit_status === 'SAFE' ? 'green' : r.exit_status === 'WARNING' ? 'yellow' : 'red'}
                           />
                         )}
                         {r.position_size_pct > 0 && (
@@ -636,18 +636,18 @@ function SignalsPage() {
                       <div className="grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
                         <span>統合判定: <span className={`font-semibold ${r.combined_ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'}`}>{r.combined_ready ? '達成' : '未達'}</span></span>
                         <span>RS: <span className={`font-semibold ${rsColors[rsTrend]}`}>{rsLabels[rsTrend]}</span></span>
-                        {r.entry_allowed && r.exit_atr_floor != null && (
+                        {r.exit_atr_floor != null && (
                           <span>ATR Floor: <span className="font-mono font-semibold text-red-500 dark:text-red-400">
                             {/^\d/.test(r.ticker) ? '¥' : '$'}{r.exit_atr_floor.toFixed(2)}
                           </span></span>
                         )}
-                        {r.entry_allowed && r.exit_ema_above && (
+                        {r.exit_ema_above && (
                           <span>EMA: <span className={`font-semibold ${r.exit_ema_above.ema21 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                            {r.exit_ema_above.ema8 ? '8' : ''}{r.exit_ema_above.ema13 ? '13' : ''}{r.exit_ema_above.ema21 ? '21' : ''}{!r.exit_ema_above.ema8 && !r.exit_ema_above.ema13 && !r.exit_ema_above.ema21 ? '全割れ' : '上'}
+                            {[r.exit_ema_above.ema8 && '8', r.exit_ema_above.ema13 && '13', r.exit_ema_above.ema21 && '21'].filter(Boolean).join('/')}{!r.exit_ema_above.ema8 && !r.exit_ema_above.ema13 && !r.exit_ema_above.ema21 ? '全割れ' : '上'}
                           </span></span>
                         )}
-                        {r.entry_allowed && r.exit_choch_warning && (
-                          <span className="text-orange-500 dark:text-orange-400 font-semibold">CHoCH警戒</span>
+                        {r.exit_choch_warning && (
+                          <span className="text-orange-500 dark:text-orange-400 font-semibold col-span-2">CHoCH警戒 — 反転リスク</span>
                         )}
                       </div>
                     </>
