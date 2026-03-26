@@ -10,7 +10,7 @@ from .order_block_detector import OrderBlockDetector, OrderBlock
 from .ote_calculator import OTECalculator, OTEZone
 from .premium_discount_detector import PremiumDiscountCalculator, PremiumDiscountZone
 from .combined_entry_detector import CombinedEntryDetector, EntryMode, EntryAnalysis
-from .exit_manager import ExitManager, ExitType, ExitUrgency, ExitDecision, Position
+from .exit_manager import evaluate_trade, TradeResult, HoldingStatus, TRAIL_MULT
 
 __all__ = [
     # Asset Class
@@ -50,9 +50,8 @@ __all__ = [
     "EntryMode",
     "EntryAnalysis",
     # Exit
-    "ExitManager",
-    "ExitType",
-    "ExitUrgency",
-    "ExitDecision",
-    "Position",
+    "evaluate_trade",
+    "TradeResult",
+    "HoldingStatus",
+    "TRAIL_MULT",
 ]

@@ -21,9 +21,12 @@ Entry条件（全モード共通）:
   3. EMA収束（|EMA_8 - EMA_21| / ATR ≤ Regime別閾値）
 
 運用モード:
-  Balanced（デフォルト）: RS DOWN → Entry禁止（閾値は株価カテゴリ別）
-  Aggressive:            RS無視
-  Conservative:          RS DOWN=50%, FLAT=75%, UP=100%
+  Balanced（デフォルト / 標準型）: RS DOWN → Entry禁止（閾値は株価カテゴリ別）
+  Aggressive:                      RS無視
+  Conservative（慎重型）:          Balanced条件 + 追加フィルター
+                                   + EMA21 5日傾き > 3% → Entry禁止（過熱排除）
+                                   + ATR/価格 < 1.5% → Entry禁止（低ボラ排除）
+                                   バックテスト検証: MaxDD -36.5%→-25.5%改善, PF 6.62→6.88
 
 バックテスト実績（V10 + V8.3 Exit）:
   avg +20.12%, PF 5.82, win 54.6%, Bear +0.88%, n=524
@@ -109,6 +112,10 @@ class EntryAnalysis:
 
     # V12: Entry Timing（バックテスト検証: Open入りで avg+2.79%, PF 5.73→7.90）
     entry_timing: str = "NEXT_OPEN"  # NEXT_OPEN: 翌営業日の寄付き成行
+
+    # V13 Conservative用フィルター値
+    ema21_slope_5d: float = 0.0     # EMA21の5日傾き（%）
+    atr_pct: float = 0.0           # ATR/価格（%）
 
 
 class CombinedEntryDetector:
@@ -271,9 +278,23 @@ class CombinedEntryDetector:
             stock_df, benchmark_df, idx, rs_down_threshold
         )
 
+        # V13 Conservative用: EMA21傾き・ATR%計算
+        ema21_slope_5d = 0.0
+        atr_pct = 999.0
+        try:
+            if 'EMA_21' in stock_df.columns and idx >= 5:
+                ema21_now = stock_df['EMA_21'].iloc[idx]
+                ema21_5ago = stock_df['EMA_21'].iloc[idx - 5]
+                if ema21_5ago > 0:
+                    ema21_slope_5d = (ema21_now - ema21_5ago) / ema21_5ago * 100
+            if 'ATR' in stock_df.columns and price > 0:
+                atr_pct = stock_df['ATR'].iloc[idx] / price * 100
+        except Exception:
+            pass
+
         # モード別判定
         entry_allowed, size_pct, note = self._apply_mode(
-            combined_ready, rs_trend, mode
+            combined_ready, rs_trend, mode, ema21_slope_5d, atr_pct
         )
 
         # V11: BOS Grade計算（情報表示のみ。サイズ調整は無効化）
@@ -309,7 +330,9 @@ class CombinedEntryDetector:
         other_modes = {}
         for m in EntryMode:
             if m.value != mode.value:
-                allowed, sz, _ = self._apply_mode(combined_ready, rs_trend, m)
+                allowed, sz, _ = self._apply_mode(
+                    combined_ready, rs_trend, m, ema21_slope_5d, atr_pct
+                )
                 other_modes[m.value] = {
                     "entry_allowed": allowed,
                     "position_size_pct": sz,
@@ -345,6 +368,8 @@ class CombinedEntryDetector:
             ema_short_slope=round(regime_result.ema_short_slope, 4) if regime_result else 0.0,
             bos_confidence=round(bos_confidence, 2),
             bos_grade=bos_grade_str,
+            ema21_slope_5d=round(ema21_slope_5d, 2),
+            atr_pct=round(atr_pct, 2),
         )
 
     def _detect_current_regime(self, benchmark_df: Optional[pd.DataFrame]):
@@ -537,7 +562,8 @@ class CombinedEntryDetector:
         except Exception:
             return 0.0, "FLAT"
 
-    def _apply_mode(self, combined_ready: bool, rs_trend: str, mode: EntryMode):
+    def _apply_mode(self, combined_ready: bool, rs_trend: str, mode: EntryMode,
+                    ema21_slope_5d: float = 0.0, atr_pct: float = 999.0):
         if not combined_ready:
             return False, 0, "Combined条件未達"
 
@@ -550,10 +576,16 @@ class CombinedEntryDetector:
             return True, 100, ""
 
         if mode == EntryMode.CONSERVATIVE:
-            size_map = {"UP": 100, "FLAT": 75, "DOWN": 50}
-            size = size_map.get(rs_trend, 75)
-            note = f"サイズ {size}%" if size < 100 else ""
-            return True, size, note
+            # Balanced条件と同じRS判定
+            if rs_trend == "DOWN":
+                return False, 0, "相対強度が低い"
+            # 追加フィルター1: EMA21の5日傾きが3%超 → 過熱排除
+            if ema21_slope_5d > 3.0:
+                return False, 0, f"EMA21過熱（傾き {ema21_slope_5d:.1f}%）"
+            # 追加フィルター2: ATR/価格が1.5%未満 → 低ボラ排除
+            if atr_pct < 1.5:
+                return False, 0, f"低ボラティリティ（ATR {atr_pct:.1f}%）"
+            return True, 100, ""
 
         return True, 100, ""
 
@@ -662,4 +694,7 @@ class CombinedEntryDetector:
             "bos_grade": result.bos_grade,
             # V12: Entry Timing
             "entry_timing": result.entry_timing,
+            # V13: Conservative フィルター値
+            "ema21_slope_5d": result.ema21_slope_5d,
+            "atr_pct": result.atr_pct,
         }
