@@ -950,12 +950,14 @@ async def get_signal_history(
                 pass
 
         # ===== 各エントリーに対して evaluate_current を実行（今日時点のExit状態） =====
+        from analysis.exit_manager import TradeResult as _TR, HoldingStatus as _HS
         live_exit_statuses = []
         current_idx = len(df) - 1
+        current_close = float(df['Close'].iloc[current_idx]) if current_idx < len(df) else 0
 
         for ep in entry_points:
             try:
-                hs = evaluate_current(
+                result = evaluate_current(
                     df=df,
                     entry_idx=ep["entry_idx"],
                     entry_price=ep["entry_price"],
@@ -964,25 +966,50 @@ async def get_signal_history(
                     choch_signals=exit_choch_signals,
                     current_idx=current_idx,
                 )
-                live_exit_statuses.append({
-                    "entry_date": ep["date"],
-                    "entry_price": float(ep["entry_price"]),
-                    "entry_regime": ep["regime"],
-                    "holding_days": int(hs.holding_days),
-                    "unrealized_pct": round(float(hs.unrealized_pct), 2),
-                    "atr_floor_price": round(float(hs.atr_floor_price), 2),
-                    "atr_floor_triggered": bool(hs.atr_floor_triggered),
-                    "partial_exit_done": bool(hs.partial_exit_done),
-                    "bearish_choch_detected": bool(hs.bearish_choch_detected),
-                    "ema_death_cross": bool(hs.ema_death_cross),
-                    "trail_active": bool(hs.trail_active),
-                    "trail_stop_price": round(float(hs.trail_stop_price), 2) if hs.trail_stop_price else None,
-                    "highest_price": round(float(hs.highest_price), 2),
-                    "nearest_exit_reason": hs.nearest_exit_reason,
-                    "trade_completed": bool(any(
-                        t["entry_date"] == ep["date"] for t in trade_results
-                    )),
-                })
+                if result is None:
+                    continue
+
+                if isinstance(result, _HS):
+                    # アクティブポジション（Exit未発動）
+                    live_exit_statuses.append({
+                        "entry_date": ep["date"],
+                        "entry_price": float(ep["entry_price"]),
+                        "entry_regime": ep["regime"],
+                        "holding_days": int(result.holding_days),
+                        "unrealized_pct": round(float(result.unrealized_pct), 2),
+                        "atr_floor_price": round(float(result.atr_floor_price), 2),
+                        "atr_floor_triggered": bool(result.atr_floor_triggered),
+                        "partial_exit_done": bool(result.partial_exit_done),
+                        "bearish_choch_detected": bool(result.bearish_choch_detected),
+                        "ema_death_cross": bool(result.ema_death_cross),
+                        "trail_active": bool(result.trail_active),
+                        "trail_stop_price": round(float(result.trail_stop_price), 2) if result.trail_stop_price else None,
+                        "highest_price": round(float(result.highest_price), 2),
+                        "nearest_exit_reason": result.nearest_exit_reason,
+                        "trade_completed": False,
+                    })
+                elif isinstance(result, _TR):
+                    # Exit条件が途中で発動したポジション（システム判定では売却済み）
+                    entry_price = float(ep["entry_price"])
+                    unrealized = (current_close / entry_price - 1) * 100 if entry_price > 0 else 0
+                    atr_floor = entry_price - float(ep["entry_atr"]) * 3.0
+                    live_exit_statuses.append({
+                        "entry_date": ep["date"],
+                        "entry_price": entry_price,
+                        "entry_regime": ep["regime"],
+                        "holding_days": current_idx - ep["entry_idx"],
+                        "unrealized_pct": round(unrealized, 2),
+                        "atr_floor_price": round(atr_floor, 2),
+                        "atr_floor_triggered": "ATR_Floor" in result.exit_reason,
+                        "partial_exit_done": "partial" in result.exit_reason.lower() or "Mirror" in result.exit_reason,
+                        "bearish_choch_detected": "Mirror" in result.exit_reason,
+                        "ema_death_cross": "Mirror" in result.exit_reason and "Full" not in result.exit_reason,
+                        "trail_active": "Trail" in result.exit_reason,
+                        "trail_stop_price": None,
+                        "highest_price": round(current_close, 2),
+                        "nearest_exit_reason": result.exit_reason,
+                        "trade_completed": True,
+                    })
             except Exception:
                 pass
 

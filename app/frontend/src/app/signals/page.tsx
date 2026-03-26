@@ -937,7 +937,9 @@ function SignalsPage() {
 
                   {(() => {
                     const trades = signalHistory?.trade_results ?? [];
-                    const actives = signalHistory?.live_exit_statuses?.filter(s => !s.trade_completed) ?? [];
+                    const allStatuses = signalHistory?.live_exit_statuses ?? [];
+                    const actives = allStatuses.filter(s => !s.trade_completed);
+                    const exitedPositions = allStatuses.filter(s => s.trade_completed);
                     const ccy = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
                     const isBuyNow = signal?.entry_allowed === true;
 
@@ -965,7 +967,7 @@ function SignalsPage() {
 
                     // Hero状態: アクティブ > BUY判定中 > NO POSITION
                     const heroVerdict = latestActive ? getActiveVerdict(latestActive) : null;
-                    const heroState = heroVerdict ? heroVerdict.color : isBuyNow ? 'blue' as const : 'zinc' as const;
+                    const heroState = heroVerdict ? heroVerdict.color : isBuyNow ? 'blue' as const : exitedPositions.length > 0 ? 'orange' as const : 'zinc' as const;
                     const verdictStyles = {
                       red: { text: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/[0.06]', border: 'border-red-500/30', glow: '#ef4444' },
                       orange: { text: 'text-orange-500 dark:text-orange-400', bg: 'bg-orange-500/[0.06]', border: 'border-orange-500/30', glow: '#f97316' },
@@ -1013,6 +1015,13 @@ function SignalsPage() {
                                   <span>サイズ: <span className="font-mono font-semibold text-foreground">{signal.position_size_pct}%</span></span>
                                   <span className="w-px h-3 bg-border" />
                                   <span>レジーム: <span className={`font-semibold ${getRegimeColor(signal.regime)}`}>{signal.regime}</span></span>
+                                </div>
+                              </>
+                            ) : exitedPositions.length > 0 ? (
+                              <>
+                                <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] text-orange-500 dark:text-orange-400`}>EXIT済</div>
+                                <div className="mt-2 text-sm text-muted-foreground">
+                                  過去のBUYに対しExitシステムが発動済み — 下に詳細あり
                                 </div>
                               </>
                             ) : (
@@ -1130,6 +1139,38 @@ function SignalsPage() {
                                 </div>
                               </div>
                             ))}
+                          </div>
+                        )}
+
+                        {/* ── Exit済みポジション（システム判定で売却済み） ── */}
+                        {exitedPositions.length > 0 && (
+                          <div className="space-y-2 mb-4">
+                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Exit済み（システム判定）</div>
+                            {exitedPositions.slice(-5).reverse().map((s, i) => {
+                              const reason = exitReasonJP[s.nearest_exit_reason ?? ''] || s.nearest_exit_reason || '不明';
+                              const isLoss = s.unrealized_pct < 0;
+                              return (
+                                <div key={`exited-${i}`} className="plumb-glass rounded-lg px-4 py-3 opacity-70">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <StatusChip label="売却済" color={isLoss ? 'red' : 'green'} />
+                                      <span className="text-xs text-muted-foreground">{reason}</span>
+                                    </div>
+                                    <span className={`text-sm font-bold font-mono ${isLoss ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                                      {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                    <span>BUY {s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <span>{s.holding_days}日経過</span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <StatusChip label={s.entry_regime} color="blue" />
+                                    <span className="text-[10px] text-muted-foreground italic">※保有中なら現在 {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
