@@ -389,3 +389,47 @@ async def quick_exit_check(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+def compute_exit_summary(df: pd.DataFrame, entry_price: float) -> dict:
+    """
+    バッチ用の軽量 Exit サマリー。
+    EMA 位置関係 + CHoCH 警戒 + Structure Stop から
+    SAFE / WARNING / DANGER を判定。
+    """
+    current_price = float(df["Close"].iloc[-1])
+    emas = calculate_emas(df["Close"])
+    swing_highs, swing_lows = find_swing_points(df)
+
+    # Structure Stop
+    structure_stop = entry_price * 0.92
+    if swing_lows:
+        recent_sl = swing_lows[-1]
+        if recent_sl > structure_stop:
+            structure_stop = recent_sl
+
+    above_8 = current_price > emas["ema_8"]
+    above_13 = current_price > emas["ema_13"]
+    above_21 = current_price > emas["ema_21"]
+
+    # CHoCH 警戒 (Lower High)
+    choch_warning = False
+    if len(swing_highs) >= 2:
+        diff_pct = (swing_highs[-2] - swing_highs[-1]) / swing_highs[-2] * 100
+        if diff_pct >= 1.5:
+            choch_warning = True
+
+    # 総合判定
+    if current_price <= structure_stop or not above_21:
+        status = "DANGER"
+    elif choch_warning or not above_8 or not above_13:
+        status = "WARNING"
+    else:
+        status = "SAFE"
+
+    return {
+        "exit_status": status,
+        "exit_structure_stop": round(structure_stop, 2),
+        "exit_ema_above": {"ema8": above_8, "ema13": above_13, "ema21": above_21},
+        "exit_choch_warning": choch_warning,
+    }

@@ -284,6 +284,10 @@ class BatchResult(BaseModel):
     relative_strength: Optional[Dict[str, Any]] = None
     regime: Optional[str] = None
     exit_atr_floor: Optional[float] = None
+    exit_status: Optional[str] = None           # SAFE / WARNING / DANGER
+    exit_structure_stop: Optional[float] = None
+    exit_ema_above: Optional[Dict[str, bool]] = None
+    exit_choch_warning: Optional[bool] = None
     error: bool = False
     error_message: Optional[str] = None
 
@@ -324,6 +328,11 @@ async def analyze_batch(request: BatchRequest):
             if stock_df.empty:
                 results.append(BatchResult(ticker=ticker, error=True, error_message="No data"))
                 continue
+            # Date カラムを確保（CombinedEntryDetector の RS 計算で必要）
+            if 'Date' not in stock_df.columns:
+                stock_df = stock_df.reset_index()
+                if 'index' in stock_df.columns:
+                    stock_df = stock_df.rename(columns={'index': 'Date'})
 
             detector = CombinedEntryDetector(
                 asset_class=asset_class,
@@ -342,12 +351,21 @@ async def analyze_batch(request: BatchRequest):
             if result.entry_allowed:
                 entry_ready_count += 1
 
-            # ATR Floor 計算 (BUY の場合のみ)
+            # Exit サマリー計算 (BUY の場合のみ)
             exit_atr_floor = None
-            if result.entry_allowed and result.price and 'ATR' in stock_df.columns:
-                atr_val = stock_df['ATR'].iloc[-1]
-                if pd.notna(atr_val):
-                    exit_atr_floor = round(result.price - float(atr_val) * 3.0, 2)
+            exit_data: Dict[str, Any] = {}
+            if result.entry_allowed and result.price:
+                # ATR Floor
+                if 'ATR' in stock_df.columns:
+                    atr_val = stock_df['ATR'].iloc[-1]
+                    if pd.notna(atr_val):
+                        exit_atr_floor = round(result.price - float(atr_val) * 3.0, 2)
+                # Exit サマリー (EMA + CHoCH + Structure)
+                try:
+                    from routers.exit import compute_exit_summary
+                    exit_data = compute_exit_summary(stock_df, result.price)
+                except Exception:
+                    pass
 
             results.append(BatchResult(
                 ticker=ticker,
@@ -363,6 +381,10 @@ async def analyze_batch(request: BatchRequest):
                 },
                 regime=result.regime,
                 exit_atr_floor=exit_atr_floor,
+                exit_status=exit_data.get("exit_status"),
+                exit_structure_stop=exit_data.get("exit_structure_stop"),
+                exit_ema_above=exit_data.get("exit_ema_above"),
+                exit_choch_warning=exit_data.get("exit_choch_warning"),
                 error=False,
             ))
         except Exception as e:

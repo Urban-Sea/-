@@ -667,6 +667,10 @@ export interface BatchResult {
   };
   regime?: string;
   exit_atr_floor?: number;
+  exit_status?: 'SAFE' | 'WARNING' | 'DANGER';
+  exit_structure_stop?: number;
+  exit_ema_above?: { ema8: boolean; ema13: boolean; ema21: boolean };
+  exit_choch_warning?: boolean;
   error: boolean;
   error_message?: string;
 }

@@ -621,8 +621,14 @@ function SignalsPage() {
                         </div>
                         <span className="text-sm font-semibold font-mono text-foreground">{/^\d/.test(r.ticker) ? '¥' : '$'}{r.price?.toFixed(2)}</span>
                       </div>
-                      <div className="mb-2 flex items-center gap-2">
+                      <div className="mb-2 flex items-center gap-2 flex-wrap">
                         <StatusChip label={r.entry_allowed ? '買いシグナル' : 'エントリーなし'} color={r.entry_allowed ? 'green' : 'blue'} />
+                        {r.entry_allowed && r.exit_status && (
+                          <StatusChip
+                            label={r.exit_status === 'SAFE' ? '安全' : r.exit_status === 'WARNING' ? '注意' : '危険'}
+                            color={r.exit_status === 'SAFE' ? 'green' : r.exit_status === 'WARNING' ? 'orange' : 'red'}
+                          />
+                        )}
                         {r.position_size_pct > 0 && (
                           <span className="text-[10px] text-muted-foreground">サイズ: {r.position_size_pct}%</span>
                         )}
@@ -634,6 +640,14 @@ function SignalsPage() {
                           <span>ATR Floor: <span className="font-mono font-semibold text-red-500 dark:text-red-400">
                             {/^\d/.test(r.ticker) ? '¥' : '$'}{r.exit_atr_floor.toFixed(2)}
                           </span></span>
+                        )}
+                        {r.entry_allowed && r.exit_ema_above && (
+                          <span>EMA: <span className={`font-semibold ${r.exit_ema_above.ema21 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                            {r.exit_ema_above.ema8 ? '8' : ''}{r.exit_ema_above.ema13 ? '13' : ''}{r.exit_ema_above.ema21 ? '21' : ''}{!r.exit_ema_above.ema8 && !r.exit_ema_above.ema13 && !r.exit_ema_above.ema21 ? '全割れ' : '上'}
+                          </span></span>
+                        )}
+                        {r.entry_allowed && r.exit_choch_warning && (
+                          <span className="text-orange-500 dark:text-orange-400 font-semibold">CHoCH警戒</span>
                         )}
                       </div>
                     </>
