@@ -924,10 +924,10 @@ function SignalsPage() {
               <GlassCard stagger={1}>
                 <div className="p-6">
                   <div className="flex items-center gap-3 mb-5">
-                    <span className="text-base font-bold text-foreground">Exit分析（PatB 4層）</span>
-                    <StatusChip label="evaluate_current" color="purple" />
+                    <span className="text-base font-bold text-foreground">Exit分析パネル</span>
+                    <span className="text-sm text-muted-foreground">PatB 4層 Exit システム</span>
                     {signalHistory?.live_exit_statuses && (
-                      <span className="text-sm text-muted-foreground">({signalHistory.live_exit_statuses.length}件)</span>
+                      <StatusChip label={`${signalHistory.live_exit_statuses.filter(s => !s.trade_completed).length}件アクティブ`} color="purple" />
                     )}
                     <button
                       onClick={handleFetchSignalHistory}
@@ -938,7 +938,70 @@ function SignalsPage() {
                     </button>
                   </div>
 
-                  {/* PatB 統計サマリー */}
+                  {/* ── Hero Verdict (最新アクティブトレード) ── */}
+                  {(() => {
+                    const activeTrades = signalHistory?.live_exit_statuses?.filter(s => !s.trade_completed) ?? [];
+                    const latest = activeTrades.length > 0 ? activeTrades[activeTrades.length - 1] : null;
+                    const ccy = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
+
+                    // Exit判定ロジック
+                    const getExitVerdict = (s: typeof latest) => {
+                      if (!s) return { action: 'NO POSITION', color: 'zinc', sellPct: 0, reason: 'アクティブなポジションなし', detail: '' };
+                      if (s.atr_floor_triggered) return { action: '全売却', color: 'red', sellPct: 100, reason: 'ATR Floor 到達', detail: `損切りライン ${ccy}${s.atr_floor_price.toFixed(2)} を下回りました` };
+                      if (s.bearish_choch_detected && s.ema_death_cross) return { action: '全売却', color: 'red', sellPct: 100, reason: 'Mirror Full（CHoCH + EMAデスクロス）', detail: '弱気転換シグナルが確定しました' };
+                      if (s.bearish_choch_detected && !s.ema_death_cross) return { action: '50% 売却', color: 'orange', sellPct: 50, reason: 'Mirror 警戒（Bearish CHoCH 検出）', detail: 'EMAデスクロス発生で残り50%も売却' };
+                      if (s.nearest_exit_reason === 'Time_Stop') return { action: '全売却', color: 'orange', sellPct: 100, reason: '保有期限（252日）到達', detail: 'タイムストップによる自動Exit' };
+                      if (s.trail_active) return { action: '保有継続', color: 'emerald', sellPct: 0, reason: 'トレールストップ稼働中', detail: `ストップ: ${s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '計算中'} / 最高値: ${ccy}${s.highest_price.toFixed(2)}` };
+                      return { action: '保有継続', color: 'emerald', sellPct: 0, reason: 'Exit条件未達', detail: '全層安全' };
+                    };
+
+                    const verdict = getExitVerdict(latest);
+                    const verdictColors: Record<string, { text: string; bg: string; border: string; glow: string }> = {
+                      red: { text: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/[0.06] dark:bg-red-500/[0.04]', border: 'border-red-500/30', glow: '#ef4444' },
+                      orange: { text: 'text-orange-500 dark:text-orange-400', bg: 'bg-orange-500/[0.06] dark:bg-orange-500/[0.04]', border: 'border-orange-500/30', glow: '#f97316' },
+                      emerald: { text: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/[0.06] dark:bg-emerald-500/[0.04]', border: 'border-emerald-500/30', glow: '#10b981' },
+                      zinc: { text: 'text-zinc-400 dark:text-zinc-600', bg: '', border: 'border-zinc-200 dark:border-zinc-800', glow: '' },
+                    };
+                    const vc = verdictColors[verdict.color] || verdictColors.zinc;
+
+                    return signalHistory ? (
+                      <div className={`relative text-center py-8 rounded-xl mb-5 border overflow-hidden ${vc.border}`}>
+                        {verdict.color !== 'zinc' && <div className={`absolute inset-0 ${vc.bg}`} />}
+                        {verdict.color !== 'zinc' && (
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[100px] rounded-full blur-[60px] opacity-20" style={{ background: vc.glow }} />
+                        )}
+                        <div className="relative">
+                          <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vc.text}`}>
+                            {verdict.action}
+                          </div>
+                          {latest && (
+                            <div className="mt-2 text-sm text-muted-foreground">
+                              {verdict.reason}
+                            </div>
+                          )}
+                          {latest && verdict.sellPct > 0 && (
+                            <div className={`mt-2 text-lg font-bold font-mono ${vc.text}`}>
+                              売却比率: {verdict.sellPct}%
+                            </div>
+                          )}
+                          {latest && (
+                            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap">
+                              <span>エントリー: {latest.entry_date} @ {ccy}{latest.entry_price.toFixed(2)}</span>
+                              <span className="w-px h-3 bg-border" />
+                              <span>保有日数: <span className="font-mono font-semibold text-foreground">{latest.holding_days}日</span></span>
+                              <span className="w-px h-3 bg-border" />
+                              <span>損益: <span className={`font-mono font-semibold ${latest.unrealized_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{latest.unrealized_pct >= 0 ? '+' : ''}{latest.unrealized_pct.toFixed(1)}%</span></span>
+                            </div>
+                          )}
+                          {!latest && !historyLoading && (
+                            <div className="mt-2 text-sm text-muted-foreground">アクティブなポジションなし</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* ── PatB 統計サマリー ── */}
                   {signalHistory?.stats?.patb_trades && (
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
                       <Metric label="トレード数" value={`${signalHistory.stats.patb_trades}`} />
@@ -949,85 +1012,171 @@ function SignalsPage() {
                     </div>
                   )}
 
-                  {/* 各エントリーのライブ Exit ステータス */}
+                  {/* ── 各トレードカード ── */}
                   {signalHistory?.live_exit_statuses && signalHistory.live_exit_statuses.length > 0 ? (
                     <div className="space-y-3">
                       {signalHistory.live_exit_statuses.slice().reverse().map((s, i) => {
-                        const trade = signalHistory.trade_results?.find(
-                          t => t.entry_date === s.entry_date
-                        );
+                        const trade = signalHistory.trade_results?.find(t => t.entry_date === s.entry_date);
                         const ccy = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
 
+                        // Exit判定
+                        const getCardVerdict = () => {
+                          if (s.trade_completed && trade) return {
+                            label: trade.return_pct >= 0 ? '利確済' : '損切済',
+                            color: trade.return_pct >= 0 ? 'emerald' : 'red',
+                            sellPct: 100,
+                            reason: {
+                              'ATR_Floor': '損切り（ATR Floor）',
+                              'Mirror_Partial': '利確（Mirror 50% → 全決済）',
+                              'Mirror_Full': '全決済（Mirror Full）',
+                              'Trail_Stop': '利確（トレールストップ）',
+                              'Trail_Stop(partial)': '利確（トレール + 部分決済）',
+                              'ATR_Floor(partial)': '損切り（ATR Floor + 部分決済）',
+                              'Time_Stop': '期限到達（252日）',
+                              'Time_Stop(partial)': '期限到達（部分決済込み）',
+                            }[trade.exit_reason] || trade.exit_reason,
+                          };
+                          if (s.atr_floor_triggered) return { label: '全売却', color: 'red', sellPct: 100, reason: `ATR Floor ${ccy}${s.atr_floor_price.toFixed(2)} 割れ` };
+                          if (s.bearish_choch_detected && s.ema_death_cross) return { label: '全売却', color: 'red', sellPct: 100, reason: 'Mirror Full: CHoCH + EMAデスクロス確定' };
+                          if (s.bearish_choch_detected) return { label: '50%売却', color: 'orange', sellPct: 50, reason: 'Mirror警戒: Bearish CHoCH検出' };
+                          if (s.nearest_exit_reason === 'Time_Stop') return { label: '全売却', color: 'orange', sellPct: 100, reason: '保有期限（252日）' };
+                          if (s.trail_active) return { label: '保有継続', color: 'emerald', sellPct: 0, reason: 'トレールストップ稼働中' };
+                          return { label: '保有継続', color: 'emerald', sellPct: 0, reason: '全層安全' };
+                        };
+                        const cv = getCardVerdict();
+                        const chipColor = cv.color === 'emerald' ? 'green' : cv.color === 'orange' ? 'yellow' : cv.color as 'red' | 'green' | 'blue' | 'yellow' | 'purple';
+
                         return (
-                          <div key={i} className={`plumb-glass rounded-lg p-4 ${s.trade_completed ? 'opacity-70' : ''}`}>
-                            {/* ヘッダー */}
-                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                          <div key={i} className={`plumb-glass rounded-xl p-4 ${s.trade_completed ? 'opacity-60' : ''}`}>
+                            {/* ── カードヘッダー: 判定 + 損益 ── */}
+                            <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-mono text-muted-foreground">
-                                  {s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}
-                                </span>
-                                <StatusChip label={s.entry_regime} color="blue" />
-                                <span className="text-xs px-1.5 py-0.5 rounded plumb-glass text-muted-foreground">
-                                  {s.holding_days}日保有
-                                </span>
-                                {s.trade_completed && trade && (
-                                  <StatusChip
-                                    label={`${trade.exit_reason} ${trade.return_pct > 0 ? '+' : ''}${trade.return_pct.toFixed(1)}%`}
-                                    color={trade.return_pct > 0 ? 'green' : 'red'}
-                                  />
+                                <StatusChip label={cv.label} color={chipColor} />
+                                {cv.sellPct > 0 && !s.trade_completed && (
+                                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-full ${
+                                    cv.color === 'red' ? 'bg-red-500/15 text-red-400' : 'bg-orange-500/15 text-orange-400'
+                                  }`}>
+                                    {cv.sellPct}% 売却
+                                  </span>
                                 )}
+                                <span className="text-xs text-muted-foreground">{cv.reason}</span>
                               </div>
-                              <span className={`text-sm font-bold font-mono ${
-                                s.unrealized_pct > 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+                              <span className={`text-lg font-bold font-mono ${
+                                s.trade_completed && trade
+                                  ? (trade.return_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400')
+                                  : (s.unrealized_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400')
                               }`}>
-                                {s.unrealized_pct > 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
+                                {s.trade_completed && trade
+                                  ? `${trade.return_pct >= 0 ? '+' : ''}${trade.return_pct.toFixed(1)}%`
+                                  : `${s.unrealized_pct >= 0 ? '+' : ''}${s.unrealized_pct.toFixed(1)}%`}
                               </span>
                             </div>
 
-                            {/* 4層 Exit ステータス */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                              {/* ATR Floor */}
-                              <div className={`rounded-lg px-3 py-2 ${s.atr_floor_triggered ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'plumb-glass text-muted-foreground'}`}>
-                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">ATR Floor</div>
-                                <div className="font-mono font-semibold text-foreground">{ccy}{s.atr_floor_price.toFixed(2)}</div>
-                                {s.atr_floor_triggered && <div className="text-red-400 font-bold mt-0.5">TRIGGERED</div>}
-                              </div>
-
-                              {/* Mirror */}
-                              <div className={`rounded-lg px-3 py-2 ${s.bearish_choch_detected || s.ema_death_cross ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400' : 'plumb-glass text-muted-foreground'}`}>
-                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">Mirror</div>
-                                <div>CHoCH: <span className={s.bearish_choch_detected ? 'text-orange-400 font-semibold' : ''}>{s.bearish_choch_detected ? '検出' : '—'}</span></div>
-                                <div>EMA DC: <span className={s.ema_death_cross ? 'text-orange-400 font-semibold' : ''}>{s.ema_death_cross ? '発生' : '—'}</span></div>
-                                {s.partial_exit_done && <div className="text-orange-400 font-semibold mt-0.5">50%利確済</div>}
-                              </div>
-
-                              {/* Trail Stop */}
-                              <div className={`rounded-lg px-3 py-2 ${s.trail_active ? 'bg-purple-500/10 border border-purple-500/20 text-purple-400' : 'plumb-glass text-muted-foreground'}`}>
-                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">Trail Stop</div>
-                                {s.trail_active ? (
-                                  <>
-                                    <div className="font-mono font-semibold text-foreground">
-                                      {s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '計算中'}
-                                    </div>
-                                    <div className="text-[10px] mt-0.5">最高値: {ccy}{s.highest_price.toFixed(2)}</div>
-                                  </>
-                                ) : (
-                                  <div>未有効化</div>
-                                )}
-                              </div>
-
-                              {/* 総合判定 */}
-                              <div className={`rounded-lg px-3 py-2 ${s.nearest_exit_reason ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' : 'plumb-glass text-muted-foreground'}`}>
-                                <div className="text-[10px] uppercase tracking-wider mb-1 font-medium">判定</div>
-                                {s.nearest_exit_reason ? (
-                                  <div className="font-semibold text-yellow-400">{s.nearest_exit_reason}</div>
-                                ) : s.trade_completed ? (
-                                  <div className="font-semibold text-muted-foreground">完了</div>
-                                ) : (
-                                  <div className="font-semibold text-emerald-400">保有継続</div>
-                                )}
-                              </div>
+                            {/* ── エントリー情報バー ── */}
+                            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg plumb-glass text-xs flex-wrap">
+                              <span className="text-muted-foreground">BUY <span className="text-foreground font-mono font-semibold">{s.entry_date}</span></span>
+                              {s.trade_completed && trade && (
+                                <>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="text-muted-foreground">EXIT <span className="text-foreground font-mono font-semibold">{trade.exit_date}</span></span>
+                                </>
+                              )}
+                              <span className="w-px h-3 bg-border" />
+                              <span className="text-muted-foreground">価格: <span className="text-foreground font-mono font-semibold">{ccy}{s.entry_price.toFixed(2)}</span></span>
+                              {s.trade_completed && trade && (
+                                <>
+                                  <span className="text-muted-foreground">→ <span className="text-foreground font-mono font-semibold">{ccy}{trade.exit_price.toFixed(2)}</span></span>
+                                </>
+                              )}
+                              <span className="w-px h-3 bg-border" />
+                              <span className="text-muted-foreground">保有: <span className="text-foreground font-mono font-semibold">{s.trade_completed && trade ? trade.holding_days : s.holding_days}日</span></span>
+                              <span className="w-px h-3 bg-border" />
+                              <StatusChip label={s.entry_regime} color="blue" />
                             </div>
+
+                            {/* ── 4層 Exit ステータス (3カラム: Floor / Mirror / Trail) ── */}
+                            {!s.trade_completed && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {/* ATR Floor */}
+                                <div className={`rounded-lg px-3 py-2.5 ${s.atr_floor_triggered ? 'bg-red-500/10 border border-red-500/20' : 'plumb-glass'}`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">ATR Floor（損切り）</span>
+                                    {s.atr_floor_triggered
+                                      ? <span className="text-[10px] font-bold text-red-400 px-1.5 py-0.5 rounded bg-red-500/15">発動</span>
+                                      : <span className="text-[10px] font-medium text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10">安全</span>
+                                    }
+                                  </div>
+                                  <div className="font-mono font-semibold text-sm text-foreground">{ccy}{s.atr_floor_price.toFixed(2)}</div>
+                                  <div className="text-[10px] text-muted-foreground mt-0.5">この価格を終値で下回ると損切り</div>
+                                </div>
+
+                                {/* Mirror */}
+                                <div className={`rounded-lg px-3 py-2.5 ${s.bearish_choch_detected || s.ema_death_cross ? 'bg-orange-500/10 border border-orange-500/20' : 'plumb-glass'}`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Mirror（反転）</span>
+                                    {s.bearish_choch_detected && s.ema_death_cross
+                                      ? <span className="text-[10px] font-bold text-red-400 px-1.5 py-0.5 rounded bg-red-500/15">全決済</span>
+                                      : s.bearish_choch_detected
+                                        ? <span className="text-[10px] font-bold text-orange-400 px-1.5 py-0.5 rounded bg-orange-500/15">警戒</span>
+                                        : <span className="text-[10px] font-medium text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10">安全</span>
+                                    }
+                                  </div>
+                                  <div className="space-y-0.5 text-xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Bearish CHoCH</span>
+                                      <span className={s.bearish_choch_detected ? 'text-orange-400 font-semibold' : 'text-muted-foreground'}>{s.bearish_choch_detected ? '検出 → 50%売却' : '未検出'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">EMAデスクロス</span>
+                                      <span className={s.ema_death_cross ? 'text-red-400 font-semibold' : 'text-muted-foreground'}>{s.ema_death_cross ? '発生 → 残り売却' : '未発生'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Trail Stop */}
+                                <div className={`rounded-lg px-3 py-2.5 ${s.trail_active ? 'bg-purple-500/10 border border-purple-500/20' : 'plumb-glass'}`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Trail Stop（利確）</span>
+                                    {s.trail_active
+                                      ? <span className="text-[10px] font-bold text-purple-400 px-1.5 py-0.5 rounded bg-purple-500/15">稼働中</span>
+                                      : <span className="text-[10px] font-medium text-muted-foreground px-1.5 py-0.5 rounded plumb-glass">待機</span>
+                                    }
+                                  </div>
+                                  {s.trail_active ? (
+                                    <div className="space-y-0.5 text-xs">
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">ストップ価格</span>
+                                        <span className="font-mono font-semibold text-foreground">{s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '計算中'}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">最高値</span>
+                                        <span className="font-mono font-semibold text-foreground">{ccy}{s.highest_price.toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-muted-foreground">EMA21×1.05 超えで有効化</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ── 完了トレード詳細 ── */}
+                            {s.trade_completed && trade && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                  <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">Exit理由</div>
+                                  <div className="text-xs font-semibold text-foreground">{cv.reason}</div>
+                                </div>
+                                <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                  <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">取引価格</div>
+                                  <div className="text-xs font-mono text-foreground">{ccy}{trade.entry_price.toFixed(2)} → {ccy}{trade.exit_price.toFixed(2)}</div>
+                                </div>
+                                <div className="rounded-lg px-3 py-2.5 plumb-glass">
+                                  <div className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground mb-1">保有期間</div>
+                                  <div className="text-xs font-mono text-foreground">{trade.holding_days}日</div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
