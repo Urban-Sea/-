@@ -1,17 +1,18 @@
 """
-Exit Manager - V13 Exit System
+Exit Manager - V13 Exit System (2モード対応)
 
-V12(PatB) → V13 改善:
-- Trail base: EMA10×0.7+highest×0.3 → highest（天井追従性向上）
-- Drawdown tighten: 天井からの下落5/10/15% → mult×0.8/0.6/0.4
-- Profit tiers: 含み益15/30/50%超 → ATR mult = 2.0/1.5/1.0
+Exit モード:
+- stable: V13フル (highest base + drawdown tighten + profit tiers) — 安定重視
+- standard: Hybrid_30 (含み益≤30%→V13, >30%→V12緩トレイル) — バランス最強、デフォルト
 
-100銘柄検証結果: 取りこぼし 14.3%→7.6%, Win 66.2%→77.1%, PF 3.88→7.20
+5年150銘柄5,480トレード検証:
+  stable:   勝率73.0%, PF 6.59, 平均+6.1%, 取逃し9.4%
+  standard: 勝率73.0%, PF 8.59, 平均+8.3%, 取逃し12.3%
 
 4層Exit:
-1. ATR_Floor: entry_price - ATR×3.0, Close確定（Fix1）
-2. Mirror: Bearish CHoCH → 50%記録, EMA8<EMA21 → 残り50%（Fix3）
-3. Trail_Stop: EMA21×1.05超で有効化, trail_base = highest - ATR×adaptive_mult
+1. ATR_Floor: entry_price - ATR×3.0, Close確定
+2. Mirror: Bearish CHoCH → 50%記録, EMA8<EMA21 → 残り50%
+3. Trail_Stop: EMA21×1.05超で有効化, モードに応じたadaptive trail
 4. Time_Stop: 252営業日
 """
 
@@ -21,6 +22,12 @@ from typing import Optional
 import pandas as pd
 
 from analysis.choch_detector import CHoCHType
+
+
+# Exit モード定数
+EXIT_MODE_STABLE = "stable"
+EXIT_MODE_STANDARD = "standard"
+_EXIT_MODES = {EXIT_MODE_STABLE, EXIT_MODE_STANDARD}
 
 
 @dataclass
@@ -59,15 +66,16 @@ TRAIL_MULT = {"BULL": 3.0, "WEAKENING": 2.7, "BEAR": 2.5, "RECOVERY": 3.5}
 
 
 def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
-                   *, stop_at=None):
+                   *, stop_at=None, exit_mode=EXIT_MODE_STANDARD):
     """
-    PatBロジックの共通ループ。
+    4層Exitの共通ループ。
 
     stop_at=None: 最後まで走り TradeResult を返す (evaluate_trade用)
     stop_at=int:  そのインデックスで打ち切り HoldingStatus を返す (evaluate_current用)
 
-    ループ本体は evaluate_trade (バックテスト一致確認済み) と完全同一。
-    分岐は戻り値の構築部分のみ。
+    exit_mode:
+      stable:   V13フル — タイトなトレイルで安定重視
+      standard: Hybrid_30 — 含み益>30%でV12緩トレイルに切替、バランス最強
     """
     base_trail_mult = TRAIL_MULT.get(regime, 3.0)
     atr_floor = entry_price - entry_atr * 3.0
@@ -95,7 +103,6 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
         # Fix1: Close確定
         if close <= atr_floor:
             if stop_at is not None and d == stop_at:
-                # current mode: トリガーされた状態を返す
                 return _build_holding_status(
                     atr_floor, True, choch_exit_price, False,
                     trail_active, trail_stop_price, highest,
@@ -133,27 +140,34 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                 trail_active = True
 
         if trail_active:
-            # V13: trail_base = highest（天井追従）
-            trail_base = highest
-
-            # V13: Drawdown tighten — 天井からの下落幅に応じてmultを絞る
-            trail_mult = base_trail_mult
-            dd_pct = (highest - close) / highest * 100 if highest > 0 else 0
-            if dd_pct > 15:
-                trail_mult *= 0.4
-            elif dd_pct > 10:
-                trail_mult *= 0.6
-            elif dd_pct > 5:
-                trail_mult *= 0.8
-
-            # V13: Profit tiers — 含み益が大きいほどtrailをタイトに
             pnl_pct = (close - entry_price) / entry_price * 100 if entry_price > 0 else 0
-            if pnl_pct > 50:
-                trail_mult = min(trail_mult, 1.0)
-            elif pnl_pct > 30:
-                trail_mult = min(trail_mult, 1.5)
-            elif pnl_pct > 15:
-                trail_mult = min(trail_mult, 2.0)
+
+            # Hybrid_30: 含み益>30%でV12緩トレイルに切替
+            use_v12_trail = (exit_mode == EXIT_MODE_STANDARD and pnl_pct > 30)
+
+            if use_v12_trail:
+                # V12: EMA10ブレンド + 固定mult（緩い＝大波に乗る）
+                ema10 = df['Close'].iloc[max(0, d - 10):d + 1].ewm(span=10, adjust=False).mean().iloc[-1]
+                trail_base = ema10 * 0.7 + highest * 0.3
+                trail_mult = base_trail_mult
+            else:
+                # V13: highest base + drawdown tighten + profit tiers（タイト＝安定）
+                trail_base = highest
+                trail_mult = base_trail_mult
+                dd_pct = (highest - close) / highest * 100 if highest > 0 else 0
+                if dd_pct > 15:
+                    trail_mult *= 0.4
+                elif dd_pct > 10:
+                    trail_mult *= 0.6
+                elif dd_pct > 5:
+                    trail_mult *= 0.8
+
+                if pnl_pct > 50:
+                    trail_mult = min(trail_mult, 1.0)
+                elif pnl_pct > 30:
+                    trail_mult = min(trail_mult, 1.5)
+                elif pnl_pct > 15:
+                    trail_mult = min(trail_mult, 2.0)
 
             trail_stop_price = trail_base - atr_now * trail_mult
             if low <= trail_stop_price:
@@ -219,18 +233,22 @@ def _build_holding_status(atr_floor, atr_triggered, choch_exit_price, ema_death,
     )
 
 
-def evaluate_trade(df, entry_idx, entry_price, entry_atr, regime, choch_signals):
+def evaluate_trade(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
+                   exit_mode=EXIT_MODE_STANDARD):
     """
-    バックテスト exit_patternB と同一のループ。
     完了トレードの結果を TradeResult で返す。
+    exit_mode: "stable" (V13安定) or "standard" (Hybrid_30バランス, デフォルト)
     """
-    return _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals)
+    return _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
+                          exit_mode=exit_mode)
 
 
-def evaluate_current(df, entry_idx, entry_price, entry_atr, regime, choch_signals, current_idx):
+def evaluate_current(df, entry_idx, entry_price, entry_atr, regime, choch_signals, current_idx,
+                     exit_mode=EXIT_MODE_STANDARD):
     """
     保有中ポジションの現在状態を評価。
     evaluate_trade と同じループだが current_idx で打ち切り HoldingStatus を返す。
+    exit_mode: "stable" (V13安定) or "standard" (Hybrid_30バランス, デフォルト)
     """
     return _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
-                          stop_at=current_idx)
+                          stop_at=current_idx, exit_mode=exit_mode)

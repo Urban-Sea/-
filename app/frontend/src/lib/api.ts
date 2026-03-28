@@ -315,11 +315,13 @@ export async function getExitAnalysis(
 export async function getSignalHistory(
   ticker: string,
   period: string = '1y',
-  mode: string = 'balanced'
+  mode: string = 'balanced',
+  exitMode: string = 'standard'
 ): Promise<SignalHistoryResponse> {
   const searchParams = new URLSearchParams();
   searchParams.set('period', period);
   searchParams.set('mode', mode);
+  searchParams.set('exit_mode', exitMode);
 
   return fetchAPI(`/api/signal/${ticker}/history?${searchParams.toString()}`);
 }

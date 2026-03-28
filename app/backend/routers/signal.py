@@ -493,6 +493,7 @@ async def get_signal_history(
     ticker: str,
     period: str = Query("1y", description="分析期間: 3mo, 6mo, 1y, 2y"),
     mode: str = Query("balanced", description="取引モード"),
+    exit_mode: str = Query("standard", description="Exit戦略: stable(安定), standard(標準)"),
 ):
     """
     過去シグナル分析（demo版準拠）
@@ -515,13 +516,17 @@ async def get_signal_history(
         raise HTTPException(status_code=400, detail="Invalid period")
     if mode.lower() not in _MODES:
         raise HTTPException(status_code=400, detail="Invalid mode")
+    from analysis.exit_manager import _EXIT_MODES, EXIT_MODE_STANDARD
+    if exit_mode.lower() not in _EXIT_MODES:
+        raise HTTPException(status_code=400, detail="Invalid exit_mode. Use 'stable' or 'standard'")
+    exit_mode = exit_mode.lower()
 
     asset_class = _detect_asset_class(ticker)
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
     benchmark_ticker = get_config(asset_class).regime.benchmark_ticker
 
     # キャッシュチェック (L1 インメモリ → L2 Redis)
-    cache_key = f"signal_hist:{ticker}:{period}:{mode}"
+    cache_key = f"signal_hist:{ticker}:{period}:{mode}:{exit_mode}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -918,6 +923,7 @@ async def get_signal_history(
                     entry_atr=ep["entry_atr"],
                     regime=ep["regime"],
                     choch_signals=exit_choch_signals,
+                    exit_mode=exit_mode,
                 )
                 if result is None:
                     continue  # データ不足でトレード未完了
@@ -965,6 +971,7 @@ async def get_signal_history(
                     regime=ep["regime"],
                     choch_signals=exit_choch_signals,
                     current_idx=current_idx,
+                    exit_mode=exit_mode,
                 )
                 if result is None:
                     continue

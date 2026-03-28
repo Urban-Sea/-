@@ -15,6 +15,7 @@ import { useUser } from '@/components/providers/UserProvider';
 import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
 
 type Mode = 'balanced' | 'aggressive' | 'conservative';
+type ExitMode = 'standard' | 'stable';
 type Tab = 'entry' | 'exit_analysis' | 'holding' | 'history' | 'system';
 type Period = '1d' | '5d' | '1mo' | '3mo' | '6mo' | 'ytd' | '1y' | '5y' | 'max';
 type ChartType = 'line' | 'candlestick';
@@ -24,6 +25,11 @@ const modeLabels: Record<Mode, { label: string; desc: string }> = {
   balanced: { label: '標準', desc: 'RS下落時はエントリー禁止。最もバランスが良い。' },
   aggressive: { label: '積極型', desc: 'RS無視で全エントリー。機会重視。' },
   conservative: { label: '慎重型', desc: 'RS下落時は50%サイズ。リスク抑制。' },
+};
+
+const exitModeLabels: Record<ExitMode, { label: string; desc: string }> = {
+  standard: { label: '標準', desc: '含み益30%超でトレイル緩和。PF 8.59 / 勝率73%' },
+  stable: { label: '安定', desc: 'タイトなトレイルで利益確保。PF 6.59 / 勝率73%' },
 };
 
 const defaultQuickTickers = ['NVDA', 'TSLA', 'META', 'PLTR', 'COIN', 'IONQ', 'SOUN', 'RKLB'];
@@ -71,6 +77,7 @@ export default function SignalsPageWrapper() {
 function SignalsPage() {
   const [ticker, setTicker] = useState('');
   const [mode, setMode] = useState<Mode>('balanced');
+  const [exitMode, setExitMode] = useState<ExitMode>('standard');
   const [signal, setSignal] = useState<SignalResponse | null>(null);
   const { data: regimeData } = useRegime();
   const regime = regimeData ?? null;
@@ -189,7 +196,7 @@ function SignalsPage() {
       handleFetchSignalHistory();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, ticker]);
+  }, [activeTab, ticker, exitMode]);
 
   const addQuickTicker = useCallback(async (t: string) => {
     const tick = t.trim().toUpperCase();
@@ -289,7 +296,7 @@ function SignalsPage() {
     if (!ticker) return;
     setHistoryLoading(true);
     try {
-      const res = await getSignalHistory(ticker, '1y', mode);
+      const res = await getSignalHistory(ticker, '1y', mode, exitMode);
       setSignalHistory(res);
     } catch (err) {
       console.error('Signal history failed:', err);
@@ -927,13 +934,25 @@ function SignalsPage() {
                   <div className="flex items-center gap-3 mb-3">
                     <span className="text-base font-bold text-foreground">Exit分析パネル</span>
                     <span className="text-sm text-muted-foreground">PatB 4層 Exit システム</span>
-                    <button
-                      onClick={handleFetchSignalHistory}
-                      disabled={historyLoading}
-                      className="ml-auto px-3 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-50 plumb-glass text-muted-foreground hover:text-foreground border border-border hover:border-foreground/20"
-                    >
-                      {historyLoading ? '取得中...' : '更新'}
-                    </button>
+                    <div className="ml-auto flex items-center gap-2">
+                      {(Object.entries(exitModeLabels) as [ExitMode, { label: string; desc: string }][]).map(([key, val]) => (
+                        <button
+                          key={key}
+                          onClick={() => { setExitMode(key); setSignalHistory(null); }}
+                          className={`px-3 py-1 rounded-lg text-xs font-medium transition-all border ${exitMode === key ? 'bg-foreground/10 text-foreground border-foreground/30' : 'plumb-glass text-muted-foreground hover:text-foreground border-border hover:border-foreground/20'}`}
+                          title={val.desc}
+                        >
+                          {val.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={handleFetchSignalHistory}
+                        disabled={historyLoading}
+                        className="px-3 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-50 plumb-glass text-muted-foreground hover:text-foreground border border-border hover:border-foreground/20"
+                      >
+                        {historyLoading ? '取得中...' : '更新'}
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mb-5">前日の終値（Close）確定後に判定 → Exitシグナルが出たら翌営業日の寄付（Open）で売却</p>
 
