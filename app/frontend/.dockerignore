@@ -1,0 +1,6 @@
+node_modules
+.next
+out
+out 4
+.env*
+*.tsbuildinfo

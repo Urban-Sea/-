@@ -4,7 +4,7 @@ import { SWRConfig } from 'swr';
 import { getAuthEmail } from './auth-store';
 import { getMfaToken } from './mfa-store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://open-regime-api.ryu3ta-ke-mo100307.workers.dev';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function swrFetcher<T>(endpoint: string): Promise<T> {
   const url = `${API_URL}${endpoint}`;

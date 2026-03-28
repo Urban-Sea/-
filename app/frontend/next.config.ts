@@ -4,12 +4,12 @@ const nextConfig: NextConfig = {
   // Disable Turbopack (issues with Japanese path names)
   // Use webpack instead
 
-  // Cloudflare Pages deployment settings
-  output: 'export',
+  output: 'standalone',
 
-  // Disable image optimization for static export
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.googleusercontent.com' },
+    ],
   },
 
   // Trailing slash for better compatibility

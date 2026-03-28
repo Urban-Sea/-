@@ -39,7 +39,7 @@ import type {
 import { getAccessToken, setAccessToken, isRedirecting, markRedirecting } from './auth-store';
 import { supabase } from './supabase';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.open-regime.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
