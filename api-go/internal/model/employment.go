@@ -143,14 +143,14 @@ type RiskHistoryResponse struct {
 
 // ManualInput represents a row from the manual_inputs table.
 type ManualInput struct {
-	Metric        string  `json:"metric"         db:"metric"`
-	ReferenceDate string  `json:"reference_date"  db:"reference_date"`
+	Metric        string   `json:"metric"         db:"metric"`
+	ReferenceDate DateOnly `json:"reference_date"  db:"reference_date"`
 	Value         float64 `json:"value"           db:"value"`
 }
 
 // MarketIndicator holds market data for K-shape proxy.
 type MarketIndicator struct {
-	Date       string   `json:"date"        db:"date"`
+	Date       DateOnly `json:"date"        db:"date"`
 	SP500      *float64 `json:"sp500"       db:"sp500"`
 	Russell2000 *float64 `json:"russell2000" db:"russell2000"`
 }

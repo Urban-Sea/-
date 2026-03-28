@@ -208,7 +208,7 @@ func (h *LiquidityHandler) GetOverview(c echo.Context) error {
 				RRP        *float64 `json:"rrp" db:"rrp"`
 				TGA        *float64 `json:"tga" db:"tga"`
 				SOMAAssets *float64 `json:"soma_assets" db:"soma_assets"`
-			}{r.Date, r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
+			}{r.Date.String(), r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
 		}
 		return nil
 	})
@@ -224,7 +224,7 @@ func (h *LiquidityHandler) GetOverview(c echo.Context) error {
 				Treasury2Y     *float64 `json:"treasury_2y" db:"treasury_2y"`
 				Treasury10Y    *float64 `json:"treasury_10y" db:"treasury_10y"`
 				TreasurySpread *float64 `json:"treasury_spread" db:"treasury_spread"`
-			}{r.Date, r.FedFunds, r.Treasury2Y, r.Treasury10Y, r.TreasurySpread})
+			}{r.Date.String(), r.FedFunds, r.Treasury2Y, r.Treasury10Y, r.TreasurySpread})
 		}
 		return nil
 	})
@@ -239,7 +239,7 @@ func (h *LiquidityHandler) GetOverview(c echo.Context) error {
 				HYSpread *float64 `json:"hy_spread" db:"hy_spread"`
 				IGSpread *float64 `json:"ig_spread" db:"ig_spread"`
 				TEDSpread *float64 `json:"ted_spread" db:"ted_spread"`
-			}{r.Date, r.HYSpread, r.IGSpread, r.TEDSpread})
+			}{r.Date.String(), r.HYSpread, r.IGSpread, r.TEDSpread})
 		}
 		return nil
 	})
@@ -255,7 +255,7 @@ func (h *LiquidityHandler) GetOverview(c echo.Context) error {
 				DXY   *float64 `json:"dxy" db:"dxy"`
 				SP500 *float64 `json:"sp500" db:"sp500"`
 				NASDAQ *float64 `json:"nasdaq" db:"nasdaq"`
-			}{r.Date, r.VIX, r.DXY, r.SP500, r.NASDAQ})
+			}{r.Date.String(), r.VIX, r.DXY, r.SP500, r.NASDAQ})
 		}
 		return nil
 	})
@@ -362,7 +362,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			fedAll = append(fedAll, fedRow{r.Date, r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
+			fedAll = append(fedAll, fedRow{r.Date.String(), r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
 		}
 		return nil
 	})
@@ -372,7 +372,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			fedLatest = append(fedLatest, fedRow{r.Date, r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
+			fedLatest = append(fedLatest, fedRow{r.Date.String(), r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
 		}
 		return nil
 	})
@@ -387,7 +387,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 				VIX   *float64
 				DXY   *float64
 				SP500 *float64
-			}{r.Date, r.VIX, r.DXY, r.SP500})
+			}{r.Date.String(), r.VIX, r.DXY, r.SP500})
 		}
 		return nil
 	})
@@ -408,7 +408,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 		}
 		for _, r := range rows {
 			amt := r.Amount
-			srfRows = append(srfRows, struct{ Date string; Amount *float64 }{r.Date, amt})
+			srfRows = append(srfRows, struct{ Date string; Amount *float64 }{r.Date.String(), amt})
 		}
 		return nil
 	})
@@ -432,7 +432,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 				Date           string
 				FedFunds       *float64
 				TreasurySpread *float64
-			}{r.Date, r.FedFunds, r.TreasurySpread})
+			}{r.Date.String(), r.FedFunds, r.TreasurySpread})
 		}
 		return nil
 	})
@@ -446,7 +446,7 @@ func (h *LiquidityHandler) GetPlumbingSummary(c echo.Context) error {
 				Date         string
 				DebitBalance *float64
 				Change2Y     *float64
-			}{r.Date, r.DebitBalance, r.Change2Y})
+			}{r.Date.String(), r.DebitBalance, r.Change2Y})
 		}
 		return nil
 	})
@@ -693,7 +693,7 @@ func (h *LiquidityHandler) GetEvents(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			fed = append(fed, fedR{r.Date, r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
+			fed = append(fed, fedR{r.Date.String(), r.Reserves, r.RRP, r.TGA, r.SOMAAssets})
 		}
 		return nil
 	})
@@ -703,7 +703,7 @@ func (h *LiquidityHandler) GetEvents(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			bank = append(bank, bankR{r.Date, r.KREClose})
+			bank = append(bank, bankR{r.Date.String(), r.KREClose})
 		}
 		return nil
 	})
@@ -713,7 +713,7 @@ func (h *LiquidityHandler) GetEvents(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			mkt = append(mkt, mktR{r.Date, r.VIX})
+			mkt = append(mkt, mktR{r.Date.String(), r.VIX})
 		}
 		return nil
 	})
@@ -723,7 +723,7 @@ func (h *LiquidityHandler) GetEvents(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			sprd = append(sprd, sprdR{r.Date, r.HYSpread, r.IGSpread})
+			sprd = append(sprd, sprdR{r.Date.String(), r.HYSpread, r.IGSpread})
 		}
 		return nil
 	})
@@ -887,7 +887,7 @@ func (h *LiquidityHandler) GetPolicyRegime(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			fed = append(fed, fedR{r.Date, r.SOMAAssets, r.RRP, r.TGA})
+			fed = append(fed, fedR{r.Date.String(), r.SOMAAssets, r.RRP, r.TGA})
 		}
 		return nil
 	})
@@ -897,7 +897,7 @@ func (h *LiquidityHandler) GetPolicyRegime(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			rates = append(rates, ratesR{r.Date, r.FedFunds, r.TreasurySpread})
+			rates = append(rates, ratesR{r.Date.String(), r.FedFunds, r.TreasurySpread})
 		}
 		return nil
 	})
@@ -1115,7 +1115,7 @@ func (h *LiquidityHandler) GetHistoryCharts(c echo.Context) error {
 				Date        string
 				Layer       string
 				StressScore *float64
-			}{r.Date, r.Layer, r.StressScore})
+			}{r.Date.String(), r.Layer, r.StressScore})
 		}
 		return nil
 	})
@@ -1312,7 +1312,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			fedData = append(fedData, fedR{r.Date, r.SOMAAssets, r.RRP, r.TGA, r.Reserves})
+			fedData = append(fedData, fedR{r.Date.String(), r.SOMAAssets, r.RRP, r.TGA, r.Reserves})
 		}
 		return nil
 	})
@@ -1322,7 +1322,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			sp500Data = append(sp500Data, sp500R{r.Date, r.SP500, r.VIX})
+			sp500Data = append(sp500Data, sp500R{r.Date.String(), r.SP500, r.VIX})
 		}
 		return nil
 	})
@@ -1332,7 +1332,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			marginData = append(marginData, marginR{r.Date, r.DebitBalance, r.Change2Y})
+			marginData = append(marginData, marginR{r.Date.String(), r.DebitBalance, r.Change2Y})
 		}
 		return nil
 	})
@@ -1342,7 +1342,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			bankData = append(bankData, bankR{r.Date, r.KRE52WChange})
+			bankData = append(bankData, bankR{r.Date.String(), r.KRE52WChange})
 		}
 		return nil
 	})
@@ -1352,7 +1352,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			spreadData = append(spreadData, spreadR{r.Date, r.IGSpread, r.HYSpread})
+			spreadData = append(spreadData, spreadR{r.Date.String(), r.IGSpread, r.HYSpread})
 		}
 		return nil
 	})
@@ -1364,7 +1364,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 		for _, r := range rows {
 			var amt *float64
 			amt = r.Amount
-			srfData = append(srfData, srfR{r.Date, amt})
+			srfData = append(srfData, srfR{r.Date.String(), amt})
 		}
 		return nil
 	})
@@ -1374,7 +1374,7 @@ func (h *LiquidityHandler) GetBacktestStates(c echo.Context) error {
 			return err
 		}
 		for _, r := range rows {
-			mmfData = append(mmfData, mmfR{r.Date, r.Change3M})
+			mmfData = append(mmfData, mmfR{r.Date.String(), r.Change3M})
 		}
 		return nil
 	})

@@ -6,7 +6,7 @@ package model
 
 // FedBalanceSheet represents a row in the fed_balance_sheet table.
 type FedBalanceSheet struct {
-	Date      string   `json:"date"       db:"date"`
+	Date      DateOnly `json:"date"       db:"date"`
 	Reserves  *float64 `json:"reserves"   db:"reserves"`
 	RRP       *float64 `json:"rrp"        db:"rrp"`
 	TGA       *float64 `json:"tga"        db:"tga"`
@@ -15,7 +15,7 @@ type FedBalanceSheet struct {
 
 // InterestRates represents a row in the interest_rates table.
 type InterestRates struct {
-	Date           string   `json:"date"            db:"date"`
+	Date           DateOnly `json:"date"            db:"date"`
 	FedFunds       *float64 `json:"fed_funds"       db:"fed_funds"`
 	Treasury2Y     *float64 `json:"treasury_2y"     db:"treasury_2y"`
 	Treasury10Y    *float64 `json:"treasury_10y"    db:"treasury_10y"`
@@ -24,7 +24,7 @@ type InterestRates struct {
 
 // CreditSpreads represents a row in the credit_spreads table.
 type CreditSpreads struct {
-	Date      string   `json:"date"       db:"date"`
+	Date      DateOnly `json:"date"       db:"date"`
 	HYSpread  *float64 `json:"hy_spread"  db:"hy_spread"`
 	IGSpread  *float64 `json:"ig_spread"  db:"ig_spread"`
 	TEDSpread *float64 `json:"ted_spread" db:"ted_spread"`
@@ -32,7 +32,7 @@ type CreditSpreads struct {
 
 // MarketIndicators represents a row in the market_indicators table.
 type MarketIndicators struct {
-	Date      string   `json:"date"       db:"date"`
+	Date      DateOnly `json:"date"       db:"date"`
 	VIX       *float64 `json:"vix"        db:"vix"`
 	DXY       *float64 `json:"dxy"        db:"dxy"`
 	SP500     *float64 `json:"sp500"      db:"sp500"`
@@ -43,7 +43,7 @@ type MarketIndicators struct {
 
 // MarginDebt represents a row in the margin_debt table.
 type MarginDebt struct {
-	Date         string   `json:"date"          db:"date"`
+	Date         DateOnly `json:"date"          db:"date"`
 	DebitBalance *float64 `json:"debit_balance" db:"debit_balance"`
 	FreeCredit   *float64 `json:"free_credit"   db:"free_credit"`
 	Change2Y     *float64 `json:"change_2y"     db:"change_2y"`
@@ -51,14 +51,14 @@ type MarginDebt struct {
 
 // MMFAssets represents a row in the mmf_assets table.
 type MMFAssets struct {
-	Date        string   `json:"date"         db:"date"`
+	Date        DateOnly `json:"date"         db:"date"`
 	TotalAssets *float64 `json:"total_assets" db:"total_assets"`
 	Change3M    *float64 `json:"change_3m"    db:"change_3m"`
 }
 
 // BankSector represents a row in the bank_sector table.
 type BankSector struct {
-	Date         string   `json:"date"           db:"date"`
+	Date         DateOnly `json:"date"           db:"date"`
 	KREClose     *float64 `json:"kre_close"      db:"kre_close"`
 	KRE52WHigh   *float64 `json:"kre_52w_high"   db:"kre_52w_high"`
 	KRE52WLow    *float64 `json:"kre_52w_low"    db:"kre_52w_low"`
@@ -67,7 +67,7 @@ type BankSector struct {
 
 // SRFUsage represents a row in the srf_usage table.
 type SRFUsage struct {
-	Date   string   `json:"date"   db:"date"`
+	Date   DateOnly `json:"date"   db:"date"`
 	Amount *float64 `json:"amount" db:"amount"`
 	Source *string  `json:"source" db:"source"`
 }
@@ -75,7 +75,7 @@ type SRFUsage struct {
 // LayerStressHistory represents a row in the layer_stress_history table.
 type LayerStressHistory struct {
 	ID          int       `json:"id"           db:"id"`
-	Date        string    `json:"date"         db:"date"`
+	Date        DateOnly  `json:"date"         db:"date"`
 	Layer       string    `json:"layer"        db:"layer"`
 	StressScore *float64  `json:"stress_score" db:"stress_score"`
 	Components  *string   `json:"components"   db:"components"`

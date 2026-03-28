@@ -5,7 +5,7 @@ import "time"
 // MarketState represents a row in the market_state_history table.
 type MarketState struct {
 	ID             int        `json:"id"              db:"id"`
-	Date           string     `json:"date"            db:"date"`
+	Date           DateOnly   `json:"date"            db:"date"`
 	State          string     `json:"state"           db:"state"`
 	Layer1Stress   *float64   `json:"layer1_stress"   db:"layer1_stress"`
 	Layer2aStress  *float64   `json:"layer2a_stress"  db:"layer2a_stress"`
