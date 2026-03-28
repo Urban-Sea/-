@@ -562,6 +562,7 @@ export interface LiveExitStatus {
   atr_floor_triggered: boolean;
   partial_exit_done: boolean;
   bearish_choch_detected: boolean;
+  choch_exit_date: string | null;
   ema_death_cross: boolean;
   trail_active: boolean;
   trail_stop_price: number | null;

@@ -1137,7 +1137,7 @@ function SignalsPage() {
                                       </span>
                                     </div>
                                     <div className="space-y-0.5 text-xs">
-                                      <div className="flex justify-between"><span className="text-muted-foreground">CHoCH</span><span className={s.bearish_choch_detected ? 'text-orange-400 font-semibold' : 'text-muted-foreground'}>{s.bearish_choch_detected ? '検出→50%売却' : '—'}</span></div>
+                                      <div className="flex justify-between"><span className="text-muted-foreground">CHoCH</span><span className={s.bearish_choch_detected ? 'text-orange-400 font-semibold' : 'text-muted-foreground'}>{s.bearish_choch_detected ? `50%売却${s.choch_exit_date ? ` (${s.choch_exit_date})` : ''}` : '—'}</span></div>
                                       <div className="flex justify-between"><span className="text-muted-foreground">EMA DC</span><span className={s.ema_death_cross ? 'text-red-400 font-semibold' : 'text-muted-foreground'}>{s.ema_death_cross ? '発生→残り売却' : '—'}</span></div>
                                     </div>
                                   </div>
@@ -1163,59 +1163,37 @@ function SignalsPage() {
                           </div>
                         )}
 
-                        {/* ── Exit済みポジション（システム判定で売却済み） ── */}
-                        {exitedPositions.length > 0 && (
-                          <div className="space-y-2 mb-4">
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Exit済み（システム判定）</div>
-                            {exitedPositions.slice(-5).reverse().map((s, i) => {
-                              const reason = exitReasonJP[s.nearest_exit_reason ?? ''] || s.nearest_exit_reason || '不明';
-                              const isLoss = s.unrealized_pct < 0;
-                              return (
-                                <div key={`exited-${i}`} className="plumb-glass rounded-lg px-4 py-3 opacity-70">
-                                  <div className="flex items-center justify-between mb-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <StatusChip label="売却済" color={isLoss ? 'red' : 'green'} />
-                                      <span className="text-xs text-muted-foreground">{reason}</span>
-                                    </div>
-                                    <span className={`text-sm font-bold font-mono ${isLoss ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
-                                      {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                                    <span>BUY {s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
-                                    <span className="w-px h-3 bg-border" />
-                                    <span>{s.holding_days}日経過</span>
-                                    <span className="w-px h-3 bg-border" />
-                                    <StatusChip label={s.entry_regime} color="blue" />
-                                    <span className="text-[10px] text-muted-foreground italic">※保有中なら現在 {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* ── 直近トレード履歴（最新3件） ── */}
+                        {/* ── トレード履歴（最新5件） ── */}
                         {trades.length > 0 && (
                           <div className="space-y-2">
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">直近のトレード履歴</div>
-                            {trades.slice(-3).reverse().map((t, i) => {
+                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">トレード履歴（直近{Math.min(trades.length, 5)}件）</div>
+                            {trades.slice(-5).reverse().map((t, i) => {
                               const isWin = t.return_pct >= 0;
                               const reason = exitReasonJP[t.exit_reason] || t.exit_reason;
+                              // 同じエントリーの live_exit_status を探して「保有し続けてたら」を計算
+                              const liveStatus = exitedPositions.find(s => s.entry_date === t.entry_date);
+                              const savedPct = liveStatus ? t.return_pct - liveStatus.unrealized_pct : null;
                               return (
-                                <div key={`trade-${i}`} className="flex items-center gap-3 px-4 py-3 plumb-glass rounded-lg text-xs flex-wrap">
-                                  <StatusChip label={isWin ? '利確' : '損切'} color={isWin ? 'green' : 'red'} />
-                                  <span className="text-muted-foreground">{t.entry_date} → {t.exit_date}</span>
-                                  <span className="w-px h-3 bg-border" />
-                                  <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)} → {ccy}{t.exit_price.toFixed(2)}</span>
-                                  <span className="w-px h-3 bg-border" />
-                                  <span className={`font-mono font-bold ${isWin ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                    {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
-                                  </span>
-                                  <span className="w-px h-3 bg-border" />
-                                  <span className="text-muted-foreground">{t.holding_days}日</span>
-                                  <span className="w-px h-3 bg-border" />
-                                  <span className="text-muted-foreground">{reason}</span>
+                                <div key={`trade-${i}`} className="plumb-glass rounded-lg px-4 py-3">
+                                  <div className="flex items-center gap-3 text-xs flex-wrap">
+                                    <StatusChip label={isWin ? '利確' : '損切'} color={isWin ? 'green' : 'red'} />
+                                    <span className="text-muted-foreground">{t.entry_date} → {t.exit_date}</span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)} → {ccy}{t.exit_price.toFixed(2)}</span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <span className={`font-mono font-bold ${isWin ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                      {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
+                                    </span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <span className="text-muted-foreground">{t.holding_days}日</span>
+                                    <span className="w-px h-3 bg-border" />
+                                    <span className="text-muted-foreground">{reason}</span>
+                                  </div>
+                                  {savedPct !== null && savedPct > 0 && (
+                                    <div className="mt-1.5 text-[10px] text-emerald-500 dark:text-emerald-400">
+                                      Exit効果: 保有継続なら{liveStatus!.unrealized_pct >= 0 ? '+' : ''}{liveStatus!.unrealized_pct.toFixed(1)}% → Exitで{savedPct >= 0 ? '+' : ''}{savedPct.toFixed(1)}%改善
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

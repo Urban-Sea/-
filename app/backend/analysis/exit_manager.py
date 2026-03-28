@@ -48,6 +48,7 @@ class HoldingStatus:
     # Mirror（部分利確）
     partial_exit_done: bool
     bearish_choch_detected: bool
+    choch_exit_idx: Optional[int]  # CHoCH検出日のインデックス（50%売却日）
     ema_death_cross: bool
 
     # Trail Stop
@@ -83,6 +84,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
     highest = entry_price
     trail_active = False
     choch_exit_price = None
+    choch_exit_idx = None
     trail_stop_price = None
 
     # current mode の場合、ループ範囲を制限
@@ -104,7 +106,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
         if close <= atr_floor:
             if stop_at is not None and d == stop_at:
                 return _build_holding_status(
-                    atr_floor, True, choch_exit_price, False,
+                    atr_floor, True, choch_exit_price, choch_exit_idx, False,
                     trail_active, trail_stop_price, highest,
                     entry_price, close, d - entry_idx, "ATR_Floor")
             if choch_exit_price is not None:
@@ -119,13 +121,14 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                 # Fix3: Bearish CHoCHで50%記録
                 if choch_exit_price is None:
                     choch_exit_price = close
+                    choch_exit_idx = d
 
                 e8 = df['EMA_8'].iloc[d]
                 e21 = df['EMA_21'].iloc[d]
                 if not pd.isna(e8) and not pd.isna(e21) and e8 < e21:
                     if stop_at is not None and d == stop_at:
                         return _build_holding_status(
-                            atr_floor, False, choch_exit_price, True,
+                            atr_floor, False, choch_exit_price, choch_exit_idx, True,
                             trail_active, trail_stop_price, highest,
                             entry_price, close, d - entry_idx, "Mirror_Partial")
                     if choch_exit_price is not None:
@@ -174,7 +177,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                 exit_price = max(trail_stop_price, low)
                 if stop_at is not None and d == stop_at:
                     return _build_holding_status(
-                        atr_floor, False, choch_exit_price, False,
+                        atr_floor, False, choch_exit_price, choch_exit_idx, False,
                         trail_active, trail_stop_price, highest,
                         entry_price, close, d - entry_idx, "Trail_Stop")
                 if choch_exit_price is not None:
@@ -200,7 +203,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
         if stop_at - entry_idx >= 252:
             nearest = "Time_Stop"
         return _build_holding_status(
-            atr_floor, False, choch_exit_price, ema_death,
+            atr_floor, False, choch_exit_price, choch_exit_idx, ema_death,
             trail_active, trail_stop_price, highest,
             entry_price, current_close, min(stop_at, max_day) - entry_idx, nearest)
 
@@ -215,7 +218,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
     return TradeResult(max_day, exit_price, "Time_Stop")
 
 
-def _build_holding_status(atr_floor, atr_triggered, choch_exit_price, ema_death,
+def _build_holding_status(atr_floor, atr_triggered, choch_exit_price, choch_exit_idx, ema_death,
                           trail_active, trail_stop_price, highest,
                           entry_price, current_close, holding_days, nearest):
     return HoldingStatus(
@@ -223,6 +226,7 @@ def _build_holding_status(atr_floor, atr_triggered, choch_exit_price, ema_death,
         atr_floor_triggered=atr_triggered,
         partial_exit_done=choch_exit_price is not None,
         bearish_choch_detected=choch_exit_price is not None,
+        choch_exit_idx=choch_exit_idx,
         ema_death_cross=ema_death,
         trail_active=trail_active,
         trail_stop_price=trail_stop_price,

@@ -988,6 +988,7 @@ async def get_signal_history(
                         "atr_floor_triggered": bool(result.atr_floor_triggered),
                         "partial_exit_done": bool(result.partial_exit_done),
                         "bearish_choch_detected": bool(result.bearish_choch_detected),
+                        "choch_exit_date": df['Date'].iloc[result.choch_exit_idx] if result.choch_exit_idx is not None and result.choch_exit_idx < len(df) else None,
                         "ema_death_cross": bool(result.ema_death_cross),
                         "trail_active": bool(result.trail_active),
                         "trail_stop_price": round(float(result.trail_stop_price), 2) if result.trail_stop_price else None,
