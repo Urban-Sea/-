@@ -28,7 +28,7 @@ const modeLabels: Record<Mode, { label: string; desc: string }> = {
 };
 
 const exitModeLabels: Record<ExitMode, { label: string; desc: string }> = {
-  standard: { label: '標準', desc: '含み益30%超でトレイル緩和。PF 8.59 / 勝率73%' },
+  standard: { label: 'ハイブリッド', desc: '含み益30%超でトレイル緩和。PF 8.59 / 勝率73%' },
   stable: { label: '安定', desc: 'タイトなトレイルで利益確保。PF 6.59 / 勝率73%' },
 };
 
