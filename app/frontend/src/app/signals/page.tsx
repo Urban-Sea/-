@@ -453,7 +453,7 @@ function SignalsPage() {
                 <span onClick={() => handleAnalyze(t)}>{t}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeQuickTicker(t); }}
-                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 font-bold text-xs ml-0.5"
+                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400 font-bold text-xs ml-0.5"
                 >
                   ×
                 </button>
@@ -495,7 +495,7 @@ function SignalsPage() {
                 <span className="ml-0.5 text-[10px] text-muted-foreground" onClick={() => handleAnalyze(t.ticker)}>{t.name}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeJpTicker(t.ticker); }}
-                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 font-bold text-xs ml-0.5"
+                  className="hidden group-hover:inline text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400 font-bold text-xs ml-0.5"
                 >
                   ×
                 </button>
@@ -1146,7 +1146,7 @@ function SignalsPage() {
                               <span className="w-px h-5 bg-border" />
                               <span className="text-foreground/70">PF: <span className="text-foreground font-mono font-bold">{signalHistory.stats.patb_pf ?? '∞'}</span></span>
                               <span className="w-px h-5 bg-border" />
-                              <span className="text-foreground/70">平均損益: <span className={`font-mono font-bold ${(signalHistory.stats.patb_avg_pnl ?? 0) >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>{(signalHistory.stats.patb_avg_pnl ?? 0) >= 0 ? '+' : ''}{signalHistory.stats.patb_avg_pnl}%</span></span>
+                              <span className="text-foreground/70">平均損益: <span className={`font-mono font-bold ${(signalHistory.stats.patb_avg_pnl ?? 0) >= 0 ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>{(signalHistory.stats.patb_avg_pnl ?? 0) >= 0 ? '+' : ''}{signalHistory.stats.patb_avg_pnl}%</span></span>
                               <span className="w-px h-5 bg-border" />
                               <span className="text-foreground/70">平均保有: <span className="text-foreground font-mono font-bold">{signalHistory.stats.patb_avg_hold_days}日</span></span>
                             </div>
@@ -1164,7 +1164,7 @@ function SignalsPage() {
                                 const s = u.status;
                                 const v = u.verdict;
                                 const alertBg = v.color === 'red' ? 'bg-red-500/15 border-red-500/40' : 'bg-orange-500/15 border-orange-500/40';
-                                const alertText = v.color === 'red' ? 'text-red-300' : 'text-orange-300';
+                                const alertText = v.color === 'red' ? 'text-red-400' : 'text-orange-400';
                                 return (
                                   <div key={`urgent-${i}`} className={`rounded-lg border px-5 py-4 ${alertBg}`}>
                                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1172,7 +1172,7 @@ function SignalsPage() {
                                         <span className={`text-sm font-bold ${alertText}`}>{v.action}</span>
                                         <span className="text-sm text-foreground/60">{v.reason}</span>
                                       </div>
-                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
+                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>
                                         {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
                                       </span>
                                     </div>
@@ -1209,7 +1209,7 @@ function SignalsPage() {
                                   <StatusChip label={latestActive.entry_regime} color="blue" />
                                   <span className="text-sm text-foreground/60">{latestActive.holding_days}日保有</span>
                                 </div>
-                                <span className={`text-xl font-bold font-mono ${latestActive.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
+                                <span className={`text-xl font-bold font-mono ${latestActive.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>
                                   {latestActive.unrealized_pct >= 0 ? '+' : ''}{latestActive.unrealized_pct.toFixed(1)}%
                                 </span>
                               </div>
@@ -1217,7 +1217,7 @@ function SignalsPage() {
                                 <div className={`rounded-lg px-4 py-3 ${latestActive.atr_floor_triggered ? 'bg-red-500/15 border border-red-500/30' : 'plumb-glass'}`}>
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-xs uppercase tracking-wider font-semibold text-foreground/60">損切ライン</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.atr_floor_triggered ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.atr_floor_triggered ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
                                       {latestActive.atr_floor_triggered ? '発動' : '安全'}
                                     </span>
                                   </div>
@@ -1228,22 +1228,22 @@ function SignalsPage() {
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-xs uppercase tracking-wider font-semibold text-foreground/60">反転検出</span>
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                      latestActive.bearish_choch_detected && latestActive.ema_death_cross ? 'bg-red-500/20 text-red-300' :
-                                      latestActive.bearish_choch_detected ? 'bg-orange-500/20 text-orange-300' :
-                                      'bg-emerald-500/15 text-emerald-300'
+                                      latestActive.bearish_choch_detected && latestActive.ema_death_cross ? 'bg-red-500/20 text-red-400' :
+                                      latestActive.bearish_choch_detected ? 'bg-orange-500/20 text-orange-400' :
+                                      'bg-emerald-500/15 text-emerald-400'
                                     }`}>
                                       {latestActive.bearish_choch_detected && latestActive.ema_death_cross ? '全決済' : latestActive.bearish_choch_detected ? '警戒' : '安全'}
                                     </span>
                                   </div>
                                   <div className="space-y-1 text-sm">
-                                    <div className="flex justify-between"><span className="text-foreground/60">転換</span><span className={latestActive.bearish_choch_detected ? 'text-orange-300 font-semibold' : 'text-foreground/40'}>{latestActive.bearish_choch_detected ? `50%売却${latestActive.choch_exit_date ? ` (${latestActive.choch_exit_date})` : ''}` : '—'}</span></div>
-                                    <div className="flex justify-between"><span className="text-foreground/60">EMA交差</span><span className={latestActive.ema_death_cross ? 'text-red-300 font-semibold' : 'text-foreground/40'}>{latestActive.ema_death_cross ? '発生→残り50%売却' : '—'}</span></div>
+                                    <div className="flex justify-between"><span className="text-foreground/60">転換</span><span className={latestActive.bearish_choch_detected ? 'text-orange-400 font-semibold' : 'text-foreground/40'}>{latestActive.bearish_choch_detected ? `50%売却${latestActive.choch_exit_date ? ` (${latestActive.choch_exit_date})` : ''}` : '—'}</span></div>
+                                    <div className="flex justify-between"><span className="text-foreground/60">EMA交差</span><span className={latestActive.ema_death_cross ? 'text-red-400 font-semibold' : 'text-foreground/40'}>{latestActive.ema_death_cross ? '発生→残り50%売却' : '—'}</span></div>
                                   </div>
                                 </div>
                                 <div className={`rounded-lg px-4 py-3 ${latestActive.trail_active ? 'bg-purple-500/15 border border-purple-500/30' : 'plumb-glass'}`}>
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-xs uppercase tracking-wider font-semibold text-foreground/60">利確ストップ</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.trail_active ? 'bg-purple-500/20 text-purple-300' : 'plumb-glass text-foreground/40'}`}>
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.trail_active ? 'bg-purple-500/20 text-purple-400' : 'plumb-glass text-foreground/40'}`}>
                                       {latestActive.trail_active ? '稼働中' : '待機'}
                                     </span>
                                   </div>
@@ -1271,9 +1271,9 @@ function SignalsPage() {
                             <div className="space-y-2">
                               {actives.slice(0, -1).reverse().map((s, i) => {
                                 const v = getActiveVerdict(s);
-                                const chipColor = v.color === 'red' ? 'bg-red-500/20 text-red-300'
-                                  : v.color === 'orange' ? 'bg-orange-500/20 text-orange-300'
-                                  : 'bg-emerald-500/15 text-emerald-300';
+                                const chipColor = v.color === 'red' ? 'bg-red-500/20 text-red-400'
+                                  : v.color === 'orange' ? 'bg-orange-500/20 text-orange-400'
+                                  : 'bg-emerald-500/15 text-emerald-400';
                                 return (
                                   <div key={`older-${i}`} className="plumb-glass rounded-lg px-4 py-3">
                                     <div className="flex items-center justify-between text-sm">
@@ -1283,23 +1283,23 @@ function SignalsPage() {
                                         <StatusChip label={s.entry_regime} color="blue" />
                                         <span className="text-foreground/50">{s.holding_days}日保有</span>
                                       </div>
-                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
+                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>
                                         {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-3 mt-2 text-xs flex-wrap">
-                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.atr_floor_triggered ? 'bg-red-500/20 text-red-300' : 'bg-foreground/5 text-foreground/40'}`}>
+                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.atr_floor_triggered ? 'bg-red-500/20 text-red-400' : 'bg-foreground/5 text-foreground/40'}`}>
                                         損切 {ccy}{s.atr_floor_price.toFixed(2)} {s.atr_floor_triggered ? '発動' : '安全'}
                                       </span>
                                       <span className={`px-2 py-0.5 rounded font-semibold ${
-                                        s.bearish_choch_detected && s.ema_death_cross ? 'bg-red-500/20 text-red-300' :
-                                        s.bearish_choch_detected ? 'bg-orange-500/20 text-orange-300' :
+                                        s.bearish_choch_detected && s.ema_death_cross ? 'bg-red-500/20 text-red-400' :
+                                        s.bearish_choch_detected ? 'bg-orange-500/20 text-orange-400' :
                                         'bg-foreground/5 text-foreground/40'
                                       }`}>
                                         反転 {s.bearish_choch_detected && s.ema_death_cross ? '全決済' : s.bearish_choch_detected ? '警戒' : '安全'}
                                         {s.bearish_choch_detected && s.choch_exit_date && ` (${s.choch_exit_date})`}
                                       </span>
-                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.trail_active ? 'bg-purple-500/20 text-purple-300' : 'bg-foreground/5 text-foreground/40'}`}>
+                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.trail_active ? 'bg-purple-500/20 text-purple-400' : 'bg-foreground/5 text-foreground/40'}`}>
                                         利確 {s.trail_active ? (s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '稼働中') : '待機'}
                                       </span>
                                     </div>
@@ -1324,7 +1324,7 @@ function SignalsPage() {
                                 <div key={`trade-${i}`} className="plumb-glass rounded-lg px-5 py-4">
                                   <div className="flex items-center gap-3 text-sm flex-wrap">
                                     <StatusChip label={isWin ? '利確' : '損切'} color={isWin ? 'green' : 'red'} />
-                                    <span className={`font-mono font-bold text-base ${isWin ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
+                                    <span className={`font-mono font-bold text-base ${isWin ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>
                                       {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
                                     </span>
                                     <span className="w-px h-4 bg-border" />
@@ -1337,10 +1337,10 @@ function SignalsPage() {
                                   <div className="flex items-center gap-3 text-sm mt-2 flex-wrap">
                                     <span className="text-foreground/60">買 <span className="font-mono text-foreground">{t.entry_date}</span> @ <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)}</span></span>
                                     <span className="text-foreground/40">→</span>
-                                    <span className="text-foreground/60">売 <span className={`font-mono font-bold ${isWin ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>{t.exit_date}</span> @ <span className="font-mono text-foreground">{ccy}{t.exit_price.toFixed(2)}</span></span>
+                                    <span className="text-foreground/60">売 <span className={`font-mono font-bold ${isWin ? 'text-emerald-400 dark:text-emerald-400' : 'text-red-400 dark:text-red-400'}`}>{t.exit_date}</span> @ <span className="font-mono text-foreground">{ccy}{t.exit_price.toFixed(2)}</span></span>
                                   </div>
                                   {savedPct !== null && savedPct > 0 && (
-                                    <div className="mt-2 text-xs text-emerald-400 dark:text-emerald-300 font-medium">
+                                    <div className="mt-2 text-xs text-emerald-400 dark:text-emerald-400 font-medium">
                                       決済効果: 保有し続けたら{liveStatus!.unrealized_pct >= 0 ? '+' : ''}{liveStatus!.unrealized_pct.toFixed(1)}% → 実際は{t.return_pct >= 0 ? '+' : ''}{t.return_pct.toFixed(1)}%（{savedPct.toFixed(1)}%分の損失を回避）
                                     </div>
                                   )}
