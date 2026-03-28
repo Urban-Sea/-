@@ -1268,22 +1268,41 @@ function SignalsPage() {
                             <div className="text-xs uppercase tracking-wider text-foreground/60 font-semibold mb-2">
                               過去のポジション（{actives.length - 1}件）
                             </div>
-                            <div className="plumb-glass rounded-lg divide-y divide-border/50">
+                            <div className="space-y-2">
                               {actives.slice(0, -1).reverse().map((s, i) => {
                                 const v = getActiveVerdict(s);
                                 const chipColor = v.color === 'red' ? 'bg-red-500/20 text-red-300'
                                   : v.color === 'orange' ? 'bg-orange-500/20 text-orange-300'
                                   : 'bg-emerald-500/15 text-emerald-300';
                                 return (
-                                  <div key={`older-${i}`} className="flex items-center justify-between px-4 py-3 text-sm">
-                                    <div className="flex items-center gap-2.5 flex-wrap">
-                                      <span className={`font-bold px-2 py-0.5 rounded text-xs ${chipColor}`}>{v.action}</span>
-                                      <span className="font-mono text-foreground/70">{s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
-                                      <span className="text-foreground/50">{s.holding_days}日</span>
+                                  <div key={`older-${i}`} className="plumb-glass rounded-lg px-4 py-3">
+                                    <div className="flex items-center justify-between text-sm">
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <span className={`font-bold px-2 py-0.5 rounded text-xs ${chipColor}`}>{v.action}</span>
+                                        <span className="font-mono text-foreground/70">{s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
+                                        <StatusChip label={s.entry_regime} color="blue" />
+                                        <span className="text-foreground/50">{s.holding_days}日保有</span>
+                                      </div>
+                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
+                                        {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
+                                      </span>
                                     </div>
-                                    <span className={`font-mono font-bold ${s.unrealized_pct >= 0 ? 'text-emerald-400 dark:text-emerald-300' : 'text-red-400 dark:text-red-300'}`}>
-                                      {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
-                                    </span>
+                                    <div className="flex items-center gap-3 mt-2 text-xs flex-wrap">
+                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.atr_floor_triggered ? 'bg-red-500/20 text-red-300' : 'bg-foreground/5 text-foreground/40'}`}>
+                                        損切 {ccy}{s.atr_floor_price.toFixed(2)} {s.atr_floor_triggered ? '発動' : '安全'}
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded font-semibold ${
+                                        s.bearish_choch_detected && s.ema_death_cross ? 'bg-red-500/20 text-red-300' :
+                                        s.bearish_choch_detected ? 'bg-orange-500/20 text-orange-300' :
+                                        'bg-foreground/5 text-foreground/40'
+                                      }`}>
+                                        反転 {s.bearish_choch_detected && s.ema_death_cross ? '全決済' : s.bearish_choch_detected ? '警戒' : '安全'}
+                                        {s.bearish_choch_detected && s.choch_exit_date && ` (${s.choch_exit_date})`}
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.trail_active ? 'bg-purple-500/20 text-purple-300' : 'bg-foreground/5 text-foreground/40'}`}>
+                                        利確 {s.trail_active ? (s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '稼働中') : '待機'}
+                                      </span>
+                                    </div>
                                   </div>
                                 );
                               })}
