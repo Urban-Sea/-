@@ -835,11 +835,12 @@ function SignalsPage() {
             <TabsContent value="entry">
               <GlassCard stagger={1}>
                 <div className="p-6">
-                  <div className="flex items-center gap-3 mb-5">
+                  <div className="flex items-center gap-3 mb-3">
                     <span className="text-base font-bold text-foreground">エントリー判定パネル</span>
                     <span className="text-sm text-muted-foreground">統合エントリーシステム</span>
                     <StatusChip label={modeLabels[mode].label} color="blue" />
                   </div>
+                  <p className="text-xs text-muted-foreground mb-5">前日の終値（Close）確定後に判定 → BUYシグナルが出たら翌営業日の寄付（Open）で購入</p>
 
                   {/* Regime Info — signal がある時はシグナルのベンチマークを使用 */}
                   {(signal || regime) && (() => {
@@ -923,7 +924,7 @@ function SignalsPage() {
             <TabsContent value="exit_analysis">
               <GlassCard stagger={1}>
                 <div className="p-6">
-                  <div className="flex items-center gap-3 mb-5">
+                  <div className="flex items-center gap-3 mb-3">
                     <span className="text-base font-bold text-foreground">Exit分析パネル</span>
                     <span className="text-sm text-muted-foreground">PatB 4層 Exit システム</span>
                     <button
@@ -934,6 +935,7 @@ function SignalsPage() {
                       {historyLoading ? '取得中...' : '更新'}
                     </button>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-5">前日の終値（Close）確定後に判定 → Exitシグナルが出たら翌営業日の寄付（Open）で売却</p>
 
                   {(() => {
                     const trades = signalHistory?.trade_results ?? [];
@@ -1216,10 +1218,11 @@ function SignalsPage() {
             <TabsContent value="holding">
               <GlassCard stagger={1}>
                 <div className="p-6">
-                  <div className="flex items-center gap-3 mb-5">
+                  <div className="flex items-center gap-3 mb-3">
                     <span className="text-base font-bold text-foreground">保有分析パネル</span>
                     <StatusChip label="5層Exit System" color="purple" />
                   </div>
+                  <p className="text-xs text-muted-foreground mb-5">前日の終値（Close）確定後に判定 → Exitシグナルが出たら翌営業日の寄付（Open）で売却</p>
 
                   {/* Entry Inputs */}
                   <div className="flex gap-4 mb-5 flex-wrap items-end">

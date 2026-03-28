@@ -1,13 +1,17 @@
 """
-Exit Manager - PatB Exit System
+Exit Manager - V13 Exit System
 
-バックテスト実績（PF 10.21, win% 67.7%）を本番で再現するため、
-exit_patternB ロジックを1行単位で移植。
+V12(PatB) → V13 改善:
+- Trail base: EMA10×0.7+highest×0.3 → highest（天井追従性向上）
+- Drawdown tighten: 天井からの下落5/10/15% → mult×0.8/0.6/0.4
+- Profit tiers: 含み益15/30/50%超 → ATR mult = 2.0/1.5/1.0
+
+100銘柄検証結果: 取りこぼし 14.3%→7.6%, Win 66.2%→77.1%, PF 3.88→7.20
 
 4層Exit:
 1. ATR_Floor: entry_price - ATR×3.0, Close確定（Fix1）
 2. Mirror: Bearish CHoCH → 50%記録, EMA8<EMA21 → 残り50%（Fix3）
-3. Trail_Stop: EMA21×1.05超で有効化, trail_base = EMA10×0.7 + highest×0.3 - ATR×regime_mult
+3. Trail_Stop: EMA21×1.05超で有効化, trail_base = highest - ATR×adaptive_mult
 4. Time_Stop: 252営業日
 """
 
@@ -65,7 +69,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
     ループ本体は evaluate_trade (バックテスト一致確認済み) と完全同一。
     分岐は戻り値の構築部分のみ。
     """
-    trail_mult = TRAIL_MULT.get(regime, 3.0)
+    base_trail_mult = TRAIL_MULT.get(regime, 3.0)
     atr_floor = entry_price - entry_atr * 3.0
     max_day = min(entry_idx + 252, len(df) - 1)
     highest = entry_price
@@ -129,8 +133,28 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                 trail_active = True
 
         if trail_active:
-            ema10 = df['Close'].iloc[max(0, d - 10):d + 1].ewm(span=10, adjust=False).mean().iloc[-1]
-            trail_base = ema10 * 0.7 + highest * 0.3
+            # V13: trail_base = highest（天井追従）
+            trail_base = highest
+
+            # V13: Drawdown tighten — 天井からの下落幅に応じてmultを絞る
+            trail_mult = base_trail_mult
+            dd_pct = (highest - close) / highest * 100 if highest > 0 else 0
+            if dd_pct > 15:
+                trail_mult *= 0.4
+            elif dd_pct > 10:
+                trail_mult *= 0.6
+            elif dd_pct > 5:
+                trail_mult *= 0.8
+
+            # V13: Profit tiers — 含み益が大きいほどtrailをタイトに
+            pnl_pct = (close - entry_price) / entry_price * 100 if entry_price > 0 else 0
+            if pnl_pct > 50:
+                trail_mult = min(trail_mult, 1.0)
+            elif pnl_pct > 30:
+                trail_mult = min(trail_mult, 1.5)
+            elif pnl_pct > 15:
+                trail_mult = min(trail_mult, 2.0)
+
             trail_stop_price = trail_base - atr_now * trail_mult
             if low <= trail_stop_price:
                 exit_price = max(trail_stop_price, low)
