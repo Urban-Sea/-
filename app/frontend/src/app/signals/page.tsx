@@ -1057,12 +1057,32 @@ function SignalsPage() {
                                 </div>
                               </>
                             ) : exitedPositions.length > 0 ? (
-                              <>
-                                <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] text-orange-500 dark:text-orange-400`}>決済済</div>
-                                <div className="mt-2 text-sm text-muted-foreground">
-                                  過去の買いに対し決済システムが発動済み — 下に詳細あり
-                                </div>
-                              </>
+                              (() => {
+                                const lastTrade = trades.length > 0 ? trades[trades.length - 1] : null;
+                                const lastTradeReason = lastTrade ? (exitReasonJP[lastTrade.exit_reason] || lastTrade.exit_reason) : null;
+                                const lastTradeWin = lastTrade ? lastTrade.return_pct >= 0 : false;
+                                return (
+                                  <>
+                                    <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] text-orange-500 dark:text-orange-400`}>決済済</div>
+                                    {lastTrade && (
+                                      <div className="mt-2 text-sm text-muted-foreground">{lastTradeReason}</div>
+                                    )}
+                                    {lastTrade && (
+                                      <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap">
+                                        <span>買付: {lastTrade.entry_date} @ {ccy}{lastTrade.entry_price.toFixed(2)}</span>
+                                        <span className="w-px h-3 bg-border" />
+                                        <span className="text-orange-500 dark:text-orange-400">売却: {lastTrade.exit_date} @ {ccy}{lastTrade.exit_price.toFixed(2)}</span>
+                                        <span className="w-px h-3 bg-border" />
+                                        <span className={`font-mono font-semibold ${lastTradeWin ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                          {lastTradeWin ? '+' : ''}{lastTrade.return_pct.toFixed(1)}%
+                                        </span>
+                                        <span className="w-px h-3 bg-border" />
+                                        <span>{lastTrade.holding_days}日保有</span>
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()
                             ) : (
                               <>
                                 <div className={`text-3xl sm:text-4xl font-extrabold tracking-[0.15em] ${vs.text}`}>ポジションなし</div>

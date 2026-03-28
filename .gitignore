@@ -76,3 +76,10 @@ node_modules/
 .vercel/
 out/
 npm-debug.log*
+
+# Docker
+.env.docker.local
+db/seed/
+
+# Supabase CSV exports (one-time use)
+Supabase Snippet List Public Tables*.csv
