@@ -630,10 +630,10 @@ function SignalsPage() {
                       </div>
                       <div className="mb-2 flex items-center gap-2 flex-wrap">
                         <StatusChip label={r.entry_allowed ? '買いシグナル' : 'エントリーなし'} color={r.entry_allowed ? 'green' : 'blue'} />
-                        {r.exit_status && (
+                        {r.exit_verdict && (
                           <StatusChip
-                            label={r.exit_status === 'SAFE' ? 'Exit安全' : r.exit_status === 'WARNING' ? 'Exit注意' : 'Exit危険'}
-                            color={r.exit_status === 'SAFE' ? 'green' : r.exit_status === 'WARNING' ? 'yellow' : 'red'}
+                            label={r.exit_verdict}
+                            color={r.exit_verdict_color === 'red' ? 'red' : r.exit_verdict_color === 'orange' ? 'orange' : r.exit_verdict_color === 'emerald' ? 'green' : 'blue'}
                           />
                         )}
                         {r.position_size_pct > 0 && (
@@ -648,13 +648,16 @@ function SignalsPage() {
                             {/^\d/.test(r.ticker) ? '¥' : '$'}{r.exit_atr_floor.toFixed(2)}
                           </span></span>
                         )}
-                        {r.exit_ema_above && (
-                          <span>EMA: <span className={`font-semibold ${r.exit_ema_above.ema21 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                            {[r.exit_ema_above.ema8 && '8', r.exit_ema_above.ema13 && '13', r.exit_ema_above.ema21 && '21'].filter(Boolean).join('/')}{!r.exit_ema_above.ema8 && !r.exit_ema_above.ema13 && !r.exit_ema_above.ema21 ? '全割れ' : '上'}
-                          </span></span>
+                        {r.exit_verdict_reason && (
+                          <span className="col-span-2 text-[10px]">{r.exit_verdict_reason}</span>
                         )}
-                        {r.exit_choch_warning && (
-                          <span className="text-orange-500 dark:text-orange-400 font-semibold col-span-2">弱気転換警戒 — 反転リスク</span>
+                        {r.exit_entry_date && (
+                          <span>買付: <span className="font-mono text-foreground">{r.exit_entry_date}</span></span>
+                        )}
+                        {r.exit_unrealized_pct != null && (
+                          <span>含み: <span className={`font-mono font-semibold ${r.exit_unrealized_pct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                            {r.exit_unrealized_pct >= 0 ? '+' : ''}{r.exit_unrealized_pct.toFixed(1)}%
+                          </span> ({r.exit_holding_days}日)</span>
                         )}
                       </div>
                     </>

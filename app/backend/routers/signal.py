@@ -284,10 +284,14 @@ class BatchResult(BaseModel):
     relative_strength: Optional[Dict[str, Any]] = None
     regime: Optional[str] = None
     exit_atr_floor: Optional[float] = None
-    exit_status: Optional[str] = None           # SAFE / WARNING / DANGER
-    exit_structure_stop: Optional[float] = None
-    exit_ema_above: Optional[Dict[str, bool]] = None
-    exit_choch_warning: Optional[bool] = None
+    # 4層決済システム判定（evaluate_current ベース）
+    exit_verdict: Optional[str] = None       # 全売却 / 50%売却 / 保有継続 / ポジションなし
+    exit_verdict_color: Optional[str] = None  # red / orange / emerald / zinc
+    exit_verdict_reason: Optional[str] = None
+    exit_verdict_sell_pct: Optional[int] = None
+    exit_unrealized_pct: Optional[float] = None
+    exit_holding_days: Optional[int] = None
+    exit_entry_date: Optional[str] = None
     error: bool = False
     error_message: Optional[str] = None
 
@@ -351,22 +355,77 @@ async def analyze_batch(request: BatchRequest):
             if result.entry_allowed:
                 entry_ready_count += 1
 
-            # Exit サマリー計算（全銘柄）
+            # 4層決済システム判定（直近BUYエントリーに対して evaluate_current）
             exit_atr_floor = None
-            exit_data: Dict[str, Any] = {}
-            current_price = result.price or (float(stock_df['Close'].iloc[-1]) if not stock_df.empty else None)
-            if current_price:
-                # ATR Floor（BUYの場合はエントリー価格基準、それ以外は現在価格基準）
-                if 'ATR' in stock_df.columns:
-                    atr_val = stock_df['ATR'].iloc[-1]
-                    if pd.notna(atr_val):
-                        exit_atr_floor = round(current_price - float(atr_val) * 3.0, 2)
-                # Exit サマリー (EMA + CHoCH + Structure)
-                try:
-                    from routers.exit import compute_exit_summary
-                    exit_data = compute_exit_summary(stock_df, current_price)
-                except Exception:
-                    pass
+            exit_verdict_data: Dict[str, Any] = {}
+            try:
+                from analysis.choch_detector import CHoCHDetector, CHoCHType
+                from analysis.exit_manager import evaluate_current as _eval_cur, HoldingStatus as _HS2
+
+                # EMA/ATR が未計算なら計算
+                if 'EMA_8' not in stock_df.columns:
+                    stock_df['EMA_8'] = stock_df['Close'].ewm(span=8, adjust=False).mean()
+                if 'EMA_21' not in stock_df.columns:
+                    stock_df['EMA_21'] = stock_df['Close'].ewm(span=21, adjust=False).mean()
+                if 'ATR' not in stock_df.columns:
+                    stock_df['ATR'] = pd.DataFrame({
+                        'hl': stock_df['High'] - stock_df['Low'],
+                        'hc': abs(stock_df['High'] - stock_df['Close'].shift(1)),
+                        'lc': abs(stock_df['Low'] - stock_df['Close'].shift(1))
+                    }).max(axis=1).rolling(14).mean()
+                if 'Date' not in stock_df.columns:
+                    stock_df = stock_df.reset_index()
+                    if 'index' in stock_df.columns:
+                        stock_df = stock_df.rename(columns={'index': 'Date'})
+
+                choch_det = CHoCHDetector(swing_lookback=3)
+                choch_sigs = choch_det.detect_choch(stock_df)
+
+                # 直近のBUYエントリー（Bullish CHoCH + EMA GC）を検索
+                latest_entry = None
+                for c in reversed(choch_sigs):
+                    if c.type == CHoCHType.BULLISH and c.index >= 21 and c.index < len(stock_df):
+                        e8 = stock_df['EMA_8'].iloc[c.index]
+                        e21 = stock_df['EMA_21'].iloc[c.index]
+                        if not pd.isna(e8) and not pd.isna(e21) and e8 > e21:
+                            latest_entry = c.index
+                            break
+
+                if latest_entry is not None:
+                    ep = float(stock_df['Close'].iloc[latest_entry])
+                    ea = float(stock_df['ATR'].iloc[latest_entry]) if pd.notna(stock_df['ATR'].iloc[latest_entry]) else 1.0
+                    cur_idx = len(stock_df) - 1
+                    entry_date_str = str(stock_df['Date'].iloc[latest_entry])[:10]
+
+                    # ATR Floor
+                    exit_atr_floor = round(ep - ea * 3.0, 2)
+
+                    # evaluate_current
+                    hs = _eval_cur(stock_df, latest_entry, ep, ea, result.regime or "BULL", choch_sigs, cur_idx)
+                    if isinstance(hs, _HS2):
+                        ccy = '¥' if asset_class == 'JP' else '$'
+                        if hs.atr_floor_triggered:
+                            exit_verdict_data = {"verdict": "全売却", "color": "red", "sell_pct": 100, "reason": f"損切ライン {ccy}{exit_atr_floor} 割れ"}
+                        elif hs.bearish_choch_detected and hs.ema_death_cross:
+                            exit_verdict_data = {"verdict": "全売却", "color": "red", "sell_pct": 100, "reason": "反転全決済: 転換 + EMAデスクロス"}
+                        elif hs.bearish_choch_detected:
+                            exit_verdict_data = {"verdict": "50%売却", "color": "orange", "sell_pct": 50, "reason": "弱気転換検出"}
+                        elif hs.nearest_exit_reason == "Time_Stop":
+                            exit_verdict_data = {"verdict": "全売却", "color": "orange", "sell_pct": 100, "reason": "保有期限到達"}
+                        elif hs.trail_active:
+                            exit_verdict_data = {"verdict": "保有継続", "color": "emerald", "sell_pct": 0, "reason": f"利確ストップ稼働中 {ccy}{hs.trail_stop_price:.2f}" if hs.trail_stop_price else "利確ストップ稼働中"}
+                        else:
+                            exit_verdict_data = {"verdict": "保有継続", "color": "emerald", "sell_pct": 0, "reason": "全条件クリア"}
+                        exit_verdict_data["unrealized_pct"] = round(float(hs.unrealized_pct), 1)
+                        exit_verdict_data["holding_days"] = int(hs.holding_days)
+                        exit_verdict_data["entry_date"] = entry_date_str
+                    else:
+                        # TradeResult = 既にExit済み
+                        exit_verdict_data = {"verdict": "決済済", "color": "zinc", "sell_pct": 0, "reason": "直近BUYは決済済み"}
+                else:
+                    exit_verdict_data = {"verdict": "ポジションなし", "color": "zinc", "sell_pct": 0, "reason": "買いシグナル待ち"}
+            except Exception:
+                pass
 
             results.append(BatchResult(
                 ticker=ticker,
@@ -382,10 +441,13 @@ async def analyze_batch(request: BatchRequest):
                 },
                 regime=result.regime,
                 exit_atr_floor=exit_atr_floor,
-                exit_status=exit_data.get("exit_status"),
-                exit_structure_stop=exit_data.get("exit_structure_stop"),
-                exit_ema_above=exit_data.get("exit_ema_above"),
-                exit_choch_warning=exit_data.get("exit_choch_warning"),
+                exit_verdict=exit_verdict_data.get("verdict"),
+                exit_verdict_color=exit_verdict_data.get("color"),
+                exit_verdict_reason=exit_verdict_data.get("reason"),
+                exit_verdict_sell_pct=exit_verdict_data.get("sell_pct"),
+                exit_unrealized_pct=exit_verdict_data.get("unrealized_pct"),
+                exit_holding_days=exit_verdict_data.get("holding_days"),
+                exit_entry_date=exit_verdict_data.get("entry_date"),
                 error=False,
             ))
         except Exception as e:
