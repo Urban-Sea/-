@@ -13,8 +13,8 @@ COPY . .
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# ポート公開 (Cloud Run は PORT=8080 を注入)
-EXPOSE 8080
+# ポート公開 (Docker: 8081, Cloud Run: PORT 環境変数で上書き)
+EXPOSE 8081
 
-# 起動コマンド (Cloud Run の PORT 環境変数に対応)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# 起動コマンド
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8081}"]

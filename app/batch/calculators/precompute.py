@@ -1,5 +1,5 @@
 """
-事前計算: バックエンドAPIを呼び出し、結果をSupabase + Redis に保存。
+事前計算: バックエンドAPIを呼び出し、結果を PostgreSQL + Redis に保存。
 APIの計算ロジックを移動せずに、結果だけをキャッシュする。
 """
 
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from app.batch.config import get_supabase
+from app.batch.config import get_conn
 
 logger = logging.getLogger("batch")
 
@@ -29,7 +29,16 @@ _PRECOMPUTE_TTL = 86400  # 24時間
 
 
 def _get_redis():
-    """Upstash Redis クライアントを取得。未設定なら None。"""
+    """Redis クライアントを取得。REDIS_URL が設定されていれば直接接続、なければ None。"""
+    redis_url = os.getenv("REDIS_URL", "")
+    if redis_url:
+        try:
+            import redis
+            return redis.from_url(redis_url, decode_responses=True)
+        except Exception:
+            return None
+
+    # Upstash フォールバック（非Docker環境）
     url = os.getenv("UPSTASH_REDIS_REST_URL", "")
     token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
     if not url or not token:
@@ -42,8 +51,8 @@ def _get_redis():
 
 
 def precompute_all() -> None:
-    """全エンドポイントの結果を取得してSupabase + Redis に保存"""
-    sb = get_supabase()
+    """全エンドポイントの結果を取得して PostgreSQL + Redis に保存"""
+    conn = get_conn()
     redis = _get_redis()
     success = 0
     failed = 0
@@ -57,12 +66,15 @@ def precompute_all() -> None:
 
             result_data = resp.json()
 
-            # Supabase に保存（フォールバック）
-            sb.table("precomputed_results").upsert({
-                "key": key,
-                "result": result_data,
-                "computed_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
+            # PostgreSQL に保存（フォールバック）
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO precomputed_results (key, result, computed_at) "
+                    "VALUES (%s, %s, %s) "
+                    "ON CONFLICT (key) DO UPDATE SET result = EXCLUDED.result, computed_at = EXCLUDED.computed_at",
+                    (key, json.dumps(result_data, default=str),
+                     datetime.now(timezone.utc).isoformat()),
+                )
 
             # Redis に保存（高速読み取り用）
             if redis:

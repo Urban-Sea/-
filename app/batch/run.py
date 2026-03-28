@@ -43,7 +43,7 @@ from app.batch.config import (
     INCREMENTAL_LOOKBACK_DAYS,
     DAILY_LOOKBACK_DAYS,
     DAILY_FRED_LOOKBACK_DAYS,
-    get_supabase,
+    get_conn,
 )
 
 # ===== Batch Log Helper =====
@@ -51,13 +51,15 @@ from app.batch.config import (
 def _log_start(job_type: str) -> int | None:
     """バッチログ開始を記録し、log_id を返す"""
     try:
-        sb = get_supabase()
-        result = sb.table("batch_logs").insert({
-            "job_type": job_type,
-            "status": "running",
-            "started_at": datetime.now().isoformat(),
-        }).execute()
-        return result.data[0]["id"] if result.data else None
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO batch_logs (job_type, status, started_at) "
+                "VALUES (%s, 'running', %s) RETURNING id",
+                (job_type, datetime.now().isoformat()),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
     except Exception as e:
         logger.debug(f"batch_logs insert skipped: {e}")
         return None
@@ -69,22 +71,23 @@ def _log_finish(log_id: int | None, status: str = "success",
     if log_id is None:
         return
     try:
-        sb = get_supabase()
+        import json
+        conn = get_conn()
         now = datetime.now()
-        # started_at を取得して duration 計算
-        old = sb.table("batch_logs").select("started_at").eq("id", log_id).limit(1).execute()
-        duration = None
-        if old.data:
-            started = datetime.fromisoformat(old.data[0]["started_at"].replace("Z", "+00:00").replace("+00:00", ""))
-            duration = round((now - started).total_seconds(), 1)
-        sb.table("batch_logs").update({
-            "status": status,
-            "finished_at": now.isoformat(),
-            "duration_seconds": duration,
-            "records_processed": records,
-            "error_message": error_msg,
-            "details": details,
-        }).eq("id", log_id).execute()
+        with conn.cursor() as cur:
+            cur.execute("SELECT started_at FROM batch_logs WHERE id = %s", (log_id,))
+            old = cur.fetchone()
+            duration = None
+            if old and old[0]:
+                started = old[0] if isinstance(old[0], datetime) else datetime.fromisoformat(str(old[0]).replace("Z", "").replace("+00:00", ""))
+                duration = round((now - started).total_seconds(), 1)
+            cur.execute(
+                "UPDATE batch_logs SET status = %s, finished_at = %s, "
+                "duration_seconds = %s, records_processed = %s, "
+                "error_message = %s, details = %s WHERE id = %s",
+                (status, now.isoformat(), duration, records,
+                 error_msg, json.dumps(details) if details else None, log_id),
+            )
     except Exception as e:
         logger.debug(f"batch_logs update skipped: {e}")
 from app.batch.db import (
@@ -230,8 +233,9 @@ def _run_daily(end: str):
 
     # 期限切れ stock_cache を掃除
     try:
-        sb = get_supabase()
-        sb.table("stock_cache").delete().lt("expires_at", datetime.now().isoformat()).execute()
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM stock_cache WHERE expires_at < %s", (datetime.now().isoformat(),))
         logger.info("Cleaned expired stock_cache rows")
     except Exception as e:
         logger.debug(f"stock_cache cleanup skipped: {e}")

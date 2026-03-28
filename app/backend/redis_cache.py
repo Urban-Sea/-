@@ -1,10 +1,14 @@
 """
-redis_cache.py - L1 (インメモリ) + L2 (Upstash Redis) キャッシュ
+redis_cache.py - L1 (インメモリ) + L2 (Redis) キャッシュ
 
 L1: プロセスローカル dict（0ms、同一インスタンス内のみ）
-L2: Upstash Redis REST（再起動・スケール to ゼロでも生存）
+L2: Redis 直接接続 (Docker) or Upstash REST (Cloud Run フォールバック)
 
 Redis 未設定 or 障害時は L1 のみで動作（グレースフルデグレード）。
+
+接続方法:
+  REDIS_URL 設定時 → redis パッケージで直接接続 (Docker 環境)
+  UPSTASH_REDIS_REST_URL 設定時 → upstash_redis パッケージ (Cloud Run フォールバック)
 """
 import json
 import logging
@@ -32,14 +36,14 @@ def _evict_l1() -> None:
             del _l1_cache[k]
 
 
-# ── L2: Upstash Redis (lazy init) ──
+# ── L2: Redis (lazy init) ──
 
 _redis = None
 _redis_init_attempted = False
 
 
 def get_redis():
-    """Upstash Redis クライアントを遅延初期化。未設定なら None。"""
+    """Redis クライアントを遅延初期化。未設定なら None。"""
     global _redis, _redis_init_attempted
     if _redis is not None:
         return _redis
@@ -47,18 +51,33 @@ def get_redis():
         return None
 
     _redis_init_attempted = True
+
+    # 優先: REDIS_URL (Docker 環境の直接接続)
+    redis_url = os.getenv("REDIS_URL", "")
+    if redis_url:
+        try:
+            import redis
+            _redis = redis.from_url(redis_url, decode_responses=True)
+            _redis.ping()
+            logger.info("Redis connected: %s", redis_url)
+            return _redis
+        except Exception as e:
+            logger.warning("Redis direct init failed: %s", e)
+            _redis = None
+            return None
+
+    # フォールバック: Upstash REST API (Cloud Run 環境)
     url = os.getenv("UPSTASH_REDIS_REST_URL", "")
     token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
     if not url or not token:
         return None
     try:
-        from upstash_redis import Redis
-
-        _redis = Redis(url=url, token=token)
-        logger.info("Upstash Redis connected")
+        from upstash_redis import Redis as UpstashRedis
+        _redis = UpstashRedis(url=url, token=token)
+        logger.info("Upstash Redis connected (fallback)")
         return _redis
     except Exception as e:
-        logger.warning(f"Upstash Redis init failed: {e}")
+        logger.warning("Upstash Redis init failed: %s", e)
         return None
 
 
@@ -74,10 +93,10 @@ def cache_get(key: str) -> Optional[Any]:
         return _l1_cache[key]["data"]
 
     # L2
-    redis = get_redis()
-    if redis:
+    r = get_redis()
+    if r:
         try:
-            raw = redis.get(key)
+            raw = r.get(key)
             if raw is not None:
                 data = json.loads(raw) if isinstance(raw, str) else raw
                 # L1 にバックフィル（短め TTL）
@@ -85,7 +104,7 @@ def cache_get(key: str) -> Optional[Any]:
                 _evict_l1()
                 return data
         except Exception as e:
-            logger.debug(f"Redis GET error for {key}: {e}")
+            logger.debug("Redis GET error for %s: %s", key, e)
 
     return None
 
@@ -109,9 +128,9 @@ def cache_set(key: str, data: Any, ttl: int = 300) -> None:
     _evict_l1()
 
     # L2
-    redis = get_redis()
-    if redis:
+    r = get_redis()
+    if r:
         try:
-            redis.set(key, json.dumps(serializable, default=str), ex=ttl)
+            r.set(key, json.dumps(serializable, default=str), ex=ttl)
         except Exception as e:
-            logger.debug(f"Redis SET error for {key}: {e}")
+            logger.debug("Redis SET error for %s: %s", key, e)

@@ -1,7 +1,7 @@
 """
 Layer Stress / Market State バッチ計算
 
-Supabase の生データテーブルから月次の Layer Stress と Market State を計算し、
+PostgreSQL の生データテーブルから月次の Layer Stress と Market State を計算し、
 layer_stress_history / market_state_history に upsert する。
 
 backtest-states エンドポイント（liquidity.py）と同じロジック。
@@ -28,29 +28,32 @@ from analysis.liquidity_score import (
     events_to_dict,
 )
 
-from ..config import get_supabase
+from ..config import get_conn
 from ..db import upsert_layer_stress_history, upsert_market_state_history
 
 logger = logging.getLogger("batch.calculators.layer_stress")
 
-PAGE_SIZE = 1000  # Supabase デフォルト上限
-
 
 def _fetch_all(table: str, select: str, order_col: str = "date") -> List[dict]:
-    """Supabase の 1000行上限をページネーションで回避し全行取得。"""
-    sb = get_supabase()
-    rows: List[dict] = []
-    offset = 0
-    while True:
-        r = sb.table(table).select(select) \
-            .order(order_col, desc=False) \
-            .range(offset, offset + PAGE_SIZE - 1) \
-            .execute()
-        rows.extend(r.data or [])
-        if len(r.data or []) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
-    return rows
+    """PostgreSQL から全行取得。date カラムは文字列に変換。"""
+    import datetime as dt_mod
+    from decimal import Decimal
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {select} FROM {table} ORDER BY {order_col}")
+        col_names = [desc[0] for desc in cur.description]
+        rows = []
+        for row_tuple in cur.fetchall():
+            row = {}
+            for name, val in zip(col_names, row_tuple):
+                if isinstance(val, (dt_mod.date, dt_mod.datetime)):
+                    val = val.strftime("%Y-%m-%d")
+                elif isinstance(val, Decimal):
+                    val = float(val)
+                row[name] = val
+            rows.append(row)
+        return rows
 
 
 def _get_monthly_dates(start: str, end: str) -> List[str]:
@@ -95,7 +98,7 @@ def _lookup_le(sorted_dates: List[str], date_vals: Dict[str, float], target: str
 
 def calculate_monthly_states(start_date: str = "2010-01-01", end_date: Optional[str] = None):
     """
-    月次 Layer Stress + Market State を計算し Supabase に upsert。
+    月次 Layer Stress + Market State を計算し PostgreSQL に upsert。
 
     1. 全8テーブルから一括 prefetch
     2. 月末日ごとにループ計算
@@ -104,13 +107,12 @@ def calculate_monthly_states(start_date: str = "2010-01-01", end_date: Optional[
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
 
-    sb = get_supabase()
     logger.info(f"Calculating monthly states: {start_date} → {end_date}")
 
     # ============================================================
     # 1. Prefetch 全データ（日付昇順）
     # ============================================================
-    logger.info("Prefetching data from Supabase (paginated)...")
+    logger.info("Prefetching data from PostgreSQL...")
 
     fed_data = _fetch_all("fed_balance_sheet", "date,soma_assets,rrp,tga,reserves")
     margin_data = _fetch_all("margin_debt", "date,debit_balance,change_2y")
@@ -274,7 +276,7 @@ def calculate_monthly_states(start_date: str = "2010-01-01", end_date: Optional[
                            "components": json.dumps(l2b_components, ensure_ascii=False)})
 
         # --- market_state_history 行 ---
-        # 実際のSupabaseスキーマ: date, state, layer1_stress, layer2a_stress,
+        # スキーマ: date, state, layer1_stress, layer2a_stress,
         #   layer2b_stress, credit_pressure, comment
         state_rows.append({
             "date": row_date,

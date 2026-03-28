@@ -5,6 +5,7 @@
 日次バッチ (_run_daily) の末尾で呼ばれるほか、--snapshot フラグで単独実行可能。
 """
 
+import json
 import logging
 import re
 from collections import defaultdict
@@ -12,7 +13,7 @@ from datetime import datetime
 
 import yfinance as yf
 
-from .config import get_supabase
+from .config import get_conn
 from .db import upsert_portfolio_snapshots
 
 logger = logging.getLogger("batch.snapshot")
@@ -42,10 +43,10 @@ def take_daily_snapshot(snapshot_date: str | None = None) -> int:
 
     logger.info(f"Taking portfolio snapshot for {snapshot_date}")
 
-    sb = get_supabase()
+    conn = get_conn()
 
     # 1. 全ユーザーの保有銘柄を取得
-    holdings_by_user = _get_all_holdings(sb)
+    holdings_by_user = _get_all_holdings(conn)
     if not holdings_by_user:
         logger.info("No holdings found — skipping snapshot")
         return 0
@@ -63,11 +64,11 @@ def take_daily_snapshot(snapshot_date: str | None = None) -> int:
     logger.info(f"  Prices fetched: {len(prices)}/{len(all_tickers)}")
 
     # 4. USD/JPY レートを取得
-    fx_rate = _get_fx_rate(sb, snapshot_date)
+    fx_rate = _get_fx_rate(conn, snapshot_date)
     logger.info(f"  USD/JPY: {fx_rate}")
 
     # 5. 現金残高を取得
-    cash_by_user = _get_all_cash(sb)
+    cash_by_user = _get_all_cash(conn)
 
     # 6. ユーザーごとにスナップショット行を構築
     rows = []
@@ -128,7 +129,7 @@ def take_daily_snapshot(snapshot_date: str | None = None) -> int:
             "total_assets_usd": round(total_market + cash_usd, 2),
             "fx_rate_usdjpy": fx_rate,
             "holdings_count": len(holdings),
-            "holdings_detail": detail,
+            "holdings_detail": json.dumps(detail, ensure_ascii=False),
         })
 
     # 7. Upsert
@@ -137,11 +138,15 @@ def take_daily_snapshot(snapshot_date: str | None = None) -> int:
     return count
 
 
-def _get_all_holdings(sb) -> dict[str, list[dict]]:
+def _get_all_holdings(conn) -> dict[str, list[dict]]:
     """全ユーザーの保有銘柄を {user_id: [holdings]} で返す。"""
-    result = sb.table("holdings").select("*").execute()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM holdings")
+        col_names = [desc[0] for desc in cur.description]
+        rows = [dict(zip(col_names, row)) for row in cur.fetchall()]
+
     by_user: dict[str, list[dict]] = defaultdict(list)
-    for row in result.data or []:
+    for row in rows:
         by_user[row["user_id"]].append(row)
     return dict(by_user)
 
@@ -156,8 +161,8 @@ def _fetch_closing_prices(tickers: list[str]) -> dict[str, float]:
         return {}
 
     # ユーザーティッカー → yfinanceティッカー のマッピング
-    yf_map = {t: _to_yf(t) for t in tickers}  # {"7203": "7203.T", "AAPL": "AAPL"}
-    rev_map = {v: k for k, v in yf_map.items()}  # {"7203.T": "7203", "AAPL": "AAPL"}
+    yf_map = {t: _to_yf(t) for t in tickers}
+    rev_map = {v: k for k, v in yf_map.items()}
     yf_tickers = sorted(set(yf_map.values()))
 
     prices: dict[str, float] = {}
@@ -191,32 +196,35 @@ def _fetch_closing_prices(tickers: list[str]) -> dict[str, float]:
     return prices
 
 
-def _get_fx_rate(sb, date: str) -> float:
+def _get_fx_rate(conn, date: str) -> float:
     """USD/JPY レートを market_indicators から取得。フォールバック 150.0。"""
     try:
-        result = (
-            sb.table("market_indicators")
-            .select("usdjpy")
-            .lte("date", date)
-            .not_.is_("usdjpy", "null")
-            .order("date", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data and result.data[0].get("usdjpy"):
-            return float(result.data[0]["usdjpy"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT usdjpy FROM market_indicators "
+                "WHERE date <= %s AND usdjpy IS NOT NULL "
+                "ORDER BY date DESC LIMIT 1",
+                (date,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                return float(row[0])
     except Exception as e:
         logger.warning(f"Failed to get FX rate: {e}")
 
     return 150.0
 
 
-def _get_all_cash(sb) -> dict[str, list[dict]]:
+def _get_all_cash(conn) -> dict[str, list[dict]]:
     """全ユーザーの現金残高を {user_id: [cash_rows]} で返す。"""
     try:
-        result = sb.table("cash_balances").select("*").execute()
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM cash_balances")
+            col_names = [desc[0] for desc in cur.description]
+            rows = [dict(zip(col_names, row)) for row in cur.fetchall()]
+
         by_user: dict[str, list[dict]] = defaultdict(list)
-        for row in result.data or []:
+        for row in rows:
             by_user[row["user_id"]].append(row)
         return dict(by_user)
     except Exception:

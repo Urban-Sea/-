@@ -1,12 +1,16 @@
 """
-認証ミドルウェア — Supabase Auth JWT
+認証ミドルウェア — JWT 認証
 
-フロントエンドが Supabase Auth で取得した JWT を Authorization: Bearer ヘッダーで送信。
-Backend は JWKS 公開鍵 (ES256) または SUPABASE_JWT_SECRET (HS256) で署名検証し、
+フロントエンドが取得した JWT を Authorization: Bearer ヘッダーで送信。
+Backend は JWKS 公開鍵 (ES256) または JWT_SECRET / SUPABASE_JWT_SECRET (HS256) で署名検証し、
 sub + email からユーザーを解決する。
 
 require_auth() は users テーブルの UUID を返す（メールアドレスではない）。
 初回ログイン時にユーザーを自動作成する。
+
+DB アクセス:
+  Docker 環境 (DB_HOST set) → asyncpg (db.py の get_pool())
+  Cloud Run 環境 → Supabase SDK (main.py の get_supabase())
 """
 
 import os
@@ -26,8 +30,8 @@ logger = logging.getLogger(__name__)
 _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 # Worker ↔ Backend 共有シークレット
 _PROXY_SECRET = os.getenv("PROXY_SECRET", "")
-# Supabase JWT シークレット（HMAC 用フォールバック）
-_SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+# JWT シークレット（HMAC 用）— Docker: JWT_SECRET, Cloud Run: SUPABASE_JWT_SECRET
+_SUPABASE_JWT_SECRET = os.getenv("JWT_SECRET", "") or os.getenv("SUPABASE_JWT_SECRET", "")
 # Supabase URL（JWT issuer 検証 + JWKS エンドポイント用）
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 
@@ -40,8 +44,11 @@ if _SUPABASE_URL:
         lifespan=3600,  # 1時間キャッシュ
     )
 
-# auth_provider_id (Supabase Auth UUID) → users.id キャッシュ
+# auth_provider_id → users.id キャッシュ
 _provider_id_cache: TTLCache = TTLCache(maxsize=1000, ttl=300)
+
+# DB_HOST が設定されていれば asyncpg を使う（Docker 環境判定）
+_USE_ASYNCPG = bool(os.getenv("DB_HOST", ""))
 
 
 
@@ -63,25 +70,116 @@ async def require_proxy(
 
 
 # ──────────────────────────────────────────────
-# JWT 認証パス (Supabase Auth)
+# JWT 認証パス — ユーザー解決
 # ──────────────────────────────────────────────
 
-def _resolve_user_by_jwt(sub: str, email: str) -> str:
+async def _resolve_user_by_jwt(sub: str, email: str) -> str:
     """
-    Supabase Auth の JWT から users テーブルの UUID を解決する。
+    JWT の sub + email から users テーブルの UUID を解決する。
     1. auth_provider_id で検索（リピーター高速パス）
     2. email で検索（CF Access → Supabase Auth 移行パス）
     3. 新規ユーザー作成
+
+    Docker 環境 (DB_HOST set) → asyncpg
+    Cloud Run 環境 → Supabase SDK
     """
     if sub in _provider_id_cache:
         return _provider_id_cache[sub]
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if _USE_ASYNCPG:
+        return await _resolve_user_asyncpg(sub, email, now_iso)
+    else:
+        return _resolve_user_supabase(sub, email, now_iso)
+
+
+async def _resolve_user_asyncpg(sub: str, email: str, now_iso: str) -> str:
+    """asyncpg を使ったユーザー解決（Docker 環境）"""
+    from db import get_pool
+    pool = get_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    # 1. auth_provider_id で検索
+    row = await pool.fetchrow(
+        "SELECT id, is_active FROM users WHERE auth_provider_id = $1",
+        sub,
+    )
+    if row:
+        if row["is_active"] is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
+        user_id = str(row["id"])
+        _provider_id_cache[sub] = user_id
+        try:
+            await pool.execute(
+                "UPDATE users SET last_login_at = $1 WHERE id = $2",
+                datetime.now(timezone.utc), row["id"],
+            )
+        except Exception as e:
+            logger.warning("Failed to update last_login_at for user %s: %s", user_id, e)
+        return user_id
+
+    # 2. email で検索
+    if email:
+        email_lower = email.strip().lower()
+        row = await pool.fetchrow(
+            "SELECT id, is_active, auth_provider FROM users WHERE email = $1",
+            email_lower,
+        )
+        if row:
+            if row["is_active"] is False:
+                raise HTTPException(status_code=403, detail="Account deactivated")
+            if row["auth_provider"] not in (None, "", "cloudflare_access"):
+                logger.warning(
+                    "Rejected auth migration: email=%s already bound to provider=%s",
+                    email_lower[:3] + "***", row["auth_provider"],
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Account already linked to another identity",
+                )
+            try:
+                await pool.execute(
+                    "UPDATE users SET auth_provider = $1, auth_provider_id = $2, last_login_at = $3 WHERE id = $4",
+                    "supabase", sub, datetime.now(timezone.utc), row["id"],
+                )
+            except Exception as e:
+                logger.warning("Failed to migrate auth_provider for %s: %s", email_lower[:3] + "***", e)
+            user_id = str(row["id"])
+            _provider_id_cache[sub] = user_id
+            logger.info("Migrated auth provider: %s -> supabase (sub=%s)", email_lower[:3] + "***", sub[:8])
+            return user_id
+
+    # 3. 新規ユーザー作成
+    user_email = email.strip().lower() if email else f"supabase:{sub}"
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO users (email, auth_provider, auth_provider_id, last_login_at) "
+            "VALUES ($1, $2, $3, $4) RETURNING id",
+            user_email, "supabase", sub, datetime.now(timezone.utc),
+        )
+        user_id = str(row["id"])
+        logger.info("New user: %s -> %s", user_email[:3] + "***", user_id)
+    except Exception as e:
+        logger.warning("User creation race for sub=%s: %s", sub[:8], e)
+        row = await pool.fetchrow(
+            "SELECT id FROM users WHERE auth_provider_id = $1", sub,
+        )
+        if not row:
+            raise HTTPException(status_code=500, detail="Failed to create user")
+        user_id = str(row["id"])
+
+    _provider_id_cache[sub] = user_id
+    return user_id
+
+
+def _resolve_user_supabase(sub: str, email: str, now_iso: str) -> str:
+    """Supabase SDK を使ったユーザー解決（Cloud Run フォールバック）"""
     from main import get_supabase
     supabase = get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
-
-    now_iso = datetime.now(timezone.utc).isoformat()
 
     # 1. auth_provider_id で検索
     result = supabase.table("users").select("id, is_active").eq(
@@ -101,10 +199,9 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
             logger.warning("Failed to update last_login_at for user %s: %s", user["id"], e)
         return user["id"]
 
-    # 2. email で検索（CF Access 時代のユーザーを移行）
+    # 2. email で検索
     if email:
         email_lower = email.strip().lower()
-        # H2: auth_provider も取得（移行済みアカウントの乗っ取り防止）
         result = supabase.table("users").select("id, is_active, auth_provider").eq(
             "email", email_lower
         ).limit(1).execute()
@@ -113,7 +210,6 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
             user = result.data[0]
             if user.get("is_active") is False:
                 raise HTTPException(status_code=403, detail="Account deactivated")
-            # H2: 既に Supabase Auth に移行済みなら別 sub での紐付けを拒否
             if user.get("auth_provider") not in (None, "", "cloudflare_access"):
                 logger.warning(
                     "Rejected auth migration: email=%s already bound to provider=%s",
@@ -123,7 +219,6 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
                     status_code=409,
                     detail="Account already linked to another identity",
                 )
-            # auth_provider を supabase に更新（CF Access → Supabase 移行完了マーク）
             try:
                 supabase.table("users").update({
                     "auth_provider": "supabase",
@@ -148,7 +243,6 @@ def _resolve_user_by_jwt(sub: str, email: str) -> str:
         user_id = create.data[0]["id"]
         logger.info("New Supabase Auth user: %s -> %s", user_email[:3] + "***", user_id)
     except Exception as e:
-        # 競合: 別リクエストが先に作成済み
         logger.warning("User creation race for sub=%s: %s", sub[:8], e)
         retry = supabase.table("users").select("id").eq(
             "auth_provider_id", sub
@@ -259,7 +353,7 @@ async def require_auth(
         # Sentry: エラー発生時にユーザーを特定するためのコンテキスト
         sentry_sdk.set_user({"id": sub})
 
-        return _resolve_user_by_jwt(sub, email)
+        return await _resolve_user_by_jwt(sub, email)
 
     raise HTTPException(
         status_code=401,

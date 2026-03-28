@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 
-from .config import get_supabase
+from .config import get_conn
 from .db import upsert_portfolio_snapshots
 
 logger = logging.getLogger("batch.backfill")
@@ -42,18 +42,17 @@ def backfill_snapshots(since: str = "2024-06-01") -> int:
     営業日ごとのスナップショットを生成して upsert。
     Returns: upsert した行数
     """
-    sb = get_supabase()
+    conn = get_conn()
     logger.info(f"Backfilling portfolio snapshots since {since}")
 
     # 1. 全ユーザーの取引を取得
-    trades_result = (
-        sb.table("trades")
-        .select("*")
-        .gte("trade_date", since)
-        .order("trade_date", desc=False)
-        .execute()
-    )
-    trades = trades_result.data or []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM trades WHERE trade_date >= %s ORDER BY trade_date",
+            (since,),
+        )
+        col_names = [desc[0] for desc in cur.description]
+        trades = [dict(zip(col_names, row)) for row in cur.fetchall()]
     if not trades:
         logger.info("No trades found — nothing to backfill")
         return 0
@@ -67,8 +66,11 @@ def backfill_snapshots(since: str = "2024-06-01") -> int:
     all_tickers = sorted({t["ticker"] for t in trades})
 
     # 取引より前のポジションも含めるため、既存 holdings を取得
-    holdings_result = sb.table("holdings").select("*").execute()
-    for h in holdings_result.data or []:
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM holdings")
+        h_col_names = [desc[0] for desc in cur.description]
+        holdings_rows = [dict(zip(h_col_names, row)) for row in cur.fetchall()]
+    for h in holdings_rows:
         all_tickers = sorted(set(all_tickers) | {h["ticker"]})
 
     logger.info(f"  Users: {len(trades_by_user)}, Tickers: {all_tickers}")
@@ -80,7 +82,7 @@ def backfill_snapshots(since: str = "2024-06-01") -> int:
     logger.info(f"  Price history: {len(price_history)} trading days")
 
     # 4. USD/JPY の過去レートを取得
-    fx_history = _get_fx_history(sb, since)
+    fx_history = _get_fx_history(conn, since)
     logger.info(f"  FX history: {len(fx_history)} days")
 
     # 5. 営業日リストを生成
@@ -91,7 +93,7 @@ def backfill_snapshots(since: str = "2024-06-01") -> int:
     trading_days = sorted(price_history.keys())
 
     # 6. 取引前の初期保有状態を構築（since より前の取引から）
-    initial_state = _build_initial_state(sb, trades_by_user, since)
+    initial_state = _build_initial_state(conn, trades_by_user, since)
 
     # 7. 各ユーザーの日次スナップショットを生成
     all_rows = []
@@ -230,21 +232,19 @@ def _download_history(
     return result
 
 
-def _get_fx_history(sb, since: str) -> dict[str, float]:
+def _get_fx_history(conn, since: str) -> dict[str, float]:
     """market_indicators テーブルから USD/JPY の日次履歴を取得。"""
     fx: dict[str, float] = {}
     try:
-        result = (
-            sb.table("market_indicators")
-            .select("date, usdjpy")
-            .gte("date", since)
-            .not_.is_("usdjpy", "null")
-            .order("date")
-            .execute()
-        )
-        for row in result.data or []:
-            if row.get("usdjpy"):
-                fx[row["date"]] = float(row["usdjpy"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT date, usdjpy FROM market_indicators "
+                "WHERE date >= %s AND usdjpy IS NOT NULL ORDER BY date",
+                (since,),
+            )
+            for row_date, usdjpy in cur.fetchall():
+                if usdjpy:
+                    fx[str(row_date)] = float(usdjpy)
     except Exception as e:
         logger.warning(f"Failed to get FX history: {e}")
 
@@ -267,7 +267,7 @@ def _get_fx_history(sb, since: str) -> dict[str, float]:
 
 
 def _build_initial_state(
-    sb, trades_by_user: dict[str, list[dict]], since: str
+    conn, trades_by_user: dict[str, list[dict]], since: str
 ) -> dict[str, dict[str, dict]]:
     """
     since より前の取引から、各ユーザーの初期保有状態を構築。
@@ -277,15 +277,13 @@ def _build_initial_state(
 
     for user_id in trades_by_user:
         # since 以前の取引を取得
-        pre_trades_result = (
-            sb.table("trades")
-            .select("*")
-            .eq("user_id", user_id)
-            .lt("trade_date", since)
-            .order("trade_date", desc=False)
-            .execute()
-        )
-        pre_trades = pre_trades_result.data or []
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM trades WHERE user_id = %s AND trade_date < %s ORDER BY trade_date",
+                (user_id, since),
+            )
+            col_names = [desc[0] for desc in cur.description]
+            pre_trades = [dict(zip(col_names, row)) for row in cur.fetchall()]
 
         state: dict[str, dict] = {}
         for trade in pre_trades:

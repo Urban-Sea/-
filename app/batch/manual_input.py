@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-手動入力データ管理CLI — Supabase manual_inputs テーブル
+手動入力データ管理CLI — manual_inputs テーブル (psycopg2)
 
 使用方法:
     python manual_input.py list                           # 入力済みデータ一覧
@@ -17,7 +17,7 @@ from pathlib import Path
 
 # プロジェクトルートからconfig読み込み
 sys.path.insert(0, str(Path(__file__).parent))
-from config import get_supabase
+from config import get_conn
 
 REVISION_TOLERANCE = 0.0001
 
@@ -36,28 +36,32 @@ ALIASES = {
 
 def list_data():
     """入力済みデータ一覧"""
-    supabase = get_supabase()
+    conn = get_conn()
     print("=" * 60)
     print("manual_inputs データ一覧")
     print("=" * 60)
 
-    for metric, name in METRICS.items():
-        result = supabase.table("manual_inputs") \
-            .select("reference_date,value,notes") \
-            .eq("metric", metric) \
-            .order("reference_date", desc=True).limit(6).execute()
+    with conn.cursor() as cur:
+        for metric, name in METRICS.items():
+            cur.execute(
+                "SELECT reference_date, value, notes FROM manual_inputs "
+                "WHERE metric = %s ORDER BY reference_date DESC LIMIT 6",
+                (metric,),
+            )
+            rows = cur.fetchall()
 
-        print(f"\n【{metric}】{name}")
-        if result.data:
-            for row in result.data:
-                note = f" ({row['notes']})" if row.get("notes") else ""
-                print(f"  {row['reference_date']}: {row['value']}{note}")
-        else:
-            print("  データなし")
+            print(f"\n【{metric}】{name}")
+            if rows:
+                for ref_date, value, notes in rows:
+                    note = f" ({notes})" if notes else ""
+                    print(f"  {ref_date}: {value}{note}")
+            else:
+                print("  データなし")
 
-    # 総数
-    total = supabase.table("manual_inputs").select("id", count="exact").execute()
-    print(f"\n合計: {total.count}件")
+        # 総数
+        cur.execute("SELECT COUNT(*) FROM manual_inputs")
+        total = cur.fetchone()[0]
+        print(f"\n合計: {total}件")
 
 
 def add_metric(args):
@@ -85,48 +89,45 @@ def add_metric(args):
 
     note = args[3] if len(args) > 3 else None
 
-    supabase = get_supabase()
+    conn = get_conn()
 
     # 修正検知: 既存データがあれば比較
-    existing = supabase.table("manual_inputs") \
-        .select("value") \
-        .eq("metric", metric_key) \
-        .eq("reference_date", date_str) \
-        .execute()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT value FROM manual_inputs WHERE metric = %s AND reference_date = %s",
+            (metric_key, date_str),
+        )
+        existing = cur.fetchone()
 
     old_value = None
-    if existing.data:
-        old_value = float(existing.data[0]["value"])
+    if existing:
+        old_value = float(existing[0])
         diff = value - old_value
         if abs(diff) > REVISION_TOLERANCE:
             pct = (diff / abs(old_value) * 100) if old_value != 0 else None
             direction = "上方修正" if diff > 0 else "下方修正"
-            revision = {
-                "table_name": "manual_inputs",
-                "record_date": date_str,
-                "column_name": metric_key,
-                "old_value": round(old_value, 6),
-                "new_value": round(value, 6),
-                "change_amount": round(diff, 6),
-                "change_pct": round(pct, 4) if pct is not None else None,
-                "direction": direction,
-                "batch_run_id": f"manual-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            }
-            supabase.table("data_revisions").insert(revision).execute()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO data_revisions "
+                    "(table_name, record_date, column_name, old_value, new_value, "
+                    "change_amount, change_pct, direction, batch_run_id) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    ("manual_inputs", date_str, metric_key,
+                     round(old_value, 6), round(value, 6), round(diff, 6),
+                     round(pct, 4) if pct is not None else None,
+                     direction, f"manual-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+                )
             print(f"📝 {direction}: {old_value} → {value} ({diff:+.1f}, {pct:+.2f}%)" if pct else
                   f"📝 {direction}: {old_value} → {value} ({diff:+.1f})")
 
-    row = {
-        "metric": metric_key,
-        "reference_date": date_str,
-        "value": value,
-    }
-    if note:
-        row["notes"] = note
-
-    supabase.table("manual_inputs").upsert(
-        row, on_conflict="metric,reference_date"
-    ).execute()
+    # Upsert
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO manual_inputs (metric, reference_date, value, notes) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (metric, reference_date) DO UPDATE SET value = EXCLUDED.value, notes = EXCLUDED.notes",
+            (metric_key, date_str, value, note),
+        )
 
     if old_value is not None and abs(value - old_value) <= REVISION_TOLERANCE:
         print(f"✅ {metric_key} {date_str} = {value} (変更なし)")
@@ -161,7 +162,7 @@ def load_adp():
             "metric": "ADP_CHANGE",
             "reference_date": rows[i]["date"],
             "value": round(change, 1),
-            "notes": f"ADP Private Employment MoM change (auto-calculated from level data)",
+            "notes": "ADP Private Employment MoM change (auto-calculated from level data)",
         })
 
     print(f"ADP月次変化: {len(changes)}件 計算完了")
@@ -173,13 +174,15 @@ def load_adp():
     for c in changes[-12:]:
         print(f"  {c['reference_date']}: {c['value']:+.1f}K")
 
+    conn = get_conn()
+
     # 修正検知: 既存データを取得
-    supabase = get_supabase()
-    existing_rows = supabase.table("manual_inputs") \
-        .select("reference_date,value") \
-        .eq("metric", "ADP_CHANGE") \
-        .order("reference_date").execute()
-    existing_map = {r["reference_date"]: float(r["value"]) for r in (existing_rows.data or [])}
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT reference_date, value FROM manual_inputs "
+            "WHERE metric = 'ADP_CHANGE' ORDER BY reference_date"
+        )
+        existing_map = {str(r[0]): float(r[1]) for r in cur.fetchall()}
 
     # 修正検知して data_revisions に記録
     revisions = []
@@ -206,23 +209,30 @@ def load_adp():
         })
 
     if revisions:
-        for i in range(0, len(revisions), 50):
-            supabase.table("data_revisions").insert(revisions[i:i + 50]).execute()
+        rev_cols = ["table_name", "record_date", "column_name", "old_value", "new_value",
+                    "change_amount", "change_pct", "direction", "batch_run_id"]
+        from psycopg2.extras import execute_values
+        with conn.cursor() as cur:
+            sql = f"INSERT INTO data_revisions ({', '.join(rev_cols)}) VALUES %s"
+            values = [tuple(r[c] for c in rev_cols) for r in revisions]
+            execute_values(cur, sql, values, page_size=50)
         print(f"\n📝 修正検知: {len(revisions)}件")
         for r in revisions[:5]:
             print(f"  {r['record_date']}: {r['old_value']} → {r['new_value']} ({r['direction']})")
         if len(revisions) > 5:
             print(f"  ... 他 {len(revisions) - 5}件")
 
-    # Supabaseに投入
-    batch_size = 50
+    # PostgreSQL に投入
+    from psycopg2.extras import execute_values
     total_upserted = 0
-    for i in range(0, len(changes), batch_size):
-        batch = changes[i:i + batch_size]
-        supabase.table("manual_inputs").upsert(
-            batch, on_conflict="metric,reference_date"
-        ).execute()
-        total_upserted += len(batch)
+    with conn.cursor() as cur:
+        sql = ("INSERT INTO manual_inputs (metric, reference_date, value, notes) VALUES %s "
+               "ON CONFLICT (metric, reference_date) DO UPDATE SET value = EXCLUDED.value, notes = EXCLUDED.notes")
+        values = [(c["metric"], c["reference_date"], c["value"], c["notes"]) for c in changes]
+        for i in range(0, len(values), 50):
+            batch = values[i:i + 50]
+            execute_values(cur, sql, batch, page_size=50)
+            total_upserted += len(batch)
 
     print(f"\n✅ {total_upserted}件を manual_inputs に投入完了")
 

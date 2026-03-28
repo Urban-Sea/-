@@ -1,6 +1,6 @@
 """
 Open Regime バックエンド API
-FastAPI + Supabase
+FastAPI + asyncpg (Docker) / Supabase (Cloud Run フォールバック)
 """
 import os
 import hmac
@@ -18,6 +18,7 @@ import sentry_sdk
 
 _logger = logging.getLogger(__name__)
 
+from db import init_pool, close_pool
 from routers import stocks, signal, regime, liquidity, employment, market_state, holdings, trades, exit, stock, fx, watchlist, users, admin, admin_mfa
 
 _IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -119,9 +120,15 @@ async def lifespan(app: FastAPI):
             os.getenv("ENVIRONMENT", "development"),
         )
 
-    # 起動時: Supabase接続
+    # 起動時: asyncpg pool (Docker 環境)
+    if os.getenv("DB_HOST"):
+        await init_pool()
+        print("✅ asyncpg pool initialized")
+    else:
+        print("⚠️ DB_HOST not set — asyncpg pool skipped")
+
+    # 起動時: Supabase接続 (Cloud Run フォールバック)
     supabase_url = (os.getenv("SUPABASE_URL") or "").strip()
-    # service_role キーを優先（RLSバイパス）、なければ anon key にフォールバック
     raw_key = os.getenv("SUPABASE_KEY", "").strip()
     raw_anon = os.getenv("SUPABASE_ANON_KEY", "").strip()
     supabase_key = raw_key or raw_anon
@@ -131,11 +138,12 @@ async def lifespan(app: FastAPI):
         supabase = create_client(supabase_url, supabase_key)
         print(f"✅ Supabase connected ({key_type} key): {supabase_url[:30]}...")
     else:
-        print(f"⚠️ Supabase credentials not found (key_type={key_type})")
+        print(f"⚠️ Supabase credentials not found — CRUD routers will not work")
 
     yield
 
     # 終了時
+    await close_pool()
     print("👋 Shutting down...")
 
 
@@ -327,4 +335,4 @@ def get_supabase() -> Client:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8081")), reload=True)
