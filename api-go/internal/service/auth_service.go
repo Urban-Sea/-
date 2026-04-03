@@ -74,6 +74,29 @@ func (s *AuthService) ValidateJWT(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
+// ValidateJWTForRefresh parses and verifies the token signature without checking exp.
+// Instead, it checks that the token was issued (iat) within the last 7 days.
+// This allows refreshing expired tokens while limiting the refresh window.
+func (s *AuthService) ValidateJWTForRefresh(tokenStr string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	}, jwt.WithoutClaimsValidation())
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+	if claims.IssuedAt == nil || time.Since(claims.IssuedAt.Time) > 7*24*time.Hour {
+		return nil, fmt.Errorf("token too old for refresh")
+	}
+	return claims, nil
+}
+
 // GetUser returns a user by ID, checking Redis cache first, then falling back to DB.
 func (s *AuthService) GetUser(ctx context.Context, userID string) (*model.User, error) {
 	cacheKey := "user:" + userID

@@ -36,46 +36,50 @@ import type {
   WatchlistsResponse,
 } from '@/types';
 
-import { getAccessToken, setAccessToken, isRedirecting, markRedirecting } from './auth-store';
-import { supabase } from './supabase';
+import { isRedirecting, markRedirecting } from './auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+export async function refreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = fetch(`${API_URL}/api/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  }).then(r => r.ok).finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = false): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const token = getAccessToken();
-  let response = await fetch(url, {
+  const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
 
-  // B1: 401 → トークンリフレッシュして再試行
-  if (response.status === 401) {
-    const { data } = await supabase.auth.refreshSession();
-    if (data.session?.access_token) {
-      setAccessToken(data.session.access_token);
-      response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${data.session.access_token}`,
-          ...options?.headers,
-        },
-      });
+  if (response.status === 401 && !isRetry) {
+    const refreshed = await refreshToken();
+    if (refreshed) {
+      return fetchAPI(endpoint, options, true);
     }
-    if (response.status === 401) {
-      if (typeof window !== 'undefined' && !isRedirecting()) {
-        markRedirecting();
-        await supabase.auth.signOut();
-        setAccessToken(null);
-        window.location.href = '/login/';
-      }
-      throw new Error('Session expired');
+    if (typeof window !== 'undefined' && !isRedirecting()) {
+      markRedirecting();
+      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      window.location.href = '/login/';
     }
+    throw new ApiError(401, 'Session expired');
   }
 
   if (!response.ok) {
@@ -86,7 +90,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     } catch {
       // ignore parse error
     }
-    throw new Error(`API Error ${response.status}: ${detail}`);
+    throw new ApiError(response.status, `API Error ${response.status}: ${detail}`);
   }
 
   return response.json();

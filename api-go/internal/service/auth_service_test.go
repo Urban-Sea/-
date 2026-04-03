@@ -82,3 +82,75 @@ func TestValidateJWT_Garbage(t *testing.T) {
 		t.Fatal("ValidateJWT should fail for garbage input")
 	}
 }
+
+func TestValidateJWTForRefresh_RecentlyIssued(t *testing.T) {
+	svc := &AuthService{jwtSecret: []byte(testSecret)}
+
+	// Token issued 1 hour ago, expired (exp = iat + 24h is irrelevant here)
+	iat := time.Now().Add(-1 * time.Hour)
+	claims := Claims{
+		UserID: "user-123",
+		Email:  "test@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(iat),
+			ExpiresAt: jwt.NewNumericDate(iat.Add(24 * time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, _ := token.SignedString([]byte(testSecret))
+
+	got, err := svc.ValidateJWTForRefresh(signed)
+	if err != nil {
+		t.Fatalf("ValidateJWTForRefresh should pass for recently issued token: %v", err)
+	}
+	if got.UserID != "user-123" {
+		t.Errorf("UserID = %q, want %q", got.UserID, "user-123")
+	}
+}
+
+func TestValidateJWTForRefresh_TooOld(t *testing.T) {
+	svc := &AuthService{jwtSecret: []byte(testSecret)}
+
+	// Token issued 8 days ago — beyond the 7-day refresh window
+	iat := time.Now().Add(-8 * 24 * time.Hour)
+	claims := Claims{
+		UserID: "user-123",
+		Email:  "test@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(iat),
+			ExpiresAt: jwt.NewNumericDate(iat.Add(24 * time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, _ := token.SignedString([]byte(testSecret))
+
+	_, err := svc.ValidateJWTForRefresh(signed)
+	if err == nil {
+		t.Fatal("ValidateJWTForRefresh should fail for token issued 8 days ago")
+	}
+}
+
+func TestValidateJWTForRefresh_ExpiredButRecent(t *testing.T) {
+	svc := &AuthService{jwtSecret: []byte(testSecret)}
+
+	// Token issued 2 days ago, expired 1 day ago — should still be refreshable
+	iat := time.Now().Add(-2 * 24 * time.Hour)
+	claims := Claims{
+		UserID: "user-123",
+		Email:  "test@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(iat),
+			ExpiresAt: jwt.NewNumericDate(iat.Add(24 * time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, _ := token.SignedString([]byte(testSecret))
+
+	got, err := svc.ValidateJWTForRefresh(signed)
+	if err != nil {
+		t.Fatalf("ValidateJWTForRefresh should pass for expired but recently issued token: %v", err)
+	}
+	if got.Email != "test@example.com" {
+		t.Errorf("Email = %q, want %q", got.Email, "test@example.com")
+	}
+}

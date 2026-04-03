@@ -139,7 +139,7 @@ func (h *AuthHandler) GoogleCallback(c echo.Context) error {
 	// Set HttpOnly cookie.
 	h.setTokenCookie(c, jwt, 86400)
 
-	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/auth/callback")
+	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/auth/callback/")
 }
 
 // RefreshToken validates the existing JWT cookie and issues a fresh one.
@@ -151,7 +151,7 @@ func (h *AuthHandler) RefreshToken(c echo.Context) error {
 		})
 	}
 
-	claims, err := h.authSvc.ValidateJWT(cookie.Value)
+	claims, err := h.authSvc.ValidateJWTForRefresh(cookie.Value)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{
 			"detail": "Invalid token",

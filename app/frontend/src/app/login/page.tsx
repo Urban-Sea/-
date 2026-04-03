@@ -2,23 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import Image from 'next/image';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { useUser } from '@/components/providers/UserProvider';
 import { GlassCard } from '@/components/shared/glass';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export default function LoginPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useUser();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -26,35 +20,16 @@ export default function LoginPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (err) {
-      setError(
-        err.message === 'Invalid login credentials'
-          ? 'メールアドレスまたはパスワードが正しくありません'
-          : err.message,
-      );
-      setLoading(false);
-      return;
-    }
-
-    router.replace('/');
+  const handleGoogleLogin = () => {
+    window.location.href = `${API_URL}/api/auth/google`;
   };
 
-  const handleGoogleLogin = async () => {
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback/`,
-      },
-    });
-    if (err) setError(err.message);
-  };
+  // URL にエラーパラメータがあれば表示
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get('error');
+    if (err) setError(decodeURIComponent(err));
+  }, []);
 
   if (authLoading || isAuthenticated) {
     return (
@@ -76,7 +51,12 @@ export default function LoginPage() {
 
         {/* Google OAuth */}
         <GlassCard>
-          <div className="p-5">
+          <div className="p-5 space-y-4">
+            {error && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                {error}
+              </div>
+            )}
             <Button variant="outline" className="w-full" onClick={handleGoogleLogin}>
               <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
                 <path
@@ -100,77 +80,6 @@ export default function LoginPage() {
             </Button>
           </div>
         </GlassCard>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs text-muted-foreground">または</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
-        {/* Email/Password */}
-        <GlassCard>
-          <form onSubmit={handleLogin} className="p-5 space-y-4">
-            {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-                {error}
-                {error.includes('パスワード') && (
-                  <Link href="/reset-password/" className="block mt-2 text-blue-500 hover:underline text-xs">
-                    パスワードをリセットする
-                  </Link>
-                )}
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">メールアドレス</label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between">
-                <label className="text-xs text-muted-foreground">パスワード</label>
-                <Link href="/reset-password/" className="text-xs text-blue-500 hover:underline">
-                  パスワードを忘れた場合
-                </Link>
-              </div>
-              <div className="relative">
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="パスワードを入力"
-                  required
-                  autoComplete="current-password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'ログイン'}
-            </Button>
-          </form>
-        </GlassCard>
-
-        <p className="text-center text-sm text-muted-foreground">
-          アカウントをお持ちでない方{' '}
-          <Link href="/register/" className="text-blue-500 hover:underline">
-            新規登録
-          </Link>
-        </p>
       </div>
     </div>
   );

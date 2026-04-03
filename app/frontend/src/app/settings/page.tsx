@@ -96,7 +96,7 @@ function AccountContent() {
             </div>
             <div>
               <p className="text-sm font-medium">{email || '未認証'}</p>
-              <p className="text-xs text-muted-foreground">Supabase Auth 認証</p>
+              <p className="text-xs text-muted-foreground">Google 認証</p>
             </div>
           </div>
         </div>

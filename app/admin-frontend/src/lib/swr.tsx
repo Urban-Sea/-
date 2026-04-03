@@ -1,22 +1,41 @@
 'use client';
 
 import { SWRConfig } from 'swr';
-import { getAuthEmail } from './auth-store';
 import { getMfaToken } from './mfa-store';
+import { refreshToken, ApiError } from './api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function swrFetcher<T>(endpoint: string): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const email = getAuthEmail();
   const mfaToken = getMfaToken();
-  const response = await fetch(url, {
+  let response = await fetch(url, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'X-User-Email': email } : {}),
       ...(mfaToken ? { 'X-MFA-Token': mfaToken } : {}),
     },
   });
+
+  if (response.status === 401) {
+    const refreshed = await refreshToken();
+    if (refreshed) {
+      response = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getMfaToken() ? { 'X-MFA-Token': getMfaToken()! } : {}),
+        },
+      });
+    }
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+        window.location.href = '/login/';
+      }
+      throw new ApiError(401, 'Session expired');
+    }
+  }
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -26,7 +45,7 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
     } catch {
       // ignore parse error
     }
-    throw new Error(`API Error ${response.status}: ${detail}`);
+    throw new ApiError(response.status, `API Error ${response.status}: ${detail}`);
   }
 
   return response.json();
@@ -40,6 +59,11 @@ export function SWRProvider({ children }: { children: React.ReactNode }) {
         revalidateOnFocus: false,
         dedupingInterval: 2000,
         errorRetryCount: 2,
+        onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
+          if (error instanceof ApiError && [401, 403, 404].includes(error.status)) return;
+          if (retryCount >= 3) return;
+          setTimeout(() => revalidate({ retryCount }), 2 ** retryCount * 1000);
+        },
       }}
     >
       {children}

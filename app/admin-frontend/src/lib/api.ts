@@ -1,22 +1,50 @@
 import useSWR from 'swr';
-import { getAuthEmail } from './auth-store';
 import { getMfaToken } from './mfa-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+export async function refreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = fetch(`${API_URL}/api/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  }).then(r => r.ok).finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = false): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const email = getAuthEmail();
   const mfaToken = getMfaToken();
   const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(email ? { 'X-User-Email': email } : {}),
       ...(mfaToken ? { 'X-MFA-Token': mfaToken } : {}),
       ...options?.headers,
     },
   });
+
+  if (response.status === 401 && !isRetry) {
+    const refreshed = await refreshToken();
+    if (refreshed) {
+      return fetchAPI(endpoint, options, true);
+    }
+    if (typeof window !== 'undefined') {
+      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      window.location.href = '/login/';
+    }
+    throw new ApiError(401, 'Session expired');
+  }
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -26,7 +54,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     } catch {
       // ignore parse error
     }
-    throw new Error(`API Error ${response.status}: ${detail}`);
+    throw new ApiError(response.status, `API Error ${response.status}: ${detail}`);
   }
 
   return response.json();
@@ -130,7 +158,7 @@ export async function startMfaSetup(): Promise<MfaSetupResponse> {
 }
 
 export async function verifyMfaSetup(code: string): Promise<MfaVerifyResponse> {
-  return fetchAPI('/api/admin/mfa/setup/verify', {
+  return fetchAPI('/api/admin/mfa/verify-setup', {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
@@ -147,9 +175,8 @@ export async function checkMfaSession(): Promise<MfaSessionResponse> {
   return fetchAPI('/api/admin/mfa/session');
 }
 
-/** H4: サーバー側で MFA セッションを無効化 */
 export async function logoutMfa(): Promise<{ status: string }> {
-  return fetchAPI('/api/admin/mfa/session', { method: 'DELETE' });
+  return fetchAPI('/api/admin/mfa/session/logout', { method: 'POST' });
 }
 
 // ============================================================

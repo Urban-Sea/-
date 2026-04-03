@@ -1,18 +1,21 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { setAuthEmail } from '@/lib/auth-store';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface UserContextType {
   email: string | null;
   initial: string;
   isLoading: boolean;
+  signOut: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType>({
   email: null,
   initial: '?',
   isLoading: true,
+  signOut: async () => {},
 });
 
 export function useUser() {
@@ -24,24 +27,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/cdn-cgi/access/get-identity')
+    fetch(`${API_URL}/api/auth/me`, { credentials: 'include' })
       .then(res => {
         if (!res.ok) throw new Error('Not authenticated');
         return res.json();
       })
       .then(data => {
-        const userEmail = data.email || null;
-        setAuthEmail(userEmail);
-        setEmail(userEmail);
+        setEmail(data.email || null);
       })
       .catch(() => {
-        setAuthEmail(null);
         setEmail(null);
+        window.location.href = '/login/';
       })
       .finally(() => setIsLoading(false));
   }, []);
 
   const initial = email ? email.charAt(0).toUpperCase() : '?';
+
+  const signOut = async () => {
+    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+    window.location.href = '/login/';
+  };
 
   if (isLoading) {
     return (
@@ -52,7 +58,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UserContext.Provider value={{ email, initial, isLoading }}>
+    <UserContext.Provider value={{ email, initial, isLoading, signOut }}>
       {children}
     </UserContext.Provider>
   );

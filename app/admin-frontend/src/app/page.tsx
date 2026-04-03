@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { MfaGate } from '@/components/mfa/MfaGate';
 import { clearMfaToken } from '@/lib/mfa-store';
 import { logoutMfa } from '@/lib/api';
+import { useUser } from '@/components/providers/UserProvider';
 
 // ============================================================
 // Constants
@@ -83,6 +84,7 @@ function formatDateTime(iso: string | null): string {
 export default function AdminPage() {
   const { data: me, isLoading: meLoading } = useMe();
   const { theme, setTheme } = useTheme();
+  const { signOut } = useUser();
   const [activeTab, setActiveTab] = useState<TabKey>('users');
 
   if (meLoading) {
@@ -98,8 +100,8 @@ export default function AdminPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Shield className="w-12 h-12 text-muted-foreground/50" />
         <p className="text-muted-foreground">アクセス権限がありません</p>
-        <Button variant="outline" asChild>
-          <a href="/cdn-cgi/access/logout">ログアウト</a>
+        <Button variant="outline" onClick={signOut}>
+          ログアウト
         </Button>
       </div>
     );
@@ -127,7 +129,7 @@ export default function AdminPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { logoutMfa().catch(() => {}); clearMfaToken(); window.location.href = '/cdn-cgi/access/logout'; }}
+                onClick={() => { logoutMfa().catch(() => {}); clearMfaToken(); signOut(); }}
               >
                 ログアウト
               </Button>

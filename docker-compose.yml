@@ -128,6 +128,8 @@ services:
     depends_on:
       api-python:
         condition: service_started
+      api-go:
+        condition: service_started
     mem_limit: 256m
     cpus: 0.5
     restart: unless-stopped
