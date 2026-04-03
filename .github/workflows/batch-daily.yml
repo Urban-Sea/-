@@ -1,10 +1,11 @@
 name: Daily Batch
 
 on:
-  schedule:
-    # 7:30 JST = 22:30 UTC (前日)
-    - cron: '30 22 * * *'
-  workflow_dispatch: # 手動実行も可能
+  # schedule:
+  #   # 7:30 JST = 22:30 UTC (前日)
+  #   - cron: '30 22 * * *'
+  # VPS 移行後は docker compose run --rm batch で cron 実行に切り替え
+  workflow_dispatch: # 手動実行のみ
 
 jobs:
   batch:
@@ -25,8 +26,10 @@ jobs:
       - name: Run daily batch
         run: python app/batch/run.py --daily --verbose
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'open_regime' }}
+          DB_USER: ${{ secrets.DB_USER || 'app' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}

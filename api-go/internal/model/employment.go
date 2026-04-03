@@ -6,7 +6,7 @@ import "time"
 type EconomicIndicator struct {
 	ID                       int        `json:"id"                         db:"id"`
 	Indicator                string     `json:"indicator"                  db:"indicator"`
-	ReferencePeriod          string     `json:"reference_period"           db:"reference_period"`
+	ReferencePeriod          DateOnly   `json:"reference_period"           db:"reference_period"`
 	CurrentValue             *float64   `json:"current_value"              db:"current_value"`
 	RevisionCount            int        `json:"revision_count"             db:"revision_count"`
 	NFPChange                *int       `json:"nfp_change"                 db:"nfp_change"`
@@ -22,7 +22,7 @@ type EconomicIndicator struct {
 
 // WeeklyClaims represents a row in the weekly_claims table.
 type WeeklyClaims struct {
-	WeekEnding         string    `json:"week_ending"            db:"week_ending"`
+	WeekEnding         DateOnly  `json:"week_ending"            db:"week_ending"`
 	InitialClaims      *int      `json:"initial_claims"         db:"initial_claims"`
 	ContinuedClaims    *int      `json:"continued_claims"       db:"continued_claims"`
 	InitialClaims4WAvg *int      `json:"initial_claims_4w_avg"  db:"initial_claims_4w_avg"`
@@ -36,7 +36,7 @@ type EconomicIndicatorRevision struct {
 	IndicatorID     int       `json:"indicator_id"        db:"indicator_id"`
 	RevisionNumber  int       `json:"revision_number"     db:"revision_number"`
 	Value           *float64  `json:"value"               db:"value"`
-	PublishedDate   *string   `json:"published_date"      db:"published_date"`
+	PublishedDate   *DateOnly `json:"published_date"      db:"published_date"`
 	ChangeFromPrev  *float64  `json:"change_from_prev"    db:"change_from_prev"`
 	ChangePctPrev   *float64  `json:"change_pct_from_prev" db:"change_pct_from_prev"`
 	Notes           *string   `json:"notes"               db:"notes"`

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/sync/errgroup"
 
@@ -894,6 +895,12 @@ func getFloatFromMap(m map[string]any, key string) *float64 {
 	case int64:
 		f := float64(n)
 		return &f
+	case pgtype.Numeric:
+		f, err := n.Float64Value()
+		if err != nil || !f.Valid {
+			return nil
+		}
+		return &f.Float64
 	default:
 		return nil
 	}

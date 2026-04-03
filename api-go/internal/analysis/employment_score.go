@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/open-regime/api-go/internal/model"
 )
 
@@ -77,6 +79,12 @@ func getFloat(m map[string]any, key string) *float64 {
 	case int64:
 		f := float64(n)
 		return &f
+	case pgtype.Numeric:
+		f, err := n.Float64Value()
+		if err != nil || !f.Valid {
+			return nil
+		}
+		return &f.Float64
 	default:
 		return nil
 	}
@@ -99,6 +107,13 @@ func getInt(m map[string]any, key string) *int {
 	case float64:
 		i := int(n)
 		return &i
+	case pgtype.Numeric:
+		f, err := n.Float64Value()
+		if err != nil || !f.Valid {
+			return nil
+		}
+		i := int(f.Float64)
+		return &i
 	default:
 		return nil
 	}
@@ -109,11 +124,14 @@ func getString(m map[string]any, key string) string {
 	if !ok || v == nil {
 		return ""
 	}
-	s, ok := v.(string)
-	if !ok {
+	switch t := v.(type) {
+	case string:
+		return t
+	case time.Time:
+		return t.Format("2006-01-02")
+	default:
 		return fmt.Sprintf("%v", v)
 	}
-	return s
 }
 
 func minInt(a, b int) int {

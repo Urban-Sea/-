@@ -1,11 +1,12 @@
 name: Weekly Batch
 
 on:
-  schedule:
-    # 毎週土曜 8:00 JST = 金曜 23:00 UTC
-    # 金曜の米雇用統計（第1金曜）やFRBデータ更新後に実行
-    - cron: '0 23 * * 5'
-  workflow_dispatch: # 手動実行も可能
+  # schedule:
+  #   # 毎週土曜 8:00 JST = 金曜 23:00 UTC
+  #   # 金曜の米雇用統計（第1金曜）やFRBデータ更新後に実行
+  #   - cron: '0 23 * * 5'
+  # VPS 移行後は docker compose run --rm batch で cron 実行に切り替え
+  workflow_dispatch: # 手動実行のみ
 
 jobs:
   batch:
@@ -26,8 +27,10 @@ jobs:
       - name: Run weekly batch
         run: python app/batch/run.py --weekly --verbose
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'open_regime' }}
+          DB_USER: ${{ secrets.DB_USER || 'app' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}

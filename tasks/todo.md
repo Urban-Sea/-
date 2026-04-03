@@ -162,21 +162,188 @@
 
 ---
 
-# Step 5: Feature Gate 実装（未着手）
+# VPS移行 レーンB: api-go 骨格 + CRUD移植
 
-> 設計仕様: `tasks/feature-gate.md` 参照
+> 作成: 2026-03-28
+> ステータス: 実装中
 
-- [ ] Worker: 回数制限ミドルウェア追加（Redis INCR）
-- [ ] Worker: 数量制限チェック追加（holdings, cash_balances）
-- [ ] Worker: Pro 限定エンドポイント制限追加
-- [ ] Frontend: `useMe()` で plan 取得 → 制限 UI 表示
-- [ ] Frontend: `<UpgradePrompt>` コンポーネント作成
-- [ ] Frontend: 運用モードセレクタの Free 制限
-- [ ] テスト: Free/Pro 両プランでの動作確認
+## 全体像
+
+Worker (TypeScript/Cloudflare) の CRUD 66ep + 認証 + Stripe を Go (Echo) に移植。
+本番 Worker/Cloud Run は一切触らない。ローカル Docker で動作確認のみ。
 
 ---
 
-# UI 改修タスク（未着手）
+## Part 1: Step 3 — api-go 骨格 + 認証
 
-- [ ] 用語解説の改修（既存の用語説明を見直し・拡充）
-- [ ] ダッシュボード・各タブのシステム解説改修（使い方・見方の説明を改善）
+### 3-1. Go module + ディレクトリ構成 ← ✅
+
+```
+api-go/
+├── cmd/server/main.go           # エントリーポイント
+├── internal/
+│   ├── config/config.go         # 環境変数読み込み
+│   ├── middleware/
+│   │   ├── auth.go              # JWT Cookie 検証
+│   │   ├── admin.go             # Admin + MFA 検証
+│   │   ├── cors.go              # CORS
+│   │   ├── ratelimit.go         # Redis ベースレート制限
+│   │   └── security.go          # セキュリティヘッダー
+│   ├── handler/
+│   │   ├── auth.go              # Google OAuth (4ep)
+│   │   ├── users.go             # /api/me (2ep)
+│   │   └── ...                  # Step 4 で追加
+│   ├── model/user.go            # 構造体定義
+│   ├── repository/user_repo.go  # DB 操作
+│   ├── service/
+│   │   ├── auth_service.go      # JWT 発行/検証
+│   │   └── mfa_service.go       # TOTP + AES
+│   └── testutil/                # テスト用ヘルパー
+├── migrations/
+│   └── 000001_init.up.sql       # db/init/01_schema.sql のコピー
+├── Dockerfile                   # multi-stage → distroless
+├── go.mod
+└── go.sum
+```
+
+**依存ライブラリ:**
+- Echo v4 (HTTP)、pgx v5 (DB)、go-redis v9 (Redis)
+- golang-jwt v5 (JWT)、golang.org/x/oauth2 (Google OAuth)
+- pquerna/otp (TOTP)、go-playground/validator (バリデーション)
+- golang-migrate v4 (DB マイグレーション)
+- sentry-go (エラー監視)、stripe-go v82 (決済)
+
+### 3-2. golang-migrate
+
+- `db/init/01_schema.sql` の内容を `api-go/migrations/000001_init.up.sql` にコピー
+- **main.go の起動時に `migrate.Up()` を自動実行**。失敗時はログ出力して起動継続（既に適用済みの場合は no-op）
+- 以降のスキーマ変更は `000002_xxx.up.sql` で管理
+- docker-compose の postgres entrypoint から init.sql を段階的に外す
+
+### 3-3. Config
+
+| 環境変数 | 説明 | デフォルト |
+|---------|------|-----------|
+| DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD | PostgreSQL | postgres, 5432, open_regime, app, — |
+| REDIS_URL | Redis 接続先 | redis://redis:6379 |
+| JWT_SECRET | 自前 JWT の HS256 秘密鍵 | — (必須) |
+| GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET | Google OAuth | — |
+| GOOGLE_REDIRECT_URL | OAuth コールバック URL | http://localhost/api/auth/google/callback |
+| FRONTEND_URL | Frontend リダイレクト先 | http://localhost |
+| STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID | Stripe | — |
+| ADMIN_EMAILS | カンマ区切りの管理者メール | — |
+| MFA_ENCRYPTION_KEY | AES-256-GCM 用 64文字 hex | — |
+| SENTRY_DSN | Sentry エラー監視 | — (空=無効) |
+| ENVIRONMENT | development / production | development |
+
+### 3-4. Echo + /health
+
+- Recovery, Sentry, CORS, Security Headers, Rate Limit のミドルウェアチェーン
+- `GET /health` → `200 {"status":"ok"}`
+
+### 3-5. JWT 認証
+
+**現在 (Worker):** Authorization: Bearer → Supabase Auth JWKS/HMAC 検証
+**移行後 (Go):** HttpOnly Cookie `token` → 自前 HS256 JWT 検証
+
+```
+Claims: { user_id: UUID, email: string, iat, exp (24h) }
+```
+
+ミドルウェア:
+1. Cookie `token` 読み取り
+2. HS256 署名検証 + expiry チェック
+3. Redis キャッシュ (5min) でユーザー存在・is_active 確認
+4. `c.Set("user_id", ...)` でコンテキストに格納
+
+### 3-6. Google OAuth
+
+| エンドポイント | 処理 |
+|---------------|------|
+| `GET /api/auth/google` | CSRF state → Redis (10min), Google 同意画面リダイレクト |
+| `GET /api/auth/google/callback` | state 検証 → トークン交換 → userinfo → DB upsert → JWT Cookie → Frontend リダイレクト |
+| `POST /api/auth/refresh` | Cookie JWT 検証 → 新 JWT 発行 |
+| `POST /api/auth/logout` | Cookie 削除 (MaxAge=-1) |
+| `GET /api/auth/me` | Cookie JWT → ユーザー情報返却 |
+
+### 3-7. ミドルウェア
+
+- **CORS**: 開発 `http://localhost:3000`、本番 `https://open-regime.com`
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
+- **Rate Limit**: 120 req/min/IP、Redis INCR + EXPIRE、フォールバックはインメモリ
+
+### 3-8. Sentry
+
+5xx のみ通知 + スタックトレース、sentryecho ミドルウェア
+
+### 3-9〜3-10. Dockerfile + docker-compose + nginx
+
+- Multi-stage → distroless (~20MB)
+- docker-compose に api-go サービス追加
+- nginx `/api/` → api-go:8080
+
+### 3-11. /api/me (最初の CRUD)
+
+- `GET /api/me` → users テーブル SELECT + is_admin フラグ
+- `PATCH /api/me` → display_name のみ更新 (max 50 chars)
+
+### 3-12. テスト基盤 + テスト
+
+- testutil: テスト DB、TX ロールバック、JWT 生成
+- /api/me のテーブル駆動テスト
+
+### 3-13. 確認基準
+
+```bash
+docker compose up -d
+curl http://localhost/health                      # → 200
+curl http://localhost/api/auth/google             # → 302 Google
+curl http://localhost/api/me --cookie "token=..." # → user JSON
+go test ./...                                      # → ALL PASS
+```
+
+---
+
+## Part 2: Step 4 — CRUD 66ep + Stripe 移植
+
+### 移植順序 (小 → 大)
+
+| # | グループ | EP数 | Auth | DB テーブル | 難易度 |
+|---|---------|------|------|------------|--------|
+| 1 | /api/me | 2 | user | users | ★ (Step 3 完了) |
+| 2 | /api/fx/usdjpy | 1 | なし | — (HTTP) | ★ |
+| 3 | /api/stocks | 3 | なし | stock_master | ★ |
+| 4 | /api/market-state | 3 | mixed | market_state_history | ★★ |
+| 5 | /api/watchlist | 6 | user | user_watchlists | ★★ |
+| 6 | /api/trades | 6 | user | trades, holdings | ★★★ |
+| 7 | /api/holdings | 15 | user | holdings, cash, snapshots, indicators | ★★★★ |
+| 8 | /api/liquidity | 12 | mixed | fed_balance_sheet 等 | ★★ |
+| 9 | /api/employment | 5 | mixed | economic_indicators 等 | ★★★ |
+| 10 | /api/admin | 8 | admin+MFA | users, audit_logs 等 | ★★ |
+| 11 | /api/admin/mfa | 6 | admin | admin_mfa, sessions | ★★★ |
+| 12 | /api/billing | 4 | mixed | users | ★★ (Stripe) |
+
+### 各エンドポイントの移植手順
+
+1. Worker (`app/worker/src/routes/`) のロジックを読む
+2. model → repository → handler を書く
+3. テーブル駆動テストを書く
+4. `docker compose restart api-go`
+5. curl + go test で動作確認
+6. nginx ルーティングに追加
+
+### 注意事項
+
+- **market_state_history**: Worker と DB スキーマの列名不一致 → 実 DB に合わせる
+- **sell-from-holding**: TX で原子性保証
+- **MFA 暗号化**: `nonce_hex:ciphertext_hex` 形式互換
+- **TEXT[]**: pgx は `[]string` で自動ハンドル
+- **NUMERIC**: `pgtype.Numeric` 使用、float64 は精度ロス
+- **エラー形式**: `{ "detail": "..." }` (FastAPI 互換)
+
+### 確認基準
+
+- 全 70ep が api-go 経由で動作
+- `go test ./...` 全 PASS
+- Stripe webhook テスト済み
+

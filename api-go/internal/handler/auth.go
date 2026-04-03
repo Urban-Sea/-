@@ -242,8 +242,8 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, info *googleUserInfo
 	// 2. Try to find by email (migration path for users who signed up before OAuth).
 	user, err = h.userRepo.FindByEmail(ctx, info.Email)
 	if err == nil {
-		// Only bind if not already bound to another provider.
-		if user.AuthProviderID == nil {
+		// Bind if not yet bound, or if migrating from another provider (e.g. supabase → google).
+		if user.AuthProviderID == nil || user.AuthProvider != "google" {
 			if bindErr := h.userRepo.UpdateAuthProvider(ctx, user.ID, "google", info.ID); bindErr != nil {
 				return nil, fmt.Errorf("bind auth provider: %w", bindErr)
 			}
