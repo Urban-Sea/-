@@ -150,14 +150,13 @@ jobs:
     name: Deploy to VPS
     needs: [detect-changes, build-api-python, build-api-go, build-frontend, build-admin, build-batch]
     if: |
-      always() && !cancelled() && (
+      !failure() && !cancelled() && (
         needs.build-api-python.result == 'success' ||
         needs.build-api-go.result == 'success' ||
         needs.build-frontend.result == 'success' ||
         needs.build-admin.result == 'success' ||
         needs.build-batch.result == 'success' ||
-        needs.detect-changes.outputs.infra == 'true' ||
-        github.event_name == 'workflow_dispatch'
+        needs.detect-changes.outputs.infra == 'true'
       )
     runs-on: ubuntu-latest
     steps:
@@ -202,7 +201,6 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          script_stop: true
           script: |
             cd /opt/open-regime
 
@@ -217,7 +215,7 @@ jobs:
             done
 
             # Deploy
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans --pull never
 
             # Health check (wait for services to start)
             sleep 10
@@ -231,6 +229,6 @@ jobs:
                 OLD_ID=$(cat "/tmp/old-$img-id" 2>/dev/null)
                 [ -n "$OLD_ID" ] && docker tag "$OLD_ID" "open-regime-$img:latest"
               done
-              docker compose -f docker-compose.prod.yml up -d
+              docker compose -f docker-compose.prod.yml up -d --pull never
               exit 1
             fi
