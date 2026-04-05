@@ -1,0 +1,236 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'api-go/**'
+      - 'nginx/**'
+      - 'db/**'
+      - 'scripts/**'
+      - 'docker-compose.prod.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  # ─── Job 1: Detect which services changed ───
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      api-python: ${{ steps.filter.outputs.api-python }}
+      api-go: ${{ steps.filter.outputs.api-go }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      admin: ${{ steps.filter.outputs.admin }}
+      batch: ${{ steps.filter.outputs.batch }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            api-python:
+              - 'app/backend/**'
+            api-go:
+              - 'api-go/**'
+            frontend:
+              - 'app/frontend/**'
+            admin:
+              - 'app/admin-frontend/**'
+            batch:
+              - 'app/batch/**'
+              - 'app/backend/analysis/**'
+            infra:
+              - 'docker-compose.prod.yml'
+              - 'nginx/**'
+              - 'db/**'
+              - 'scripts/**'
+
+      # workflow_dispatch → build all
+      - name: Force all on manual trigger
+        id: force
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "all=true" >> "$GITHUB_OUTPUT"
+
+  # ─── Job 2: Build images (only changed ones) ───
+  build-api-python:
+    name: Build api-python
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api-python == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-regime-api-python:latest ./app/backend
+      - name: Save and compress
+        run: docker save open-regime-api-python:latest | gzip > open-regime-api-python.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-api-python
+          path: open-regime-api-python.tar.gz
+          retention-days: 1
+
+  build-api-go:
+    name: Build api-go
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api-go == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-regime-api-go:latest ./api-go
+      - name: Save and compress
+        run: docker save open-regime-api-go:latest | gzip > open-regime-api-go.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-api-go
+          path: open-regime-api-go.tar.gz
+          retention-days: 1
+
+  build-frontend:
+    name: Build frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-regime-frontend:latest ./app/frontend
+      - name: Save and compress
+        run: docker save open-regime-frontend:latest | gzip > open-regime-frontend.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-frontend
+          path: open-regime-frontend.tar.gz
+          retention-days: 1
+
+  build-admin:
+    name: Build admin
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-regime-admin:latest ./app/admin-frontend
+      - name: Save and compress
+        run: docker save open-regime-admin:latest | gzip > open-regime-admin.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-admin
+          path: open-regime-admin.tar.gz
+          retention-days: 1
+
+  build-batch:
+    name: Build batch
+    needs: detect-changes
+    if: needs.detect-changes.outputs.batch == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-regime-batch:latest -f app/batch/Dockerfile .
+      - name: Save and compress
+        run: docker save open-regime-batch:latest | gzip > open-regime-batch.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-batch
+          path: open-regime-batch.tar.gz
+          retention-days: 1
+
+  # ─── Job 3: Deploy to VPS ───
+  deploy:
+    name: Deploy to VPS
+    needs: [detect-changes, build-api-python, build-api-go, build-frontend, build-admin, build-batch]
+    if: |
+      always() && !cancelled() && (
+        needs.build-api-python.result == 'success' ||
+        needs.build-api-go.result == 'success' ||
+        needs.build-frontend.result == 'success' ||
+        needs.build-admin.result == 'success' ||
+        needs.build-batch.result == 'success' ||
+        needs.detect-changes.outputs.infra == 'true' ||
+        github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download all image artifacts (only those that exist)
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          merge-multiple: true
+          path: ./images
+        continue-on-error: true
+
+      # SCP infrastructure files
+      - name: Transfer infra files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "docker-compose.prod.yml,nginx/,db/init/,scripts/r2-backup.sh"
+          target: /opt/open-regime
+          overwrite: true
+
+      # SCP image tar.gz files (if any were built)
+      - name: Transfer images
+        uses: appleboy/scp-action@v0.1.7
+        if: hashFiles('images/*.tar.gz') != ''
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "images/"
+          target: /opt/open-regime
+          overwrite: true
+
+      # SSH: load images, deploy, health check
+      - name: Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd /opt/open-regime
+
+            # Save old image IDs for rollback
+            for img in api-python api-go frontend admin batch; do
+              docker inspect "open-regime-$img:latest" --format='{{.Id}}' 2>/dev/null > "/tmp/old-$img-id" || true
+            done
+
+            # Load new images (if any tar.gz exist)
+            for f in images/*.tar.gz; do
+              [ -f "$f" ] && gunzip -c "$f" | docker load && echo "Loaded: $f"
+            done
+
+            # Deploy
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Health check (wait for services to start)
+            sleep 10
+            if curl -sf http://localhost/health > /dev/null; then
+              echo "Health check passed"
+              rm -f images/*.tar.gz
+              docker image prune -f
+            else
+              echo "Health check failed — rolling back"
+              for img in api-python api-go frontend admin batch; do
+                OLD_ID=$(cat "/tmp/old-$img-id" 2>/dev/null)
+                [ -n "$OLD_ID" ] && docker tag "$OLD_ID" "open-regime-$img:latest"
+              done
+              docker compose -f docker-compose.prod.yml up -d
+              exit 1
+            fi

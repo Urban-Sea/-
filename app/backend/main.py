@@ -107,8 +107,8 @@ async def lifespan(app: FastAPI):
         missing = []
         if not os.getenv("PROXY_SECRET", "").strip():
             missing.append("PROXY_SECRET")
-        if not os.getenv("SUPABASE_JWT_SECRET", "").strip():
-            missing.append("SUPABASE_JWT_SECRET")
+        if not os.getenv("JWT_SECRET", "").strip() and not os.getenv("SUPABASE_JWT_SECRET", "").strip():
+            missing.append("JWT_SECRET or SUPABASE_JWT_SECRET")
         if missing:
             raise RuntimeError(
                 f"Missing required secrets in production: {', '.join(missing)}"
