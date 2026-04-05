@@ -14,6 +14,21 @@ upstream api_python {
     server api-python:8081;
 }
 
+# Block direct IP access and unknown Host headers
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_certificate     /etc/nginx/ssl/origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/origin-key.pem;
+    return 444;
+}
+
 # HTTP → HTTPS redirect
 server {
     listen 80;
@@ -27,6 +42,9 @@ server {
 
     ssl_certificate     /etc/nginx/ssl/origin.pem;
     ssl_certificate_key /etc/nginx/ssl/origin-key.pem;
+
+    # HSTS — force browsers to use HTTPS for 1 year
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
     # Health check
     location /health {

@@ -217,14 +217,24 @@ jobs:
             # Deploy
             docker compose -f docker-compose.prod.yml up -d --remove-orphans --pull never
 
-            # Health check (wait for services to start)
-            sleep 10
-            if curl -sf http://localhost/health > /dev/null; then
-              echo "Health check passed"
+            # Health check with retry (max 60s)
+            echo "Waiting for health check..."
+            HEALTHY=false
+            for i in $(seq 1 30); do
+              if curl -sf -H "Host: open-regime.com" http://localhost/health > /dev/null 2>&1; then
+                HEALTHY=true
+                echo "Health check passed (attempt $i)"
+                break
+              fi
+              echo "Attempt $i/30 failed, retrying in 2s..."
+              sleep 2
+            done
+
+            if [ "$HEALTHY" = true ]; then
               rm -f images/*.tar.gz
               docker image prune -f
             else
-              echo "Health check failed — rolling back"
+              echo "Health check failed after 30 attempts — rolling back"
               for img in api-python api-go frontend admin batch; do
                 OLD_ID=$(cat "/tmp/old-$img-id" 2>/dev/null)
                 [ -n "$OLD_ID" ] && docker tag "$OLD_ID" "open-regime-$img:latest"
