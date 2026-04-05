@@ -14,9 +14,19 @@ upstream api_python {
     server api-python:8081;
 }
 
+# HTTP → HTTPS redirect
 server {
     listen 80;
     server_name open-regime.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name open-regime.com;
+
+    ssl_certificate     /etc/nginx/ssl/origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/origin-key.pem;
 
     # Health check
     location /health {
