@@ -45,14 +45,14 @@ fi
 # 3. R2 アップロード (rclone)
 if [ -f "$RCLONE_CONFIG" ] && [ -n "${R2_BUCKET:-}" ]; then
   echo "=== Upload to R2: ${R2_BUCKET} ==="
-  rclone copy "${BACKUP_DIR}/${DB_FILE}" "r2:${R2_BUCKET}/db/" --config "$RCLONE_CONFIG"
+  rclone copy "${BACKUP_DIR}/${DB_FILE}" "r2:${R2_BUCKET}/db/" --config "$RCLONE_CONFIG" --s3-no-check-bucket
   if [ -f "${BACKUP_DIR}/${LOG_FILE}" ]; then
-    rclone copy "${BACKUP_DIR}/${LOG_FILE}" "r2:${R2_BUCKET}/logs/" --config "$RCLONE_CONFIG"
+    rclone copy "${BACKUP_DIR}/${LOG_FILE}" "r2:${R2_BUCKET}/logs/" --config "$RCLONE_CONFIG" --s3-no-check-bucket
   fi
 
   # R2 側の古いファイル削除 (7日以上)
-  rclone delete "r2:${R2_BUCKET}/db/" --min-age 7d --config "$RCLONE_CONFIG" || true
-  rclone delete "r2:${R2_BUCKET}/logs/" --min-age 7d --config "$RCLONE_CONFIG" || true
+  rclone delete "r2:${R2_BUCKET}/db/" --min-age 7d --config "$RCLONE_CONFIG" --s3-no-check-bucket || true
+  rclone delete "r2:${R2_BUCKET}/logs/" --min-age 7d --config "$RCLONE_CONFIG" --s3-no-check-bucket || true
 else
   echo "(rclone config or R2_BUCKET not set, skipping upload)"
 fi

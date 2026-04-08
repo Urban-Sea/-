@@ -44,9 +44,13 @@ secret_access_key = <R2_SECRET_ACCESS_KEY>
 endpoint = https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 acl = private
 EOF
-sudo chown deploy:deploy /opt/open-regime/rclone.conf
+sudo chown 1000:1000 /opt/open-regime/rclone.conf   # コンテナ内 appuser UID と一致
 sudo chmod 600 /opt/open-regime/rclone.conf
 ```
+
+注意: `deploy` ユーザー (UID 1002) ではなく **数字の 1000** 指定が必要。
+batch コンテナ内の appuser が UID 1000 なので、ホスト側もこの UID で揃える。
+同様に `/opt/open-regime/backup` も `chown 1000:1000` 必須。
 
 ## 5. VPS: logrotate 配置 (ryu)
 
