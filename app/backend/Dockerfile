@@ -17,4 +17,4 @@ USER appuser
 EXPOSE 8081
 
 # 起動コマンド
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8081}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8081} --log-config /app/log_config.json"]

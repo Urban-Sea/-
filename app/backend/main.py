@@ -5,7 +5,42 @@ FastAPI + asyncpg (Docker) / Supabase (Cloud Run フォールバック)
 import os
 import hmac
 import logging
+import logging.handlers
 from contextlib import asynccontextmanager
+
+from pythonjsonlogger import jsonlogger
+
+
+def setup_logging():
+    """本番のみ JSON ファイル出力 (Wazuh SIEM 連携用)"""
+    if os.getenv("ENVIRONMENT") != "production":
+        return
+    log_dir = "/var/log/open-regime/api-python"
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception:
+        return
+    formatter = jsonlogger.JsonFormatter(
+        "%(asctime)s %(name)s %(levelname)s %(message)s",
+        rename_fields={"asctime": "time", "levelname": "level"},
+    )
+    file_handler = logging.handlers.RotatingFileHandler(
+        filename=f"{log_dir}/app.log",
+        maxBytes=50 * 1024 * 1024,
+        backupCount=3,
+    )
+    file_handler.setFormatter(formatter)
+    stdout_handler = logging.StreamHandler()
+    stdout_handler.setFormatter(formatter)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(file_handler)
+    root.addHandler(stdout_handler)
+
+
+setup_logging()
+
 from fastapi import FastAPI, Header as fastapi_Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

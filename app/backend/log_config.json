@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {
+      "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+      "format": "%(asctime)s %(name)s %(levelname)s %(message)s",
+      "rename_fields": {"asctime": "time", "levelname": "level"}
+    }
+  },
+  "handlers": {
+    "default": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "filename": "/var/log/open-regime/api-python/uvicorn.log",
+      "maxBytes": 52428800,
+      "backupCount": 3,
+      "formatter": "json"
+    },
+    "stdout": {
+      "class": "logging.StreamHandler",
+      "formatter": "json"
+    }
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["default", "stdout"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"handlers": ["default", "stdout"], "level": "INFO", "propagate": false},
+    "uvicorn.access": {"handlers": ["default", "stdout"], "level": "INFO", "propagate": false}
+  }
+}

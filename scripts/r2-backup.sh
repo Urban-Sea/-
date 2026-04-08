@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
-# r2-backup.sh — PostgreSQL ダンプを gzip 圧縮で出力
+# r2-backup.sh — DB + ログを Cloudflare R2 にバックアップ
 #
-# Docker内から実行:
-#   docker compose run --rm batch bash scripts/r2-backup.sh
+# Docker 内から実行:
+#   docker compose -f docker-compose.prod.yml run --rm batch bash scripts/r2-backup.sh
 #
-# 出力: /backup/open_regime_YYYYMMDD_HHMMSS.sql.gz
-# R2 アップロードは VPS 契約後に追加予定。
+# 必要な環境変数:
+#   R2_BUCKET   - バックアップ先バケット名
+#   DB_HOST, DB_PORT, DB_USER, DB_NAME, PGPASSWORD
+#
+# rclone.conf は /etc/rclone/rclone.conf にマウントされている前提
 
 set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/backup}"
+LOG_DIR="${LOG_DIR:-/var/log/open-regime}"
+RCLONE_CONFIG="${RCLONE_CONFIG:-/etc/rclone/rclone.conf}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-FILENAME="open_regime_${TIMESTAMP}.sql.gz"
+DB_FILE="open_regime_db_${TIMESTAMP}.sql.gz"
+LOG_FILE="open_regime_logs_${TIMESTAMP}.tar.gz"
 
 mkdir -p "$BACKUP_DIR"
 
-echo "=== PostgreSQL backup: ${FILENAME} ==="
-
+# 1. DB ダンプ
+echo "=== DB backup: ${DB_FILE} ==="
 pg_dump \
   -h "${DB_HOST:-postgres}" \
   -p "${DB_PORT:-5432}" \
@@ -24,16 +30,35 @@ pg_dump \
   -d "${DB_NAME:-open_regime}" \
   --no-owner \
   --no-privileges \
-  | gzip > "${BACKUP_DIR}/${FILENAME}"
+  | gzip > "${BACKUP_DIR}/${DB_FILE}"
+echo "DB dump size: $(du -sh "${BACKUP_DIR}/${DB_FILE}" | cut -f1)"
 
-SIZE=$(du -sh "${BACKUP_DIR}/${FILENAME}" | cut -f1)
-echo "=== Done: ${BACKUP_DIR}/${FILENAME} (${SIZE}) ==="
+# 2. ログ tar.gz
+echo "=== Logs backup: ${LOG_FILE} ==="
+if [ -d "$LOG_DIR" ]; then
+  tar czf "${BACKUP_DIR}/${LOG_FILE}" -C "$LOG_DIR" . 2>/dev/null || echo "(tar warning ignored)"
+  echo "Logs size: $(du -sh "${BACKUP_DIR}/${LOG_FILE}" | cut -f1)"
+else
+  echo "(no log dir, skipping)"
+fi
 
-# 7日以上前のバックアップを削除
-find "$BACKUP_DIR" -name "open_regime_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
-echo "=== Cleaned backups older than 7 days ==="
+# 3. R2 アップロード (rclone)
+if [ -f "$RCLONE_CONFIG" ] && [ -n "${R2_BUCKET:-}" ]; then
+  echo "=== Upload to R2: ${R2_BUCKET} ==="
+  rclone copy "${BACKUP_DIR}/${DB_FILE}" "r2:${R2_BUCKET}/db/" --config "$RCLONE_CONFIG"
+  if [ -f "${BACKUP_DIR}/${LOG_FILE}" ]; then
+    rclone copy "${BACKUP_DIR}/${LOG_FILE}" "r2:${R2_BUCKET}/logs/" --config "$RCLONE_CONFIG"
+  fi
 
-# TODO: R2 アップロード（VPS契約後に追加）
-# aws s3 cp "${BACKUP_DIR}/${FILENAME}" "s3://open-regime-backups/${FILENAME}" \
-#   --endpoint-url "${R2_ENDPOINT}" \
-#   --region auto
+  # R2 側の古いファイル削除 (7日以上)
+  rclone delete "r2:${R2_BUCKET}/db/" --min-age 7d --config "$RCLONE_CONFIG" || true
+  rclone delete "r2:${R2_BUCKET}/logs/" --min-age 7d --config "$RCLONE_CONFIG" || true
+else
+  echo "(rclone config or R2_BUCKET not set, skipping upload)"
+fi
+
+# 4. ローカルの古いファイル削除 (7日以上)
+find "$BACKUP_DIR" -name "open_regime_db_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
+find "$BACKUP_DIR" -name "open_regime_logs_*.tar.gz" -mtime +7 -delete 2>/dev/null || true
+
+echo "=== Backup complete ==="

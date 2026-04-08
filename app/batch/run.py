@@ -300,12 +300,40 @@ def main():
     args = parser.parse_args()
 
     # ログ設定
+    import os as _os
     level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    if _os.getenv("ENVIRONMENT") == "production":
+        # 本番: JSON ファイル出力 (Wazuh SIEM 連携用)
+        import logging.handlers as _lh
+        from pythonjsonlogger import jsonlogger as _jl
+        log_dir = "/var/log/open-regime/batch"
+        try:
+            _os.makedirs(log_dir, exist_ok=True)
+        except Exception:
+            pass
+        formatter = _jl.JsonFormatter(
+            "%(asctime)s %(name)s %(levelname)s %(message)s",
+            rename_fields={"asctime": "time", "levelname": "level"},
+        )
+        file_h = _lh.RotatingFileHandler(
+            filename=f"{log_dir}/app.log",
+            maxBytes=50 * 1024 * 1024,
+            backupCount=3,
+        )
+        file_h.setFormatter(formatter)
+        stdout_h = logging.StreamHandler()
+        stdout_h.setFormatter(formatter)
+        root = logging.getLogger()
+        root.setLevel(level)
+        root.handlers.clear()
+        root.addHandler(file_h)
+        root.addHandler(stdout_h)
+    else:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
 
     # 日付範囲
     end = datetime.now().strftime("%Y-%m-%d")

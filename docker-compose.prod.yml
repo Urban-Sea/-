@@ -9,6 +9,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d/default.prod.conf.template:/etc/nginx/conf.d/default.prod.conf.template:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - /var/log/open-regime/nginx:/var/log/nginx
     environment:
       - PROXY_SECRET=${PROXY_SECRET}
     command: >
@@ -118,6 +119,8 @@ services:
       - PROXY_SECRET=${PROXY_SECRET}
       - ENVIRONMENT=production
       - SENTRY_DSN=${SENTRY_DSN:-}
+    volumes:
+      - /var/log/open-regime/api-python:/var/log/open-regime/api-python
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,6 +158,8 @@ services:
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - ENVIRONMENT=production
+    volumes:
+      - /var/log/open-regime/api-go:/var/log/open-regime/api-go
     depends_on:
       postgres:
         condition: service_healthy
@@ -219,6 +224,13 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=redis://redis:6379
       - FRED_API_KEY=${FRED_API_KEY}
+      - ENVIRONMENT=production
+      - R2_BUCKET=${R2_BUCKET:-open-regime-backup}
+      - PGPASSWORD=${DB_PASSWORD}
+    volumes:
+      - /var/log/open-regime/batch:/var/log/open-regime/batch
+      - /opt/open-regime/backup:/backup
+      - /opt/open-regime/rclone.conf:/etc/rclone/rclone.conf:ro
     depends_on:
       postgres:
         condition: service_healthy

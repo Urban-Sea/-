@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/getsentry/sentry-go"
 	sentryecho "github.com/getsentry/sentry-go/echo"
@@ -31,7 +34,17 @@ func main() {
 	cfg := config.Load()
 
 	// ── Logger ──
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	var logWriter io.Writer = os.Stdout
+	if cfg.Environment == "production" {
+		logWriter = io.MultiWriter(os.Stdout, &lumberjack.Logger{
+			Filename:   "/var/log/open-regime/api-go/app.log",
+			MaxSize:    50, // MB
+			MaxBackups: 3,
+			MaxAge:     7, // days
+			Compress:   true,
+		})
+	}
+	logger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
