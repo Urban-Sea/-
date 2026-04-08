@@ -12,31 +12,37 @@ from pythonjsonlogger import jsonlogger
 
 
 def setup_logging():
-    """本番のみ JSON ファイル出力 (Wazuh SIEM 連携用)"""
+    """本番のみ JSON ファイル出力 (Wazuh SIEM 連携用)
+    Cloud Run (K_SERVICE 設定あり) では stdout のみ。"""
     if os.getenv("ENVIRONMENT") != "production":
-        return
-    log_dir = "/var/log/open-regime/api-python"
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-    except Exception:
         return
     formatter = jsonlogger.JsonFormatter(
         "%(asctime)s %(name)s %(levelname)s %(message)s",
         rename_fields={"asctime": "time", "levelname": "level"},
     )
-    file_handler = logging.handlers.RotatingFileHandler(
-        filename=f"{log_dir}/app.log",
-        maxBytes=50 * 1024 * 1024,
-        backupCount=3,
-    )
-    file_handler.setFormatter(formatter)
     stdout_handler = logging.StreamHandler()
     stdout_handler.setFormatter(formatter)
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.handlers.clear()
-    root.addHandler(file_handler)
     root.addHandler(stdout_handler)
+
+    # VPS のみ: ファイル出力 (Cloud Run はスキップ)
+    if os.getenv("K_SERVICE"):
+        return
+    log_dir = "/var/log/open-regime/api-python"
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            filename=f"{log_dir}/app.log",
+            maxBytes=50 * 1024 * 1024,
+            backupCount=3,
+        )
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+    except Exception as e:
+        # 書き込めない環境では stdout だけで継続
+        _logger.warning("File logging disabled: %s", e)
 
 
 setup_logging()
