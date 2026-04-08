@@ -147,6 +147,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URL=https://open-regime.com/api/auth/google/callback
       - FRONTEND_URL=https://open-regime.com
+      - COOKIE_DOMAIN=.open-regime.com
       - ADMIN_EMAILS=${ADMIN_EMAILS}
       - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}

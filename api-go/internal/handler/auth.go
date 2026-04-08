@@ -272,6 +272,18 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, info *googleUserInfo
 
 // setTokenCookie sets the token cookie with the appropriate flags.
 func (h *AuthHandler) setTokenCookie(c echo.Context, token string, maxAge int) {
+	// Domain 付き Cookie に移行する場合、旧 Cookie (Domain なし) を削除して二重残留を防止
+	if h.cfg.CookieDomain != "" {
+		c.SetCookie(&http.Cookie{
+			Name:     "token",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   h.cfg.IsProduction(),
+		})
+	}
+
 	cookie := &http.Cookie{
 		Name:     "token",
 		Value:    token,
@@ -280,6 +292,9 @@ func (h *AuthHandler) setTokenCookie(c echo.Context, token string, maxAge int) {
 		Secure:   h.cfg.IsProduction(),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
+	}
+	if h.cfg.CookieDomain != "" {
+		cookie.Domain = h.cfg.CookieDomain
 	}
 	c.SetCookie(cookie)
 }

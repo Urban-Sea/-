@@ -41,7 +41,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
     }
     if (typeof window !== 'undefined') {
       fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
-      window.location.href = '/login/';
+      window.location.href = '/api/auth/google/login';
     }
     throw new ApiError(401, 'Session expired');
   }

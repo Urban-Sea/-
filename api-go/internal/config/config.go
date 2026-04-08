@@ -35,6 +35,9 @@ type Config struct {
 	// Admin
 	AdminEmails []string
 
+	// Cookie
+	CookieDomain string
+
 	// MFA
 	MFAEncryptionKey string
 
@@ -78,6 +81,8 @@ func Load() *Config {
 		StripePriceID:      getEnv("STRIPE_PRICE_ID", ""),
 
 		AdminEmails: filtered,
+
+		CookieDomain: getEnv("COOKIE_DOMAIN", ""),
 
 		MFAEncryptionKey: getEnv("MFA_ENCRYPTION_KEY", ""),
 
