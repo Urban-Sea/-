@@ -37,7 +37,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         setEmail(null);
-        window.location.href = '/api/auth/google/login';
+        window.location.href = '/api/auth/google';
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -46,7 +46,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
-    window.location.href = '/api/auth/google/login';
+    window.location.href = '/api/auth/google';
   };
 
   if (isLoading) {
