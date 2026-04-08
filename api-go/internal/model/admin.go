@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // AdminUserRow represents a user row for admin listing (subset of columns).
 type AdminUserRow struct {
@@ -21,8 +24,8 @@ type AuditLog struct {
 	Action      string          `json:"action"        db:"action"`
 	TargetType  string          `json:"target_type"   db:"target_type"`
 	TargetID    string          `json:"target_id"     db:"target_id"`
-	OldValue    []byte          `json:"old_value"     db:"old_value"`
-	NewValue    []byte          `json:"new_value"     db:"new_value"`
+	OldValue    json.RawMessage `json:"old_value"     db:"old_value"`
+	NewValue    json.RawMessage `json:"new_value"     db:"new_value"`
 	CreatedAt   time.Time       `json:"created_at"    db:"created_at"`
 }
 
