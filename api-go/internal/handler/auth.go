@@ -72,8 +72,14 @@ func (h *AuthHandler) GoogleLogin(c echo.Context) error {
 	}
 	state := hex.EncodeToString(b)
 
+	// 元の Host を state に紐付けて、コールバック後に正しいオリジン (apex or admin) に戻す
+	origin := "main"
+	if c.Request().Host == "admin.open-regime.com" {
+		origin = "admin"
+	}
+
 	ctx := c.Request().Context()
-	h.redis.Set(ctx, "oauth_state:"+state, "1", 10*time.Minute)
+	h.redis.Set(ctx, "oauth_state:"+state, origin, 10*time.Minute)
 
 	url := h.oauthCfg.AuthCodeURL(state)
 	return c.Redirect(http.StatusTemporaryRedirect, url)
@@ -92,10 +98,10 @@ func (h *AuthHandler) GoogleCallback(c echo.Context) error {
 		})
 	}
 
-	// Verify and consume the state token.
+	// Verify and consume the state token, and recover the origin.
 	stateKey := "oauth_state:" + state
-	exists, err := h.redis.Del(ctx, stateKey).Result()
-	if err != nil || exists == 0 {
+	origin, err := h.redis.GetDel(ctx, stateKey).Result()
+	if err != nil || origin == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"detail": "Invalid or expired state",
 		})
@@ -139,7 +145,11 @@ func (h *AuthHandler) GoogleCallback(c echo.Context) error {
 	// Set HttpOnly cookie.
 	h.setTokenCookie(c, jwt, 86400)
 
-	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/auth/callback/")
+	redirectURL := h.cfg.FrontendURL + "/auth/callback/"
+	if origin == "admin" {
+		redirectURL = "https://admin.open-regime.com/"
+	}
+	return c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
 // RefreshToken validates the existing JWT cookie and issues a fresh one.
