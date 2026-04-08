@@ -1,13 +1,11 @@
-name: Deploy
+name: Deploy (legacy SaaS — manual only)
 
+# 2026-04-08: VPS 切替完了済 (architecture-current.md 参照)。
+# 旧 SaaS 構成 (CF Workers / Cloud Run / CF Pages) への自動デプロイは停止。
+# 廃止条件 #28 を満たしたら本ファイル + Cloud Run/Workers サービス本体ごと削除予定。
+# それまでは緊急ロールバック用に手動実行のみ可能とする。
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'app/worker/**'
-      - 'app/frontend/**'
-      - 'app/admin-frontend/**'
-      - 'app/backend/**'
+  workflow_dispatch:
 
 jobs:
   changes:
