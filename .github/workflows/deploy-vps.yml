@@ -178,7 +178,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.prod.yml,nginx/,db/init/,scripts/r2-backup.sh"
+          source: "docker-compose.prod.yml,nginx/,db/init/,scripts/"
           target: /opt/open-regime
           overwrite: true
 
