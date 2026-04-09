@@ -17,6 +17,71 @@ import type { ChartSeries, ChartReferenceLine, ChartBackgroundZone, ChartEventMa
 import type { EmploymentRiskScore, RiskScoreCategory } from '@/types';
 
 // ============================================================
+// Digital Agency color tokens (正典: ~/Desktop/policy-dashboard-assets)
+// ============================================================
+const DA = {
+  brand900: '#0017C1',
+  brand700: '#0017C1',
+  brand500: '#3460FB',
+  brand400: '#7096F8',
+  brand200: '#C5D7FB',
+  brand100: '#E8F1FE',
+  safe500: '#259D63',
+  safe300: '#9BD4B5',
+  safe100: '#E6F5EC',
+  caution500: '#FB5B01',
+  caution400: '#FF8D44',
+  caution300: '#FFC199',
+  caution100: '#FFEEE2',
+  danger500: '#FE3939',
+  danger300: '#FFBBBB',
+  danger100: '#FDEEEE',
+  neutral900: '#4D4D4D',
+  neutral700: '#767676',
+  neutral500: '#999999',
+  neutral300: '#CCCCCC',
+  neutral200: '#E6E6E6',
+  neutral100: '#F2F2F2',
+} as const;
+
+// Compute latest value + delta vs first point of visible window
+function lastAndDelta(arr: Array<Record<string, unknown>>, field: string): {
+  last: number | null; delta: number | null; deltaPct: number | null;
+} {
+  if (!arr || arr.length === 0) return { last: null, delta: null, deltaPct: null };
+  let last: number | null = null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const v = arr[i][field];
+    if (typeof v === 'number' && Number.isFinite(v)) { last = v; break; }
+  }
+  let first: number | null = null;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i][field];
+    if (typeof v === 'number' && Number.isFinite(v)) { first = v; break; }
+  }
+  if (last == null || first == null) return { last, delta: null, deltaPct: null };
+  const delta = last - first;
+  const deltaPct = first !== 0 ? (delta / Math.abs(first)) * 100 : null;
+  return { last, delta, deltaPct };
+}
+
+// 5 phase definitions for risk score
+const RISK_PHASES = [
+  { code: 'EXPANSION',   label: '拡大期',   range: '0-20',   min: 0,  max: 20,  color: DA.safe500,    bg: DA.safe100,    border: DA.safe300 },
+  { code: 'SLOWDOWN',    label: '減速期',   range: '21-40',  min: 20, max: 40,  color: DA.brand500,   bg: DA.brand100,   border: DA.brand200 },
+  { code: 'CAUTION',     label: '警戒期',   range: '41-60',  min: 40, max: 60,  color: DA.caution400, bg: DA.caution100, border: DA.caution300 },
+  { code: 'CONTRACTION', label: '収縮期',   range: '61-80',  min: 60, max: 80,  color: DA.caution500, bg: DA.caution100, border: DA.caution300 },
+  { code: 'CRISIS',      label: '危機',     range: '81-100', min: 80, max: 100, color: DA.danger500,  bg: DA.danger100,  border: DA.danger300 },
+] as const;
+
+function phaseForScore(score: number) {
+  for (const p of RISK_PHASES) {
+    if (score >= p.min && score < p.max) return p;
+  }
+  return RISK_PHASES[RISK_PHASES.length - 1];
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 
@@ -327,12 +392,12 @@ const QUICK_RANGES: Array<{ name: string; months?: number; start?: string; end?:
 ];
 
 const ECONOMIC_EVENTS: ChartEventMarker[] = [
-  { date: '2001-03', label: 'ITバブル崩壊', color: 'rgba(239,68,68,0.5)' },
-  { date: '2008-09', label: 'リーマンショック', color: 'rgba(239,68,68,0.5)' },
-  { date: '2011-08', label: '米国債格下げ', color: 'rgba(234,179,8,0.4)' },
-  { date: '2020-03', label: 'COVID-19', color: 'rgba(239,68,68,0.5)' },
-  { date: '2022-03', label: 'FRB利上げ開始', color: 'rgba(234,179,8,0.4)' },
-  { date: '2024-08', label: 'Sahmトリガー', color: 'rgba(249,115,22,0.4)' },
+  { date: '2001-03', label: 'ITバブル崩壊', color: DA.danger500 },
+  { date: '2008-09', label: 'リーマンショック', color: DA.danger500 },
+  { date: '2011-08', label: '米国債格下げ', color: DA.caution500 },
+  { date: '2020-03', label: 'COVID-19', color: DA.danger500 },
+  { date: '2022-03', label: 'FRB利上げ開始', color: DA.caution500 },
+  { date: '2024-08', label: 'Sahmトリガー', color: DA.caution500 },
 ];
 
 interface YearAnalysis {
@@ -427,11 +492,11 @@ const YEAR_ANALYSIS: YearAnalysis[] = [
 ];
 
 const RISK_BG_ZONES: ChartBackgroundZone[] = [
-  { yMin: 0, yMax: 20, color: 'rgba(16,185,129,0.06)' },
-  { yMin: 20, yMax: 40, color: 'rgba(6,182,212,0.06)' },
-  { yMin: 40, yMax: 60, color: 'rgba(234,179,8,0.06)' },
-  { yMin: 60, yMax: 80, color: 'rgba(249,115,22,0.06)' },
-  { yMin: 80, yMax: 100, color: 'rgba(239,68,68,0.06)' },
+  { yMin: 0,  yMax: 20,  color: 'rgba(37,157,99,0.06)' },   // safe (緑)
+  { yMin: 20, yMax: 40,  color: 'rgba(52,96,251,0.06)' },   // brand (青)
+  { yMin: 40, yMax: 60,  color: 'rgba(255,141,68,0.06)' },  // caution-light
+  { yMin: 60, yMax: 80,  color: 'rgba(251,91,1,0.07)' },    // caution
+  { yMin: 80, yMax: 100, color: 'rgba(254,57,57,0.07)' },   // danger
 ];
 
 const PHASE_STYLE: Record<string, { bg: string; text: string }> = {
@@ -494,33 +559,53 @@ function YearByYearAnalysis() {
 function RiskHistoryTab() {
   const { data: histData, error: histError, isLoading: loading, mutate } = useRiskHistory(350);
   const [showSP500, setShowSP500] = useState(true);
+  const [showEvents, setShowEvents] = useState(true);
+  const [activeRange, setActiveRange] = useState<string>('ALL');
   const chartRef = useRef<HTMLDivElement>(null);
 
-  const handleShowAll = useCallback(() => {
+  const applyRange = useCallback((qr: typeof QUICK_RANGES[number]) => {
     const container = chartRef.current;
     const h = histData?.history;
     if (!container || !h || h.length === 0) return;
     const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
-    if (btn) {
+    if (!btn) return;
+
+    setActiveRange(qr.name);
+    if (!qr.months && !qr.start) {
       btn.setAttribute('data-start', h[0].date);
       btn.setAttribute('data-end', h[h.length - 1].date);
+      btn.click();
+      return;
+    }
+    if (qr.months) {
+      const endIdx = h.length;
+      const startIdx = Math.max(0, endIdx - qr.months);
+      btn.setAttribute('data-start', h[startIdx].date);
+      btn.setAttribute('data-end', h[endIdx - 1].date);
+      btn.click();
+      return;
+    }
+    if (qr.start && qr.end) {
+      btn.setAttribute('data-start', qr.start);
+      btn.setAttribute('data-end', qr.end);
       btn.click();
     }
   }, [histData]);
 
-  if (loading) return <div className="flex items-center justify-center py-24"><Skeleton className="h-[400px] w-full rounded-xl" /></div>;
-  if (histError) return <div className="flex flex-col items-center justify-center py-24 text-sm text-muted-foreground">{histError instanceof Error ? histError.message : 'データ取得失敗'}<Button variant="outline" size="sm" className="mt-3" onClick={() => mutate()}>再試行</Button></div>;
-  if (!histData || histData.history.length === 0) return <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">リスク履歴データがありません</div>;
+  if (loading) return <div className="flex items-center justify-center py-24"><Skeleton className="h-[420px] w-full rounded-xl" /></div>;
+  if (histError) return <div className="flex flex-col items-center justify-center py-24 text-sm text-neutral-500">{histError instanceof Error ? histError.message : 'データ取得失敗'}<Button variant="outline" size="sm" className="mt-3" onClick={() => mutate()}>再試行</Button></div>;
+  if (!histData || histData.history.length === 0) return <div className="flex items-center justify-center py-24 text-sm text-neutral-500">リスク履歴データがありません</div>;
 
+  // Build chart series — line color shifts based on latest phase for visual cue, but
+  // we use a single brand-700 line for stability. Background zones already convey the phase.
   const series: ChartSeries[] = [
     {
       data: histData.history.map((h) => ({ x: h.date, y: h.total_score })),
-      type: 'line', color: '#ef4444', label: 'リスクスコア',
+      type: 'area', color: DA.brand500, label: 'リスクスコア',
     },
   ];
 
   if (showSP500 && histData.sp500.length > 0) {
-    // Align S&P500 data to risk history dates (same length, same x-axis)
     const sp500Map = new Map<string, number>();
     for (const s of histData.sp500) {
       sp500Map.set(s.date.substring(0, 7), s.close);
@@ -531,102 +616,186 @@ function RiskHistoryTab() {
     }));
     series.push({
       data: alignedSP500,
-      type: 'line', color: '#10b981', label: 'S&P 500',
+      type: 'line', color: DA.neutral700, label: 'S&P 500', dashed: true,
       yAxisSide: 'right',
     });
   }
 
+  // Phase reference lines — labels in DA colors so they read as the same scale
   const refLines: ChartReferenceLine[] = [
-    { y: 20, color: 'rgba(16,185,129,0.3)', label: 'EXPANSION', dashed: true },
-    { y: 40, color: 'rgba(6,182,212,0.3)', label: 'SLOWDOWN', dashed: true },
-    { y: 60, color: 'rgba(234,179,8,0.3)', label: 'CAUTION', dashed: true },
-    { y: 80, color: 'rgba(249,115,22,0.3)', label: 'CONTRACTION', dashed: true },
+    { y: 20, color: DA.safe300,    label: '拡大', dashed: true },
+    { y: 40, color: DA.brand200,   label: '減速', dashed: true },
+    { y: 60, color: DA.caution300, label: '警戒', dashed: true },
+    { y: 80, color: DA.caution500, label: '収縮', dashed: true },
   ];
 
+  // Header stats — current score + delta from earliest visible point
+  const last = histData.history[histData.history.length - 1];
+  const first = histData.history[0];
+  const deltaScore = last && first ? last.total_score - first.total_score : null;
+  const currentPhase = last ? phaseForScore(last.total_score) : RISK_PHASES[0];
+
   return (
-    <div className="space-y-4 plumb-animate-in">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground plumb-glass rounded-lg px-3 py-1.5 cursor-pointer">
-          <input type="checkbox" checked={showSP500} onChange={(e) => setShowSP500(e.target.checked)}
-            className="w-3 h-3 rounded accent-emerald-500" />
-          S&P 500
+    <div className="space-y-3 plumb-animate-in">
+      {/* ============ Toolbar (period + crisis presets + event toggle) ============ */}
+      <div className="rounded-xl border border-neutral-200 bg-card p-3 md:p-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        {/* Period segmented */}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">期間</span>
+          <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
+            {QUICK_RANGES.filter(qr => !qr.start).map((qr, i) => {
+              const isActive = activeRange === qr.name;
+              return (
+                <button
+                  key={qr.name}
+                  onClick={() => applyRange(qr)}
+                  className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
+                    i > 0 ? 'border-l border-neutral-200' : ''
+                  } ${
+                    isActive
+                      ? 'bg-[var(--brand-100)] text-[var(--brand-700)]'
+                      : 'text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                >{qr.name}</button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Crisis chips */}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">クライシス</span>
+          <div className="flex items-center gap-1.5">
+            {QUICK_RANGES.filter(qr => qr.start).map((qr) => {
+              const isActive = activeRange === qr.name;
+              return (
+                <button
+                  key={qr.name}
+                  onClick={() => applyRange(qr)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                    isActive
+                      ? 'bg-[var(--brand-100)] text-[var(--brand-700)] border-[var(--brand-200)]'
+                      : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >{qr.name}</button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Event toggle */}
+        <label className="ml-auto flex items-center gap-2 cursor-pointer text-[11px] text-neutral-700 hover:text-foreground">
+          <input
+            type="checkbox"
+            checked={showEvents}
+            onChange={(e) => setShowEvents(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-neutral-300 accent-[var(--brand-500)]"
+          />
+          <span>イベント表示</span>
         </label>
-        <Button variant="outline" size="sm" className="text-[11px] font-mono h-7" onClick={handleShowAll}>
-          ズームリセット
-        </Button>
       </div>
 
-      <GlassCard>
-        <div className="p-5" ref={chartRef}>
+      {/* ============ Main chart card ============ */}
+      <div className="rounded-xl border border-neutral-200 bg-card">
+        {/* Chart header */}
+        <div className="flex flex-wrap items-end justify-between gap-4 p-5 pb-3 border-b border-neutral-100">
+          <div>
+            <h3 className="text-[18px] font-bold text-foreground tracking-tight">リスクスコア時系列</h3>
+            <p className="text-[11px] text-neutral-500 mt-1">雇用 (50点) + 消費 (25点) + 構造 (25点) = 0–100</p>
+          </div>
+          <div className="flex items-end gap-3">
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">直近スコア</p>
+              <p className="text-[24px] leading-none font-bold tabular-nums text-foreground mt-1">
+                {last ? Math.round(last.total_score) : '—'}
+                <span className="text-[12px] text-neutral-400 font-normal ml-1">/100</span>
+              </p>
+            </div>
+            <div
+              className="px-2.5 py-1 rounded-md text-[11px] font-bold border"
+              style={{
+                color: currentPhase.color,
+                backgroundColor: currentPhase.bg,
+                borderColor: currentPhase.border,
+              }}
+            >
+              {currentPhase.label}
+            </div>
+            {deltaScore != null && (
+              <div className={`px-2.5 py-1 rounded-md text-[11px] font-bold tabular-nums border ${
+                deltaScore <= 0
+                  ? 'text-[var(--signal-safe-500)] bg-[var(--signal-safe-100)] border-[var(--signal-safe-300)]/40'
+                  : 'text-[var(--signal-danger-500)] bg-[var(--signal-danger-100)] border-[var(--signal-danger-300)]/50'
+              }`}>
+                {deltaScore >= 0 ? '+' : ''}{deltaScore.toFixed(0)}pt
+                <span className="ml-1 font-normal text-[9px] uppercase tracking-wider opacity-70">期間</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Overlay toggles row */}
+        <div className="px-5 py-2 border-b border-neutral-100 flex items-center gap-4">
+          <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-neutral-500">オーバーレイ</span>
+          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-neutral-700 hover:text-foreground">
+            <input
+              type="checkbox"
+              checked={showSP500}
+              onChange={(e) => setShowSP500(e.target.checked)}
+              className="w-3.5 h-3.5 accent-[var(--neutral-700)]"
+            />
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-[2px] bg-[var(--neutral-700)]" />
+              S&P 500
+            </span>
+          </label>
+        </div>
+
+        {/* Chart canvas */}
+        <div className="p-4 md:p-5" ref={chartRef}>
           <EconChartCanvas
             series={series}
             referenceLines={refLines}
             backgroundZones={RISK_BG_ZONES}
-            eventMarkers={ECONOMIC_EVENTS}
+            eventMarkers={showEvents ? ECONOMIC_EVENTS : undefined}
             yAxisFormat={(v) => `${Math.round(v)}`}
             yAxisRightFormat={(v) => v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`}
-            height={420}
+            height={440}
             initialShowAll
           />
         </div>
-      </GlassCard>
 
-      <div className="flex flex-wrap gap-1.5">
-        {QUICK_RANGES.map((qr) => (
-          <Button key={qr.name} variant="outline" size="sm" className="text-[11px] font-mono h-7 px-3"
-            onClick={() => {
-              const container = chartRef.current;
-              if (!container) return;
-              if (!qr.months && !qr.start) {
-                handleShowAll();
-                return;
-              }
-              if (qr.months) {
-                const h = histData?.history;
-                if (!h || h.length === 0) return;
-                const endIdx = h.length;
-                const startIdx = Math.max(0, endIdx - qr.months);
-                const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
-                if (btn) {
-                  btn.setAttribute('data-start', h[startIdx].date);
-                  btn.setAttribute('data-end', h[endIdx - 1].date);
-                  btn.click();
-                }
-                return;
-              }
-              if (qr.start && qr.end) {
-                const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
-                if (btn) {
-                  btn.setAttribute('data-start', qr.start);
-                  btn.setAttribute('data-end', qr.end);
-                  btn.click();
-                }
-              }
-            }}>
-            {qr.name}
-          </Button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-5 gap-1">
-        {[
-          { label: '拡大期', range: '0-20', color: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' },
-          { label: '減速期', range: '21-40', color: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400' },
-          { label: '警戒期', range: '41-60', color: 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400' },
-          { label: '収縮期', range: '61-80', color: 'bg-orange-500/20 text-orange-600 dark:text-orange-400' },
-          { label: '危機', range: '81-100', color: 'bg-red-500/20 text-red-600 dark:text-red-400' },
-        ].map((p) => (
-          <div key={p.label} className={`rounded-lg px-2 py-1.5 text-center text-[10px] font-mono ${p.color}`}>
-            <div className="font-bold">{p.label}</div>
-            <div className="opacity-70">{p.range}</div>
+        {/* Footer: phase legend + data range */}
+        <div className="px-5 pb-4 pt-1 space-y-3">
+          <div className="grid grid-cols-5 gap-1.5">
+            {RISK_PHASES.map((p) => (
+              <div
+                key={p.code}
+                className="rounded-md px-2 py-1.5 text-center text-[10px] border"
+                style={{
+                  color: p.color,
+                  backgroundColor: p.bg,
+                  borderColor: p.border,
+                }}
+              >
+                <div className="font-bold">{p.label}</div>
+                <div className="opacity-70 tabular-nums">{p.range}</div>
+              </div>
+            ))}
           </div>
-        ))}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-neutral-500">
+            <span className="font-medium">
+              データ範囲: <span className="tabular-nums">{histData.history[0]?.date}</span> → <span className="tabular-nums">{histData.history[histData.history.length - 1]?.date}</span>
+            </span>
+            <span>出典: FRED, S&P CapIQ</span>
+          </div>
+        </div>
       </div>
 
       {/* Year-by-year analysis */}
       <YearByYearAnalysis />
 
-      <p className="text-[10px] text-muted-foreground text-center">
+      <p className="text-[10px] text-neutral-500 text-center">
         ※ 過去スコアは雇用乖離・インフレ乖離を含まないため、リアルタイムスコアより低めに表示されます
       </p>
     </div>
@@ -639,14 +808,14 @@ function RiskHistoryTab() {
 
 type EconChartType = 'nfp' | 'unemployment' | 'claims' | 'wages' | 'sahm' | 'sentiment' | 'income';
 
-const ECON_CHART_TYPES: { key: EconChartType; label: string }[] = [
-  { key: 'nfp', label: 'NFP推移' },
-  { key: 'unemployment', label: '失業率' },
-  { key: 'claims', label: '失業保険' },
-  { key: 'wages', label: '賃金' },
-  { key: 'sahm', label: 'Sahm Rule' },
-  { key: 'sentiment', label: '消費者信頼感' },
-  { key: 'income', label: '実質個人所得' },
+const ECON_CHART_TYPES: { key: EconChartType; label: string; sub: string; unit: string }[] = [
+  { key: 'nfp',          label: 'NFP推移',         sub: '非農業部門雇用者数 月次変化',         unit: 'K人' },
+  { key: 'unemployment', label: '失業率',           sub: 'U3 (公式) / U6 (実質)',                unit: '%' },
+  { key: 'claims',       label: '失業保険',         sub: '新規申請 + 4W平均 / 継続申請',          unit: '件' },
+  { key: 'wages',        label: '賃金',             sub: '平均時給 + MoM変化率',                  unit: '$' },
+  { key: 'sahm',         label: 'Sahm Rule',        sub: 'U3 3M平均 − 12M最低',                   unit: 'pp' },
+  { key: 'sentiment',    label: '消費者信頼感',     sub: 'ミシガン大学 UMCSENT',                  unit: 'pt' },
+  { key: 'income',       label: '実質個人所得',     sub: 'W875RX1 YoY',                            unit: '%' },
 ];
 
 function useChartData(data: EmploymentRiskScore) {
@@ -709,37 +878,37 @@ function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChart
     case 'nfp':
       return {
         series: [
-          { data: cd.nfpWithAvg.map((d) => ({ x: d.reference_period, y: d.nfp_change })), type: 'bar', color: '#3b82f6', label: 'NFP変化 (K)' },
-          { data: cd.nfpWithAvg.map((d) => ({ x: d.reference_period, y: d.nfp_3m_avg })), type: 'line', color: '#f59e0b', label: '3ヶ月平均' },
+          { data: cd.nfpWithAvg.map((d) => ({ x: d.reference_period, y: d.nfp_change })), type: 'bar', color: DA.brand400, label: 'NFP変化 (K)' },
+          { data: cd.nfpWithAvg.map((d) => ({ x: d.reference_period, y: d.nfp_3m_avg })), type: 'line', color: DA.caution500, label: '3M平均' },
         ],
         referenceLines: [
-          { y: 0, color: 'rgba(239,68,68,0.4)', dashed: false },
-          { y: 100, color: 'rgba(251,191,36,0.3)', label: '100K' },
+          { y: 0,   color: DA.neutral300, dashed: false },
+          { y: 100, color: DA.caution300, label: '100K' },
         ],
         yAxisFormat: (v) => `${Math.round(v)}K`,
       };
     case 'unemployment':
       return {
         series: [
-          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.u3_rate })), type: 'area', color: '#3b82f6', label: 'U3 失業率' },
-          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.u6_rate })), type: 'line', color: '#a855f7', label: 'U6 実質失業率', dashed: true },
+          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.u3_rate })), type: 'area', color: DA.brand500, label: 'U3 失業率' },
+          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.u6_rate })), type: 'line', color: DA.brand700, label: 'U6 実質失業率', dashed: true },
         ],
         referenceLines: [
-          { y: 4.5, color: 'rgba(251,191,36,0.3)', label: '警戒 4.5%' },
-          { y: 5.0, color: 'rgba(239,68,68,0.3)', label: '危険 5.0%' },
+          { y: 4.5, color: DA.caution300, label: '警戒 4.5%' },
+          { y: 5.0, color: DA.danger300,  label: '危険 5.0%' },
         ],
         yAxisFormat: (v) => `${v.toFixed(1)}%`,
       };
     case 'claims':
       return {
         series: [
-          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.initial_claims })), type: 'area', color: '#06b6d4', label: '新規申請' },
-          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.initial_claims_4w_avg })), type: 'line', color: '#f59e0b', label: '4W移動平均' },
-          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.continued_claims })), type: 'line', color: '#a855f7', label: '継続申請', dashed: true, yAxisSide: 'right' },
+          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.initial_claims })), type: 'area', color: DA.brand500, label: '新規申請' },
+          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.initial_claims_4w_avg })), type: 'line', color: DA.caution500, label: '4W移動平均' },
+          { data: cd.claimsChron.map((d) => ({ x: d.week_ending, y: d.continued_claims })), type: 'line', color: DA.brand700, label: '継続申請', dashed: true, yAxisSide: 'right' },
         ],
         referenceLines: [
-          { y: 250000, color: 'rgba(251,191,36,0.3)', label: '250K' },
-          { y: 300000, color: 'rgba(239,68,68,0.3)', label: '300K' },
+          { y: 250000, color: DA.caution300, label: '250K' },
+          { y: 300000, color: DA.danger300,  label: '300K' },
         ],
         yAxisFormat: (v) => `${(v / 1000).toFixed(0)}K`,
         yAxisRightFormat: (v) => `${(v / 1000).toFixed(0)}K`,
@@ -747,8 +916,8 @@ function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChart
     case 'wages':
       return {
         series: [
-          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.avg_hourly_earnings })), type: 'area', color: '#10b981', label: '平均時給 ($)' },
-          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.wage_mom })), type: 'line', color: '#f97316', label: '賃金MoM (%)', dashed: true, yAxisSide: 'right' },
+          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.avg_hourly_earnings })), type: 'area', color: DA.safe500, label: '平均時給 ($)' },
+          { data: cd.nfpChron.map((d) => ({ x: d.reference_period, y: d.wage_mom })), type: 'line', color: DA.caution500, label: '賃金MoM (%)', dashed: true, yAxisSide: 'right' },
         ],
         yAxisFormat: (v) => `$${v.toFixed(1)}`,
         yAxisRightFormat: (v) => `${v.toFixed(2)}%`,
@@ -756,35 +925,36 @@ function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChart
     case 'sahm':
       return {
         series: [
-          { data: cd.sahmChartData.map((d) => ({ x: d.period, y: d.sahm_value })), type: 'area', color: '#f97316', label: 'Sahm値' },
+          { data: cd.sahmChartData.map((d) => ({ x: d.period, y: d.sahm_value })), type: 'area', color: DA.caution500, label: 'Sahm値' },
         ],
         referenceLines: [
-          { y: 0.3, color: 'rgba(251,191,36,0.4)', label: '警戒 0.3' },
-          { y: 0.5, color: 'rgba(239,68,68,0.5)', label: '発動 0.5' },
+          { y: 0.3, color: DA.caution300, label: '警戒 0.3' },
+          { y: 0.5, color: DA.danger300,  label: '発動 0.5' },
         ],
         yAxisFormat: (v) => v.toFixed(2),
       };
     case 'sentiment':
       return {
         series: [
-          { data: cd.sentimentChron.map((d) => ({ x: d.reference_period, y: d.current_value })), type: 'area', color: '#f59e0b', label: 'UMCSENT' },
+          { data: cd.sentimentChron.map((d) => ({ x: d.reference_period, y: d.current_value })), type: 'area', color: DA.brand500, label: 'UMCSENT' },
         ],
         referenceLines: [
-          { y: 80, color: 'rgba(16,185,129,0.3)', label: '良好 80' },
-          { y: 70, color: 'rgba(251,191,36,0.3)', label: '警戒 70' },
-          { y: 60, color: 'rgba(239,68,68,0.4)', label: '危険 60' },
+          { y: 80, color: DA.safe300,    label: '良好 80' },
+          { y: 70, color: DA.caution300, label: '警戒 70' },
+          { y: 60, color: DA.danger300,  label: '危険 60' },
         ],
+        yAxisFormat: (v) => v.toFixed(0),
       };
     case 'income': {
       const filtered = cd.incomeChron.filter((d) => d.yoy != null);
       return {
         series: [
-          { data: filtered.map((d) => ({ x: d.reference_period, y: d.yoy })), type: 'area', color: '#8b5cf6', label: '実質個人所得 YoY (%)' },
+          { data: filtered.map((d) => ({ x: d.reference_period, y: d.yoy })), type: 'area', color: DA.brand500, label: '実質個人所得 YoY (%)' },
         ],
         referenceLines: [
-          { y: 0, color: 'rgba(239,68,68,0.4)', dashed: false },
-          { y: 1, color: 'rgba(251,191,36,0.3)', label: '警戒 1%' },
-          { y: 3, color: 'rgba(16,185,129,0.3)', label: '良好 3%' },
+          { y: 0, color: DA.neutral300, dashed: false },
+          { y: 1, color: DA.caution300, label: '警戒 1%' },
+          { y: 3, color: DA.safe300,    label: '良好 3%' },
         ],
         yAxisFormat: (v) => `${v.toFixed(1)}%`,
       };
@@ -794,39 +964,218 @@ function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChart
   }
 }
 
+type IndicatorViewMode = 'overview' | 'detail';
+
+// Compute "latest value + delta" for the header chip on each indicator
+function indicatorStat(chartType: EconChartType, cd: ReturnType<typeof useChartData>): {
+  value: string; delta: number | null; deltaUnit?: string;
+} | null {
+  switch (chartType) {
+    case 'nfp': {
+      const arr = cd.nfpWithAvg as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'nfp_change');
+      return { value: r.last != null ? `${Math.round(r.last)}K` : '—', delta: r.deltaPct };
+    }
+    case 'unemployment': {
+      const arr = cd.nfpChron as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'u3_rate');
+      return { value: r.last != null ? `${r.last.toFixed(1)}%` : '—', delta: r.deltaPct, deltaUnit: 'pp' };
+    }
+    case 'claims': {
+      const arr = cd.claimsChron as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'initial_claims');
+      return { value: r.last != null ? `${(r.last / 1000).toFixed(0)}K` : '—', delta: r.deltaPct };
+    }
+    case 'wages': {
+      const arr = cd.nfpChron as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'avg_hourly_earnings');
+      return { value: r.last != null ? `$${r.last.toFixed(2)}` : '—', delta: r.deltaPct };
+    }
+    case 'sahm': {
+      const arr = cd.sahmChartData as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'sahm_value');
+      return { value: r.last != null ? r.last.toFixed(2) : '—', delta: null };
+    }
+    case 'sentiment': {
+      const arr = cd.sentimentChron as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'current_value');
+      return { value: r.last != null ? r.last.toFixed(0) : '—', delta: r.deltaPct };
+    }
+    case 'income': {
+      const arr = cd.incomeChron.filter((d) => d.yoy != null) as unknown as Array<Record<string, unknown>>;
+      const r = lastAndDelta(arr, 'yoy');
+      return { value: r.last != null ? `${r.last.toFixed(1)}%` : '—', delta: null };
+    }
+  }
+}
+
 function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
+  const [viewMode, setViewMode] = useState<IndicatorViewMode>('overview');
   const [chartType, setChartType] = useState<EconChartType>('nfp');
   const cd = useChartData(data);
   const config = getChartConfig(chartType, cd);
-
-  if (config.series.length === 0 || config.series[0].data.length === 0) {
-    return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">データが不足しています</div>;
-  }
+  const currentMeta = ECON_CHART_TYPES.find((c) => c.key === chartType)!;
+  const stat = indicatorStat(chartType, cd);
 
   return (
-    <div className="space-y-4 plumb-animate-in">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 plumb-glass rounded-lg p-1 overflow-x-auto">
-          {ECON_CHART_TYPES.map((ct) => (
-            <button key={ct.key} onClick={() => setChartType(ct.key)}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${
-                chartType === ct.key ? 'bg-black/[0.06] dark:bg-white/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}>{ct.label}</button>
-          ))}
+    <div className="space-y-3 plumb-animate-in">
+      {/* ============ Toolbar (view mode toggle) ============ */}
+      <div className="rounded-xl border border-neutral-200 bg-card p-3 md:p-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
+          {[
+            { v: 'overview' as IndicatorViewMode, label: '一覧' },
+            { v: 'detail' as IndicatorViewMode, label: '詳細' },
+          ].map((m, i) => {
+            const isActive = viewMode === m.v;
+            return (
+              <button
+                key={m.v}
+                onClick={() => setViewMode(m.v)}
+                className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
+                  i > 0 ? 'border-l border-neutral-200' : ''
+                } ${
+                  isActive ? 'bg-[var(--brand-100)] text-[var(--brand-700)]' : 'text-neutral-700 hover:bg-neutral-50'
+                }`}
+              >{m.label}</button>
+            );
+          })}
         </div>
+        <p className="text-[11px] text-neutral-500">
+          雇用・消費・構造の主要指標 7 種を一覧 / 詳細モードで切替表示
+        </p>
       </div>
 
-      <GlassCard>
-        <div className="p-5">
-          <EconChartCanvas
-            series={config.series}
-            referenceLines={config.referenceLines}
-            yAxisFormat={config.yAxisFormat}
-            yAxisRightFormat={config.yAxisRightFormat}
-            height={400}
-          />
+      {/* ============ OVERVIEW MODE: 7 mini tile grid ============ */}
+      {viewMode === 'overview' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {ECON_CHART_TYPES.map((ct) => {
+            const cfg = getChartConfig(ct.key, cd);
+            const tStat = indicatorStat(ct.key, cd);
+            const isEmpty = cfg.series.length === 0 || cfg.series[0].data.length === 0;
+            const open = () => { setChartType(ct.key); setViewMode('detail'); };
+            return (
+              <div
+                key={ct.key}
+                role="button"
+                tabIndex={0}
+                onClick={open}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
+                className="cursor-pointer text-left rounded-xl border border-neutral-200 bg-card hover:border-[var(--brand-400)] hover:shadow-[0_0_0_3px_var(--brand-100)] focus:outline-none focus:border-[var(--brand-500)] transition-all overflow-hidden"
+              >
+                {/* Tile header */}
+                <div className="px-4 pt-3.5 pb-2 flex items-start justify-between gap-3 border-b border-neutral-100">
+                  <div className="min-w-0">
+                    <h4 className="text-[13px] font-bold text-foreground tracking-tight truncate">{ct.label}</h4>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{ct.sub}</p>
+                  </div>
+                  {tStat && (
+                    <div className="shrink-0 text-right">
+                      <p className="text-[16px] leading-none font-bold tabular-nums text-foreground">{tStat.value}</p>
+                      {tStat.delta != null && (
+                        <p className={`text-[10px] font-bold tabular-nums mt-1 ${
+                          tStat.delta >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'
+                        }`}>
+                          {tStat.delta >= 0 ? '+' : ''}{tStat.delta.toFixed(1)}{tStat.deltaUnit ?? '%'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Mini chart */}
+                <div className="px-2 py-1">
+                  {isEmpty ? (
+                    <div className="h-[180px] flex items-center justify-center text-[11px] text-neutral-400">データなし</div>
+                  ) : (
+                    <EconChartCanvas
+                      series={cfg.series}
+                      referenceLines={cfg.referenceLines}
+                      yAxisFormat={cfg.yAxisFormat}
+                      yAxisRightFormat={cfg.yAxisRightFormat}
+                      height={200}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </GlassCard>
+      )}
+
+      {/* ============ DETAIL MODE: Single chart + segmented bar ============ */}
+      {viewMode === 'detail' && (
+        <>
+          {/* Chart type segmented bar */}
+          <div className="rounded-xl border border-neutral-200 bg-card overflow-hidden">
+            <div className="flex overflow-x-auto scrollbar-hide">
+              {ECON_CHART_TYPES.map((ct, i) => {
+                const isActive = chartType === ct.key;
+                return (
+                  <button
+                    key={ct.key}
+                    onClick={() => setChartType(ct.key)}
+                    className={`flex-1 min-w-[120px] px-4 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors ${
+                      i > 0 ? 'border-l border-neutral-200' : ''
+                    } ${
+                      isActive ? 'text-[var(--brand-700)] bg-[var(--brand-100)]/40' : 'text-neutral-700 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {ct.label}
+                    {isActive && <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[var(--brand-500)]" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Main chart card */}
+          <div className="rounded-xl border border-neutral-200 bg-card">
+            {/* Header */}
+            <div className="flex flex-wrap items-end justify-between gap-4 p-5 pb-3 border-b border-neutral-100">
+              <div>
+                <h3 className="text-[18px] font-bold text-foreground tracking-tight">{currentMeta.label}</h3>
+                <p className="text-[11px] text-neutral-500 mt-1">{currentMeta.sub}</p>
+              </div>
+              {stat && (
+                <div className="flex items-end gap-3">
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">直近値</p>
+                    <p className="text-[24px] leading-none font-bold tabular-nums text-foreground mt-1">{stat.value}</p>
+                  </div>
+                  {stat.delta != null && (
+                    <div className={`px-2.5 py-1 rounded-md text-[11px] font-bold tabular-nums border ${
+                      stat.delta >= 0
+                        ? 'text-[var(--signal-safe-500)] bg-[var(--signal-safe-100)] border-[var(--signal-safe-300)]/40'
+                        : 'text-[var(--signal-danger-500)] bg-[var(--signal-danger-100)] border-[var(--signal-danger-300)]/50'
+                    }`}>
+                      {stat.delta >= 0 ? '+' : ''}{stat.delta.toFixed(1)}{stat.deltaUnit ?? '%'}
+                      <span className="ml-1 font-normal text-[9px] uppercase tracking-wider opacity-70">期間</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Canvas */}
+            <div className="p-4 md:p-5">
+              {config.series.length === 0 || config.series[0].data.length === 0 ? (
+                <div className="h-[420px] flex items-center justify-center text-sm text-neutral-500">データが不足しています</div>
+              ) : (
+                <EconChartCanvas
+                  series={config.series}
+                  referenceLines={config.referenceLines}
+                  yAxisFormat={config.yAxisFormat}
+                  yAxisRightFormat={config.yAxisRightFormat}
+                  height={420}
+                />
+              )}
+            </div>
+            {/* Footer */}
+            <div className="px-5 pb-4 pt-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-neutral-500">
+              <span className="font-medium">出典: FRED, BLS, ミシガン大学</span>
+              <span>更新: {new Date(data.timestamp).toLocaleDateString('ja-JP')}</span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
