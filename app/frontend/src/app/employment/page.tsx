@@ -837,10 +837,11 @@ function RiskHistoryTab({ realtimeScore, realtimePhase }: { realtimeScore: numbe
 // TAB 3: Indicator Charts (Canvas)
 // ============================================================
 
-type EconChartType = 'nfp' | 'unemployment' | 'claims' | 'wages' | 'sahm' | 'sentiment' | 'income';
+type EconChartType = 'nfp' | 'nfp-level' | 'unemployment' | 'claims' | 'wages' | 'sahm' | 'sentiment' | 'income';
 
 const ECON_CHART_TYPES: { key: EconChartType; label: string; sub: string; unit: string }[] = [
   { key: 'nfp',          label: 'NFP推移',         sub: '非農業部門雇用者数 月次変化',         unit: 'K人' },
+  { key: 'nfp-level',    label: 'NFP累積',         sub: '雇用者数の絶対値 + S&P500 / 不況帯',  unit: 'M人' },
   { key: 'unemployment', label: '失業率',           sub: 'U3 (公式) / U6 (実質)',                unit: '%' },
   { key: 'claims',       label: '失業保険',         sub: '新規申請 + 4W平均 / 継続申請',          unit: '件' },
   { key: 'wages',        label: '賃金',             sub: '平均時給 + MoM変化率',                  unit: '$' },
@@ -849,10 +850,50 @@ const ECON_CHART_TYPES: { key: EconChartType; label: string; sub: string; unit: 
   { key: 'income',       label: '実質個人所得',     sub: 'W875RX1 YoY',                            unit: '%' },
 ];
 
-function useChartData(data: EmploymentRiskScore) {
+// 米国の主要な不況期間 (NBER 公式認定)。NFP 累積チャートの背景帯で「フラット化 → 不況」の文脈を可視化する。
+// データ範囲は 1999 年〜なので湾岸戦争 (1990-91) は省略。
+const RECESSION_PERIODS: { xMin: string; xMax: string; label: string }[] = [
+  { xMin: '2001-03', xMax: '2001-11', label: 'IT バブル崩壊' },
+  { xMin: '2007-12', xMax: '2009-06', label: 'GFC' },
+  { xMin: '2020-02', xMax: '2020-04', label: 'COVID' },
+];
+
+const RECESSION_BG_ZONES: ChartBackgroundZone[] = RECESSION_PERIODS.map(p => ({
+  xMin: p.xMin,
+  xMax: p.xMax,
+  color: 'rgba(254,57,57,0.10)', // DA.danger500 alpha 10%
+}));
+
+function useChartData(data: EmploymentRiskScore, sp500: Array<{ date: string; close: number }> | undefined) {
   return useMemo(() => {
     const nfpChron = [...data.nfp_history].reverse();
     const claimsChron = [...data.claims_history].reverse();
+
+    // NFP レベル系列 (current_value, 千人 → 百万人換算)。
+    // 1999-01 〜 直近月。「フラット化 → 不況」のナラティブ用。
+    const nfpLevelChron = nfpChron
+      .filter((d) => d.current_value != null)
+      .map((d) => ({
+        period: d.reference_period.substring(0, 7), // "YYYY-MM"
+        level_m: (d.current_value as number) / 1000, // 千人 → 百万人
+      }));
+
+    // S&P500 月次クローズ系列 (risk-history エンドポイントから渡される)。
+    // NFP と同じ月次キーに丸めて重ね描き可能にする。
+    const sp500ByMonth = new Map<string, number>();
+    for (const p of sp500 ?? []) {
+      const key = p.date.substring(0, 7);
+      sp500ByMonth.set(key, p.close);
+    }
+    // NFP と同じ月キー配列 (NFP が無い月は SP500 もスキップ、前後アライン)
+    const nfpLevelChartData = nfpLevelChron.map((d) => ({
+      x: d.period,
+      y: d.level_m,
+    }));
+    const sp500ChartData = nfpLevelChron.map((d) => ({
+      x: d.period,
+      y: sp500ByMonth.get(d.period) ?? null,
+    }));
 
     const sentimentChron = (data.consumer_history || [])
       .filter((d) => d.indicator === 'UMCSENT' && d.current_value != null)
@@ -895,13 +936,34 @@ function useChartData(data: EmploymentRiskScore) {
       return { ...d, nfp_3m_avg: avg3m };
     });
 
-    return { nfpChron, claimsChron, sentimentChron, incomeChron, sahmChartData, nfpWithAvg };
-  }, [data]);
+    return {
+      nfpChron,
+      claimsChron,
+      sentimentChron,
+      incomeChron,
+      sahmChartData,
+      nfpWithAvg,
+      // NFP 累積チャート用 (1999 年〜現在の月次レベル値 + 同じ月キーに整列した S&P500)
+      nfpLevelChartData,
+      sp500ChartData,
+      // 直近 NFP レベル値 (百万人) - mini tile の stat 表示用
+      latestNFPLevelM: nfpLevelChartData.length > 0 ? nfpLevelChartData[nfpLevelChartData.length - 1].y : null,
+      // YoY 変化率 (%) - stat 表示用
+      nfpLevelYoY: (() => {
+        if (nfpLevelChartData.length < 13) return null;
+        const latest = nfpLevelChartData[nfpLevelChartData.length - 1].y;
+        const yearAgo = nfpLevelChartData[nfpLevelChartData.length - 13].y;
+        if (latest == null || yearAgo == null || yearAgo === 0) return null;
+        return parseFloat((((latest - yearAgo) / yearAgo) * 100).toFixed(2));
+      })(),
+    };
+  }, [data, sp500]);
 }
 
 function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChartData>): {
   series: ChartSeries[];
   referenceLines?: ChartReferenceLine[];
+  backgroundZones?: ChartBackgroundZone[];
   yAxisFormat?: (v: number) => string;
   yAxisRightFormat?: (v: number) => string;
 } {
@@ -918,6 +980,23 @@ function getChartConfig(chartType: EconChartType, cd: ReturnType<typeof useChart
         ],
         yAxisFormat: (v) => `${Math.round(v)}K`,
       };
+    case 'nfp-level': {
+      // NFP の絶対値 (百万人) を line で。S&P500 を右軸に重ね描き。
+      // 背景に過去 3 つの不況帯 (IT バブル / GFC / COVID) を入れて
+      // 「NFP がフラットになり始めると不況の前兆」というナラティブを視覚化。
+      const hasSP500 = cd.sp500ChartData.some((p) => p.y != null);
+      return {
+        series: [
+          { data: cd.nfpLevelChartData, type: 'line', color: DA.brand500, label: 'NFP (百万人)' },
+          ...(hasSP500
+            ? [{ data: cd.sp500ChartData, type: 'line' as const, color: DA.danger500, label: 'S&P500', yAxisSide: 'right' as const }]
+            : []),
+        ],
+        backgroundZones: RECESSION_BG_ZONES,
+        yAxisFormat: (v) => `${v.toFixed(0)}M`,
+        yAxisRightFormat: (v) => v.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+      };
+    }
     case 'unemployment':
       return {
         series: [
@@ -1007,6 +1086,14 @@ function indicatorStat(chartType: EconChartType, cd: ReturnType<typeof useChartD
       const r = lastAndDelta(arr, 'nfp_change');
       return { value: r.last != null ? `${Math.round(r.last)}K` : '—', delta: r.deltaPct };
     }
+    case 'nfp-level': {
+      // 直近 NFP 累積値 (百万人) + YoY 変化率 (%)
+      if (cd.latestNFPLevelM == null) return { value: '—', delta: null };
+      return {
+        value: `${cd.latestNFPLevelM.toFixed(1)}M`,
+        delta: cd.nfpLevelYoY,
+      };
+    }
     case 'unemployment': {
       const arr = cd.nfpChron as unknown as Array<Record<string, unknown>>;
       const r = lastAndDelta(arr, 'u3_rate');
@@ -1052,7 +1139,10 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
   const [viewMode, setViewMode] = useState<IndicatorViewMode>('overview');
   const [chartType, setChartType] = useState<EconChartType>('nfp');
   const [period, setPeriod] = useState<string>('ALL');
-  const cd = useChartData(data);
+  // S&P500 を取得する目的で risk-history を共有 fetch (RiskHistoryTab と SWR キャッシュ共有)。
+  // months=350 = ~29 年で NFP の DB 範囲 (1999-) と一致。
+  const { data: histData } = useRiskHistory(350);
+  const cd = useChartData(data, histData?.sp500);
   const config = getChartConfig(chartType, cd);
   const currentMeta = ECON_CHART_TYPES.find((c) => c.key === chartType)!;
   const stat = indicatorStat(chartType, cd);
@@ -1193,6 +1283,7 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
                     <EconChartCanvas
                       series={cfg.series}
                       referenceLines={cfg.referenceLines}
+                      backgroundZones={cfg.backgroundZones}
                       yAxisFormat={cfg.yAxisFormat}
                       yAxisRightFormat={cfg.yAxisRightFormat}
                       height={200}
@@ -1268,6 +1359,7 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
                   key={chartType}
                   series={config.series}
                   referenceLines={config.referenceLines}
+                  backgroundZones={config.backgroundZones}
                   yAxisFormat={config.yAxisFormat}
                   yAxisRightFormat={config.yAxisRightFormat}
                   height={420}

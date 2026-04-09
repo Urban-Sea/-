@@ -36,9 +36,15 @@ export interface ChartReferenceLine {
   dashed?: boolean;
 }
 
+// Background zone — 2 modes:
+//   - Y-axis based: yMin + yMax (e.g. risk score 0-20 = safe band)
+//   - X-axis based: xMin + xMax (e.g. recession periods 2007-12 〜 2009-06)
+// Specify exactly one mode per zone. Mixing yMin with xMin in the same zone is undefined.
 export interface ChartBackgroundZone {
-  yMin: number;
-  yMax: number;
+  yMin?: number;
+  yMax?: number;
+  xMin?: string; // ISO date prefix, e.g. "2020-02" or "2020-02-01"
+  xMax?: string;
   color: string;
 }
 
@@ -201,14 +207,45 @@ export default function EconChartCanvas({
     const yScaleRight = (v: number) => padding.top + chartHeight * (1 - (v - rightMin) / (rightMax - rightMin));
     const xScale = (i: number) => padding.left + pointSpacing * i;
 
-    // Background zones (behind grid)
+    // Background zones (behind grid) — supports both Y-axis (yMin/yMax) and X-axis (xMin/xMax) bands
     if (backgroundZones) {
+      const primaryDataForZones = series[0]?.data;
+      const slicedForZones = primaryDataForZones ? primaryDataForZones.slice(start, end) : null;
+
       for (const zone of backgroundZones) {
-        const y1 = yScaleLeft(Math.min(zone.yMax, leftMax));
-        const y2 = yScaleLeft(Math.max(zone.yMin, leftMin));
-        if (y2 > y1) {
-          ctx.fillStyle = zone.color;
-          ctx.fillRect(padding.left, y1, chartWidth, y2 - y1);
+        if (zone.xMin != null && zone.xMax != null) {
+          // X-axis based zone (e.g. recession band).
+          // Find first index >= xMin, last index <= xMax in the visible slice.
+          if (!slicedForZones || slicedForZones.length === 0) continue;
+          const xMin = zone.xMin;
+          const xMax = zone.xMax;
+          // Find startIdx: first data point whose x >= xMin.
+          // Use string comparison since x is ISO date prefix.
+          let startIdx = -1;
+          for (let i = 0; i < slicedForZones.length; i++) {
+            if (slicedForZones[i].x >= xMin) { startIdx = i; break; }
+          }
+          // Find endIdx: last data point whose x <= xMax.
+          let endIdx = -1;
+          for (let i = slicedForZones.length - 1; i >= 0; i--) {
+            if (slicedForZones[i].x <= xMax) { endIdx = i; break; }
+          }
+          // Skip if zone is entirely outside the visible range.
+          if (startIdx < 0 || endIdx < 0 || endIdx < startIdx) continue;
+          const x1 = xScale(startIdx);
+          const x2 = xScale(endIdx);
+          if (x2 > x1) {
+            ctx.fillStyle = zone.color;
+            ctx.fillRect(x1, padding.top, x2 - x1, chartHeight);
+          }
+        } else if (zone.yMin != null && zone.yMax != null) {
+          // Y-axis based zone (e.g. risk score band).
+          const y1 = yScaleLeft(Math.min(zone.yMax, leftMax));
+          const y2 = yScaleLeft(Math.max(zone.yMin, leftMin));
+          if (y2 > y1) {
+            ctx.fillStyle = zone.color;
+            ctx.fillRect(padding.left, y1, chartWidth, y2 - y1);
+          }
         }
       }
     }
