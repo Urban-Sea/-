@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -556,7 +556,7 @@ function YearByYearAnalysis() {
   );
 }
 
-function RiskHistoryTab() {
+function RiskHistoryTab({ realtimeScore, realtimePhase }: { realtimeScore: number; realtimePhase: typeof RISK_PHASES[number] }) {
   const { data: histData, error: histError, isLoading: loading, mutate } = useRiskHistory(350);
   const [showSP500, setShowSP500] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
@@ -697,41 +697,72 @@ function RiskHistoryTab() {
 
       {/* ============ Main chart card ============ */}
       <div className="rounded-xl border border-neutral-200 bg-card">
-        {/* Chart header */}
+        {/* Chart header — show BOTH realtime + historical to clarify the discrepancy */}
         <div className="flex flex-wrap items-end justify-between gap-4 p-5 pb-3 border-b border-neutral-100">
           <div>
             <h3 className="text-[18px] font-bold text-foreground tracking-tight">リスクスコア時系列</h3>
             <p className="text-[11px] text-neutral-500 mt-1">雇用 (50点) + 消費 (25点) + 構造 (25点) = 0–100</p>
           </div>
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-4">
+            {/* Realtime — primary, matches dashboard */}
             <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">直近スコア</p>
-              <p className="text-[24px] leading-none font-bold tabular-nums text-foreground mt-1">
-                {last ? Math.round(last.total_score) : '—'}
-                <span className="text-[12px] text-neutral-400 font-normal ml-1">/100</span>
-              </p>
-            </div>
-            <div
-              className="px-2.5 py-1 rounded-md text-[11px] font-bold border"
-              style={{
-                color: currentPhase.color,
-                backgroundColor: currentPhase.bg,
-                borderColor: currentPhase.border,
-              }}
-            >
-              {currentPhase.label}
-            </div>
-            {deltaScore != null && (
-              <div className={`px-2.5 py-1 rounded-md text-[11px] font-bold tabular-nums border ${
-                deltaScore <= 0
-                  ? 'text-[var(--signal-safe-500)] bg-[var(--signal-safe-100)] border-[var(--signal-safe-300)]/40'
-                  : 'text-[var(--signal-danger-500)] bg-[var(--signal-danger-100)] border-[var(--signal-danger-300)]/50'
-              }`}>
-                {deltaScore >= 0 ? '+' : ''}{deltaScore.toFixed(0)}pt
-                <span className="ml-1 font-normal text-[9px] uppercase tracking-wider opacity-70">期間</span>
+              <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">現在 (リアルタイム)</p>
+              <div className="flex items-end gap-2 mt-1">
+                <p className="text-[24px] leading-none font-bold tabular-nums text-foreground">
+                  {Math.round(realtimeScore)}
+                  <span className="text-[12px] text-neutral-400 font-normal ml-1">/100</span>
+                </p>
+                <div
+                  className="px-2 py-0.5 rounded-md text-[10px] font-bold border"
+                  style={{
+                    color: realtimePhase.color,
+                    backgroundColor: realtimePhase.bg,
+                    borderColor: realtimePhase.border,
+                  }}
+                >
+                  {realtimePhase.label}
+                </div>
               </div>
-            )}
+            </div>
+            {/* Historical — secondary, the chart's actual last point */}
+            <div className="text-right pl-4 border-l border-neutral-200">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">履歴最終 (バックテスト)</p>
+              <div className="flex items-end gap-2 mt-1">
+                <p className="text-[18px] leading-none font-bold tabular-nums text-neutral-700">
+                  {last ? Math.round(last.total_score) : '—'}
+                </p>
+                <div
+                  className="px-2 py-0.5 rounded-md text-[10px] font-bold border"
+                  style={{
+                    color: currentPhase.color,
+                    backgroundColor: currentPhase.bg,
+                    borderColor: currentPhase.border,
+                  }}
+                >
+                  {currentPhase.label}
+                </div>
+                {deltaScore != null && (
+                  <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${
+                    deltaScore <= 0
+                      ? 'text-[var(--signal-safe-500)] bg-[var(--signal-safe-100)]'
+                      : 'text-[var(--signal-danger-500)] bg-[var(--signal-danger-100)]'
+                  }`}>
+                    {deltaScore >= 0 ? '+' : ''}{deltaScore.toFixed(0)}pt
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Note: explain the discrepancy */}
+        <div className="px-5 pt-2 pb-2 bg-[var(--brand-100)]/30 border-b border-neutral-100">
+          <p className="text-[11px] text-neutral-700 leading-relaxed">
+            <strong className="text-[var(--brand-700)]">Note</strong>: 履歴計算は <strong>雇用乖離 (8点)</strong> と <strong>インフレ乖離 (5点)</strong> を含まないため
+            理論最大は 90 点 (Truflation/ADP 等の手動データソースは過去取得不可)。
+            危機局面 (GFC/COVID 等) では含まれる成分だけで 80+ に到達するので警戒検出は維持されますが、
+            <strong>平時の先行警告 (今の {Math.round(realtimeScore)} → {last ? Math.round(last.total_score) : '—'} の差)</strong> は履歴側で再現できません。
+          </p>
         </div>
 
         {/* Overlay toggles row */}
@@ -1009,17 +1040,62 @@ function indicatorStat(chartType: EconChartType, cd: ReturnType<typeof useChartD
   }
 }
 
+const INDICATOR_PERIODS: Array<{ name: string; years?: number }> = [
+  { name: 'ALL' },
+  { name: '10Y', years: 10 },
+  { name: '5Y',  years: 5 },
+  { name: '3Y',  years: 3 },
+  { name: '1Y',  years: 1 },
+];
+
 function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
   const [viewMode, setViewMode] = useState<IndicatorViewMode>('overview');
   const [chartType, setChartType] = useState<EconChartType>('nfp');
+  const [period, setPeriod] = useState<string>('ALL');
   const cd = useChartData(data);
   const config = getChartConfig(chartType, cd);
   const currentMeta = ECON_CHART_TYPES.find((c) => c.key === chartType)!;
   const stat = indicatorStat(chartType, cd);
+  const detailChartRef = useRef<HTMLDivElement>(null);
+
+  // Apply period viewport on the detail mode chart canvas via the
+  // [data-chart-viewport] hidden button exposed by EconChartCanvas.
+  const applyPeriod = useCallback((p: string) => {
+    setPeriod(p);
+    const container = detailChartRef.current;
+    if (!container) return;
+    const dataPts = config.series[0]?.data ?? [];
+    if (dataPts.length === 0) return;
+    const firstDate = dataPts[0].x;
+    const lastDate = dataPts[dataPts.length - 1].x;
+    let startDate = firstDate;
+    if (p !== 'ALL') {
+      const preset = INDICATOR_PERIODS.find((q) => q.name === p);
+      const years = preset?.years ?? 1;
+      const last = new Date(lastDate.length >= 10 ? lastDate.slice(0, 10) : lastDate);
+      if (!isNaN(last.getTime())) {
+        last.setFullYear(last.getFullYear() - years);
+        const targetStr = last.toISOString().slice(0, 10);
+        const idx = dataPts.findIndex((d) => d.x >= targetStr);
+        startDate = idx >= 0 ? dataPts[idx].x : firstDate;
+      }
+    }
+    const btn = container.querySelector('[data-chart-viewport]') as HTMLButtonElement | null;
+    if (btn) {
+      btn.setAttribute('data-start', startDate);
+      btn.setAttribute('data-end', lastDate);
+      btn.click();
+    }
+  }, [config]);
+
+  // Reset period to ALL when chart type changes (so a fresh chart shows everything)
+  useEffect(() => {
+    setPeriod('ALL');
+  }, [chartType]);
 
   return (
     <div className="space-y-3 plumb-animate-in">
-      {/* ============ Toolbar (view mode toggle) ============ */}
+      {/* ============ Toolbar (view mode toggle + period) ============ */}
       <div className="rounded-xl border border-neutral-200 bg-card p-3 md:p-4 flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
           {[
@@ -1040,8 +1116,36 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
             );
           })}
         </div>
-        <p className="text-[11px] text-neutral-500">
-          雇用・消費・構造の主要指標 7 種を一覧 / 詳細モードで切替表示
+
+        {/* Period selector — only for detail mode */}
+        {viewMode === 'detail' && (
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">期間</span>
+            <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
+              {INDICATOR_PERIODS.map((qr, i) => {
+                const isActive = period === qr.name;
+                return (
+                  <button
+                    key={qr.name}
+                    onClick={() => applyPeriod(qr.name)}
+                    className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
+                      i > 0 ? 'border-l border-neutral-200' : ''
+                    } ${
+                      isActive
+                        ? 'bg-[var(--brand-100)] text-[var(--brand-700)]'
+                        : 'text-neutral-700 hover:bg-neutral-50'
+                    }`}
+                  >{qr.name}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <p className="text-[11px] text-neutral-500 ml-auto hidden md:block">
+          {viewMode === 'overview'
+            ? '7 指標を一覧表示。タイルクリックで詳細へ'
+            : 'チャート上でドラッグ/スクロールでズーム・パン'}
         </p>
       </div>
 
@@ -1092,6 +1196,7 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
                       yAxisFormat={cfg.yAxisFormat}
                       yAxisRightFormat={cfg.yAxisRightFormat}
                       height={200}
+                      initialShowAll
                     />
                   )}
                 </div>
@@ -1154,17 +1259,19 @@ function IndicatorChartsTab({ data }: { data: EmploymentRiskScore }) {
                 </div>
               )}
             </div>
-            {/* Canvas */}
-            <div className="p-4 md:p-5">
+            {/* Canvas — key forces remount on chart type change so initialShowAll re-applies */}
+            <div className="p-4 md:p-5" ref={detailChartRef}>
               {config.series.length === 0 || config.series[0].data.length === 0 ? (
                 <div className="h-[420px] flex items-center justify-center text-sm text-neutral-500">データが不足しています</div>
               ) : (
                 <EconChartCanvas
+                  key={chartType}
                   series={config.series}
                   referenceLines={config.referenceLines}
                   yAxisFormat={config.yAxisFormat}
                   yAxisRightFormat={config.yAxisRightFormat}
                   height={420}
+                  initialShowAll
                 />
               )}
             </div>
@@ -1388,7 +1495,7 @@ function EmploymentContent() {
         </TabsContent>
 
         <TabsContent value="risk-history">
-          <RiskHistoryTab />
+          <RiskHistoryTab realtimeScore={data.total_score} realtimePhase={phaseForScore(data.total_score)} />
         </TabsContent>
 
         <TabsContent value="indicators">
