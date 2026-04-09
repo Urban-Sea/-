@@ -202,6 +202,7 @@ async def get_stock_info(ticker: str):
         if not current_price:
             # フォールバック: 履歴から取得
             hist = stock.history(period="5d")
+            hist = hist.dropna(subset=["Close"])  # 未確定バー除去
             if hist.empty:
                 raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
             current_price = hist["Close"].iloc[-1]
@@ -273,6 +274,7 @@ async def get_stock_quote(ticker: str):
 
         if not current_price:
             hist = stock.history(period="5d")
+            hist = hist.dropna(subset=["Close"])  # 未確定バー除去
             if hist.empty:
                 raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
             current_price = hist["Close"].iloc[-1]
@@ -322,7 +324,9 @@ async def get_stock_history(
         raise HTTPException(status_code=400, detail="Invalid period")
     if interval not in _ALLOWED_INTERVALS:
         raise HTTPException(status_code=400, detail="Invalid interval")
-    cache_key = f"stock:history:{ticker}:{period}:{interval}"
+    # v2: 旧キャッシュには yfinance の未確定バー由来の null/NaN が入っていて
+    # フロントの toFixed が null で落ちるため、キー prefix を bump して旧データ無視。
+    cache_key = f"stock:history:v2:{ticker}:{period}:{interval}"
     cached = _cache_get(cache_key)
     if cached:
         return StockHistory(**cached)
@@ -331,6 +335,10 @@ async def get_stock_history(
         yf_ticker = _to_yf(ticker)
         stock = yf.Ticker(yf_ticker)
         df = stock.history(period=period, interval=interval)
+        # 未確定バー (yfinance が当日の Close=NaN で返す行) を落とす。
+        # フロントは last bar の close を null チェックなしで toFixed するため
+        # ここで残すと chart 描画時に TypeError になる。
+        df = df.dropna(subset=["Close"])
 
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No history data for {ticker}")
@@ -389,6 +397,7 @@ async def get_stock_ema(
         yf_ticker = _to_yf(ticker)
         stock = yf.Ticker(yf_ticker)
         df = stock.history(period="6mo")
+        df = df.dropna(subset=["Close"])  # 未確定バー除去
 
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")

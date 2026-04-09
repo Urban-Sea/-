@@ -30,7 +30,11 @@ def fetch_ohlcv_cached(ticker: str, period: str = "6mo", ttl: int = DEFAULT_TTL)
             df = pd.DataFrame(cached)
             if "Date" in df.columns:
                 df["Date"] = pd.to_datetime(df["Date"])
-            return df
+            # 旧キャッシュ救済: 過去にキャッシュへ書かれた未確定バー (Close=NaN) を落とす。
+            # 残数 0 ならミス扱いで yfinance に再取得させる。
+            df = df.dropna(subset=["Close"])
+            if not df.empty:
+                return df
         except Exception:
             pass
 

@@ -161,7 +161,10 @@ async def get_signal(
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
 
     # キャッシュチェック (L1 インメモリ → L2 Redis)
-    cache_key = f"signal:{ticker}:{mode}"
+    # v2: 旧キャッシュには yfinance の未確定バー由来の NaN が入っていることが
+    # あり、FastAPI のレスポンス JSON シリアライズ (allow_nan=False) で 500 に
+    # なるため、キー prefix を bump して旧データを無視する。
+    cache_key = f"signal:v2:{ticker}:{mode}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -588,7 +591,7 @@ async def get_signal_history(
     benchmark_ticker = get_config(asset_class).regime.benchmark_ticker
 
     # キャッシュチェック (L1 インメモリ → L2 Redis)
-    cache_key = f"signal_hist:{ticker}:{period}:{mode}:{exit_mode}"
+    cache_key = f"signal_hist:v2:{ticker}:{period}:{mode}:{exit_mode}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -1220,7 +1223,7 @@ async def get_chart_markers(
     yf_ticker = normalize_ticker_yfinance(ticker, asset_class)
 
     # キャッシュチェック (L1 インメモリ → L2 Redis)
-    cache_key = f"markers:{ticker}:{period}"
+    cache_key = f"markers:v2:{ticker}:{period}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached

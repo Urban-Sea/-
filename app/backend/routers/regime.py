@@ -64,7 +64,9 @@ async def get_regime():
     """
     try:
         # キャッシュチェック（L1 インメモリ → L2 Redis）
-        cached = _cache_get("regime:us")
+        # v2: 旧キャッシュには yfinance の未確定バー由来の NaN が入っており
+        # FastAPI のレスポンス JSON シリアライズで 500 になっていたため bump。
+        cached = _cache_get("regime:v2:us")
         if cached is not None:
             return RegimeResponse(**cached)
 
@@ -86,7 +88,7 @@ async def get_regime():
             asset_class=result.asset_class,
         )
 
-        _cache_set("regime:us", response.model_dump(), ttl=adaptive_ttl(_REGIME_TTL))
+        _cache_set("regime:v2:us", response.model_dump(), ttl=adaptive_ttl(_REGIME_TTL))
         return response
 
     except Exception as e:
