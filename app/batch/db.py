@@ -8,12 +8,41 @@ upsert 前に既存データと比較し、値が変わっていたら data_revi
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import date as _date_type, datetime
 from typing import Dict, List, Optional, Set
 
 from psycopg2.extras import execute_values
 
 from .config import get_conn
+
+
+def _coerce_dates(values: List) -> List:
+    """文字列の日付を datetime.date オブジェクトに変換。
+    psycopg2 が text[] として送信するのを防ぎ、Postgres 側で
+    `date = text` 比較エラーになるのを回避する。
+
+    対応形式:
+      "2026-02-01"
+      "2026-02-01T00:00:00Z"
+      "2026-02-01 00:00:00"
+      datetime.date / datetime.datetime オブジェクト (素通し)
+    """
+    out = []
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, _date_type):
+            out.append(v)
+            continue
+        if not isinstance(v, str):
+            continue
+        # ISO 形式の先頭 10 文字 (YYYY-MM-DD) を date として解釈
+        try:
+            d = _date_type.fromisoformat(v[:10])
+            out.append(d)
+        except (ValueError, TypeError):
+            continue
+    return out
 
 logger = logging.getLogger("batch.db")
 
@@ -56,6 +85,11 @@ def _fetch_existing(
     if not dates:
         return {}
 
+    # 文字列日付を date オブジェクトに変換 (psycopg2 が date[] として送信するため)
+    coerced = _coerce_dates(dates)
+    if not coerced:
+        return {}
+
     conn = get_conn()
     existing: Dict[str, dict] = {}
 
@@ -71,7 +105,7 @@ def _fetch_existing(
     with conn.cursor() as cur:
         cur.execute(
             f"SELECT {col_str} FROM {table} WHERE {date_col} = ANY(%s)",
-            (dates,),
+            (coerced,),
         )
         col_names = [desc[0] for desc in cur.description]
         for row_tuple in cur.fetchall():
