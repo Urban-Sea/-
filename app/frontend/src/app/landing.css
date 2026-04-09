@@ -1,0 +1,10 @@
+[data-theme="landing"] {
+  --lp-primary: #3460FB;
+  --lp-primary-700: #0017C1;
+  --lp-accent: #a78bfa;
+  --lp-danger: #FE3939;
+  --lp-bg: #FFFFFF;
+  --lp-fg: #0F172A;
+  background: var(--lp-bg);
+  color: var(--lp-fg);
+}

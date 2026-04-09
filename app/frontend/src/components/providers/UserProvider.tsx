@@ -74,14 +74,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = fetchMe;
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-pulse text-muted-foreground text-sm">認証中...</div>
-      </div>
-    );
-  }
-
   return (
     <UserContext.Provider value={{ user, email, initial, isLoading, isAuthenticated, signOut, refreshUser }}>
       {children}

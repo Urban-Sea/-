@@ -9,6 +9,7 @@ import { UserProvider } from "@/components/providers/UserProvider";
 import { SWRProvider } from "@/lib/swr";
 import { ChunkErrorHandler } from "@/components/providers/ChunkErrorHandler";
 import "./globals.css";
+import "./landing.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

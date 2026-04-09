@@ -45,10 +45,18 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-700: var(--brand-primary-700);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-danger: var(--brand-danger);
 }
 
 :root {
   --radius: 0.625rem;
+  --brand-primary: #3460FB;
+  --brand-primary-700: #0017C1;
+  --brand-accent: #a78bfa;
+  --brand-danger: #FE3939;
   --background: #f8f9fa;
   --foreground: #111111;
   --card: #ffffff;
