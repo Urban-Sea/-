@@ -32,33 +32,6 @@ function fmt(v: number | null | undefined, d = 0): string {
   return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
-/** Map plumbing state code to display info */
-export function stateInfo(code: string): { label: string; color: string } {
-  const map: Record<string, { label: string; color: string }> = {
-    HEALTHY: { label: '健全相場', color: 'green' },
-    FINANCIAL_RALLY: { label: '健全相場', color: 'green' },
-    NEUTRAL: { label: '中立', color: 'cyan' },
-    MARKET_OVERSHOOT: { label: '中立', color: 'cyan' },
-    POLICY_TIGHTENING: { label: '政策引き締め', color: 'yellow' },
-    SPLIT_BUBBLE: { label: '信用収縮', color: 'orange' },
-    CREDIT_CONTRACTION: { label: '信用収縮', color: 'orange' },
-    LIQUIDITY_SHOCK: { label: '流動性ショック', color: 'red' },
-  };
-  return map[code] || { label: code, color: 'gray' };
-}
-
-/** Map economic phase code to display info */
-export function phaseInfo(code: string): { label: string; color: string } {
-  const map: Record<string, { label: string; color: string }> = {
-    EXPANSION: { label: '拡大期', color: 'green' },
-    SLOWDOWN: { label: '減速期', color: 'yellow' },
-    CAUTION: { label: '警戒期', color: 'orange' },
-    CONTRACTION: { label: '収縮期', color: 'red' },
-    CRISIS: { label: '危機', color: 'red' },
-  };
-  return map[code] || { label: code, color: 'gray' };
-}
-
 function colorClasses(color: string) {
   const map: Record<string, { text: string; bg: string; border: string; dot: string }> = {
     green: { text: 'text-blue-600', bg: 'bg-blue-500/8', border: 'border-blue-500/20', dot: 'bg-blue-400' },
@@ -221,10 +194,8 @@ export function LoadingSkeleton() {
  * - デジタル庁 signal-* トークンで配色 (緑/青/黄/橙/赤 の 5 段階)
  * - 最終更新タイムスタンプ表示
  */
-function TodaysVerdictBanner({ stateCode, phaseCode, stLabel, phLabel, lastUpdatedISO }: {
+function TodaysVerdictBanner({ stateCode, phaseCode }: {
   stateCode: string; phaseCode: string;
-  stLabel: string; phLabel: string;
-  lastUpdatedISO: string | undefined;
 }) {
   const insight = getIntegratedInsight(stateCode, phaseCode);
   const row = stateToRow(stateCode);
@@ -256,13 +227,6 @@ function TodaysVerdictBanner({ stateCode, phaseCode, stLabel, phLabel, lastUpdat
   };
   const tone = tones[severity];
 
-  const formattedUpdate = lastUpdatedISO
-    ? new Date(lastUpdatedISO).toLocaleString('ja-JP', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit',
-      })
-    : null;
-
   return (
     <section
       className={`relative rounded-2xl border ${tone.border} ${tone.bg} overflow-hidden plumb-animate-scale`}
@@ -284,22 +248,6 @@ function TodaysVerdictBanner({ stateCode, phaseCode, stLabel, phLabel, lastUpdat
             <p className="text-sm md:text-base text-muted-foreground max-w-3xl leading-relaxed">
               {insight.sub}
             </p>
-          </div>
-
-          <div className="flex flex-col gap-2 shrink-0 lg:items-end">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-muted-foreground uppercase w-8">流動性</span>
-              <Badge variant="outline" className="text-xs font-mono">{stLabel}</Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-muted-foreground uppercase w-8">景気</span>
-              <Badge variant="outline" className="text-xs font-mono">{phLabel}</Badge>
-            </div>
-            {formattedUpdate && (
-              <p className="text-xs font-mono text-muted-foreground mt-1">
-                最終更新: {formattedUpdate}
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -590,8 +538,6 @@ export function DashboardTab({ plumbing, economic, events, policy }: {
 }) {
   const stateCode = plumbing.market_state?.code || 'NEUTRAL';
   const phaseCode = economic.phase.code;
-  const si = stateInfo(stateCode);
-  const pi = phaseInfo(phaseCode);
 
   const currentRow = stateToRow(stateCode);
   const currentCol = phaseToCol(phaseCode);
@@ -604,9 +550,6 @@ export function DashboardTab({ plumbing, economic, events, policy }: {
       <TodaysVerdictBanner
         stateCode={stateCode}
         phaseCode={phaseCode}
-        stLabel={si.label}
-        phLabel={pi.label}
-        lastUpdatedISO={plumbing.timestamp}
       />
 
       {/* Section 2: Dual System Cards */}
