@@ -1102,21 +1102,39 @@ async def _compute_risk_score_fresh():
         # 4. manual_inputs を1回のバッチクエリに統合
         # 5. market_indicators limit 300→2
 
+        # ページネーションで全行取得 (PostgREST のデフォルト 1000 行制限を回避)
+        def _fetch_all(table: str, query_builder):
+            """range() で 1000 件ずつ全件取得して連結"""
+            all_rows = []
+            page_size = 1000
+            offset = 0
+            while True:
+                result = query_builder().range(offset, offset + page_size - 1).execute()
+                rows = result.data or []
+                all_rows.extend(rows)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+            return type('R', (), {'data': all_rows})()
+
         def fetch_nfp():
-            return supabase.table("economic_indicators") \
-                .select("*").eq("indicator", "NFP") \
-                .order("reference_period", desc=True).limit(24).execute()
+            # NFP (PAYEMS) は 1939 年以降月次。DB にあるだけ全件返す。
+            # 指標グラフ (NFP / 失業率 / 賃金 / Sahm) で過去全期間を見られるように。
+            return _fetch_all("economic_indicators", lambda: supabase.table("economic_indicators")
+                .select("*").eq("indicator", "NFP")
+                .order("reference_period", desc=True))
 
         def fetch_claims():
-            return supabase.table("weekly_claims") \
-                .select("*").order("week_ending", desc=True).limit(52).execute()
+            # weekly_claims は 1967 年以降週次。DB にあるだけ全件返す。
+            return _fetch_all("weekly_claims", lambda: supabase.table("weekly_claims")
+                .select("*").order("week_ending", desc=True))
 
         def fetch_all_indicators():
-            """Phase 1-2: JOLTS+UNEMPLOY を consumer系と統合 (3クエリ→1)"""
+            """W875RX1/UMCSENT/DRCCLACBS/CPILFESL/JOLTS/UNEMPLOY 全期間を一括取得"""
             all_indicators = ["W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL", "JOLTS", "UNEMPLOY"]
-            return supabase.table("economic_indicators") \
-                .select("*").in_("indicator", all_indicators) \
-                .order("reference_period", desc=True).limit(150).execute()
+            return _fetch_all("economic_indicators", lambda: supabase.table("economic_indicators")
+                .select("*").in_("indicator", all_indicators)
+                .order("reference_period", desc=True))
 
         def fetch_market():
             """Phase 1-1: limit 300→2 (K字型は最新1行で十分)"""
@@ -1223,7 +1241,8 @@ async def _compute_risk_score_fresh():
         )
 
         # キャッシュ保存 (1時間TTL)
-        _cache_set("employment:risk_score", result, ttl=_RISK_SCORE_TTL)
+        # v2 = 履歴取得を全期間に拡張 (旧 v1 キャッシュは無視される)
+        _cache_set("employment:risk_score:v2", result, ttl=_RISK_SCORE_TTL)
 
         return result
 
@@ -1239,13 +1258,17 @@ async def get_risk_score():
     雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
     """
     # 高速パス: 事前計算結果をチェック
+    # ただし旧 precomputed (NFP 24 件制限) は破棄して再計算させる
     from precomputed import get_precomputed
     precomputed = get_precomputed("risk_score")
     if precomputed is not None:
-        return precomputed
+        nfp_hist = precomputed.get("nfp_history") if isinstance(precomputed, dict) else None
+        if nfp_hist and len(nfp_hist) > 24:
+            return precomputed
 
     # キャッシュチェック（L1 インメモリ → L2 Redis）
-    cached = _cache_get("employment:risk_score")
+    # v2 = 履歴を全期間に拡張した版
+    cached = _cache_get("employment:risk_score:v2")
     if cached is not None:
         return cached
 
