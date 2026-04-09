@@ -3,6 +3,23 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 
+// Read CSS variable from <html> element. Fallback for SSR / first paint.
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+// Convert #rrggbb → "r,g,b" so we can compose rgba() at runtime.
+function hexToRgb(hex: string): string {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) return '52,96,251'; // brand-500 fallback
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `${r},${g},${b}`;
+}
+
 export interface ChartSeries {
   data: Array<{ x: string; y: number | null }>;
   type: 'line' | 'area' | 'bar';
@@ -105,22 +122,30 @@ export default function EconChartCanvas({
     const hasRightAxis = series.some((s) => s.yAxisSide === 'right');
     const hasEvents = eventMarkers && eventMarkers.length > 0;
     const isMobile = width < 500;
+    // Bottom layout (top→bottom): chart, dateLabels(14), eventLabels?(14), legend(18), scrollbar(8)
     const padding = {
-      top: 32,
-      right: hasRightAxis ? (isMobile ? 52 : 68) : 16,
-      bottom: hasEvents ? 58 : 44,
-      left: isMobile ? 48 : 68,
+      top: 16,
+      right: hasRightAxis ? (isMobile ? 56 : 72) : 20,
+      bottom: hasEvents ? 76 : 60,
+      left: isMobile ? 52 : 72,
     };
-    const axisFont = isMobile ? '9px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
+    const axisFont = isMobile
+      ? '10px Arial, "Helvetica Neue", sans-serif'
+      : '11px Arial, "Helvetica Neue", sans-serif';
+    const labelFont = '11px Arial, "Helvetica Neue", sans-serif';
     const scrollbarH = 6;
     const chartHeight = h - padding.top - padding.bottom - scrollbarH - 4;
     const chartWidth = width - padding.left - padding.right;
     const pointSpacing = chartWidth / (visibleCount - 1 || 1);
 
-    const bgColor = isDark ? '#0a0a0a' : '#ffffff';
-    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
-    const textColor = isDark ? '#555' : '#999';
-    const legendColor = isDark ? '#808080' : '#666';
+    // Digital Agency tokens (read live from CSS so theme switching just works)
+    const bgColor = cssVar('--background', isDark ? '#0a0a0a' : '#ffffff');
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : cssVar('--neutral-200', '#E6E6E6');
+    const textColor = isDark ? '#9ca3af' : cssVar('--neutral-700', '#767676');
+    const labelColor = isDark ? '#e5e7eb' : cssVar('--neutral-900', '#4D4D4D');
+    const legendColor = isDark ? '#d4d4d8' : cssVar('--neutral-900', '#4D4D4D');
+    const cardColor = cssVar('--card', isDark ? '#0a0a0a' : '#ffffff');
+    const borderColor = isDark ? 'rgba(255,255,255,0.12)' : cssVar('--neutral-200', '#E6E6E6');
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, h);
@@ -191,32 +216,46 @@ export default function EconChartCanvas({
       }
     }
 
-    // Grid lines
-    const gridLines = 6;
+    // Grid lines — DA テンプレ準拠: solid 1px の薄い罫線, 横のみ
+    const gridLines = 5;
     ctx.font = axisFont;
     for (let i = 0; i <= gridLines; i++) {
-      const y = padding.top + (chartHeight / gridLines) * i;
+      const y = Math.round(padding.top + (chartHeight / gridLines) * i) + 0.5;
       ctx.strokeStyle = gridColor;
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([3, 4]);
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padding.left, y);
       ctx.lineTo(width - padding.right, y);
       ctx.stroke();
-      ctx.setLineDash([]);
 
       // Left axis labels
       const leftVal = leftMax - (leftMax - leftMin) * (i / gridLines);
-      ctx.fillStyle = textColor;
+      ctx.fillStyle = labelColor;
       ctx.textAlign = 'right';
-      ctx.fillText(yAxisFormat(leftVal), padding.left - 6, y + 3);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(yAxisFormat(leftVal), padding.left - 8, y);
 
       // Right axis labels
       if (hasRightAxis) {
         const rightVal = rightMax - (rightMax - rightMin) * (i / gridLines);
         ctx.textAlign = 'left';
-        ctx.fillText((yAxisRightFormat || yAxisFormat)(rightVal), width - padding.right + 6, y + 3);
+        ctx.fillText((yAxisRightFormat || yAxisFormat)(rightVal), width - padding.right + 8, y);
       }
+    }
+    ctx.textBaseline = 'alphabetic';
+
+    // Vertical axis line (left edge of plot area)
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(padding.left) + 0.5, padding.top);
+    ctx.lineTo(Math.round(padding.left) + 0.5, padding.top + chartHeight);
+    ctx.stroke();
+    if (hasRightAxis) {
+      ctx.beginPath();
+      ctx.moveTo(Math.round(width - padding.right) - 0.5, padding.top);
+      ctx.lineTo(Math.round(width - padding.right) - 0.5, padding.top + chartHeight);
+      ctx.stroke();
     }
 
     // Reference lines
@@ -226,18 +265,18 @@ export default function EconChartCanvas({
         if (y < padding.top || y > padding.top + chartHeight) continue;
         ctx.strokeStyle = rl.color;
         ctx.lineWidth = 1;
-        ctx.setLineDash(rl.dashed !== false ? [4, 4] : []);
+        ctx.setLineDash(rl.dashed !== false ? [5, 4] : []);
         ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(width - padding.right, y);
+        ctx.moveTo(padding.left, Math.round(y) + 0.5);
+        ctx.lineTo(width - padding.right, Math.round(y) + 0.5);
         ctx.stroke();
         ctx.setLineDash([]);
 
         if (rl.label) {
           ctx.fillStyle = rl.color;
-          ctx.font = axisFont;
+          ctx.font = `bold ${axisFont}`;
           ctx.textAlign = 'right';
-          ctx.fillText(rl.label, width - padding.right - 4, y - 4);
+          ctx.fillText(rl.label, width - padding.right - 6, y - 5);
         }
       }
     }
@@ -254,26 +293,30 @@ export default function EconChartCanvas({
       const yFn = s.yAxisSide === 'right' ? yScaleRight : yScaleLeft;
 
       if (s.type === 'bar') {
-        const barW = Math.max(1, pointSpacing * 0.7);
+        const barW = Math.max(1, pointSpacing * 0.62);
+        const rgb = hexToRgb(s.color);
         for (let i = 0; i < sliced.length; i++) {
           if (sliced[i].y == null) continue;
           const val = sliced[i].y!;
           const x = xScale(i) - barW / 2;
           const zeroY = yFn(0);
           const valY = yFn(val);
+          // Honor explicit color but apply consistent opacity
           const barColor = val >= 0
-            ? (s.barNegativeColor ? s.color : 'rgba(59,130,246,0.5)')
-            : (s.barNegativeColor || 'rgba(239,68,68,0.5)');
+            ? (s.barNegativeColor ? s.color : `rgba(${rgb},0.78)`)
+            : (s.barNegativeColor || `rgba(${hexToRgb('#FE3939')},0.78)`);
           ctx.fillStyle = barColor;
           const top = Math.min(zeroY, valY);
           const barH = Math.abs(zeroY - valY) || 1;
-          roundRect(ctx, x, top, barW, barH, 2);
+          roundRect(ctx, x, top, barW, barH, 1.5);
           ctx.fill();
         }
       } else {
         // line or area
         ctx.strokeStyle = s.color;
-        ctx.lineWidth = s.type === 'area' ? 1.5 : 2;
+        ctx.lineWidth = s.type === 'area' ? 2 : 2.25;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.setLineDash(s.dashed ? [6, 3] : []);
         ctx.beginPath();
         let started = false;
@@ -289,20 +332,18 @@ export default function EconChartCanvas({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Area fill
+        // Area fill — softer gradient, DA palette friendly
         if (s.type === 'area' && points.length > 1) {
           const lastPt = points[points.length - 1];
           const firstPt = points[0];
           ctx.lineTo(lastPt.x, padding.top + chartHeight);
           ctx.lineTo(firstPt.x, padding.top + chartHeight);
           ctx.closePath();
-          const baseColor = s.color;
-          const r = parseInt(baseColor.length === 7 ? baseColor.slice(1, 3) : 'ff', 16);
-          const g = parseInt(baseColor.length === 7 ? baseColor.slice(3, 5) : 'ff', 16);
-          const b = parseInt(baseColor.length === 7 ? baseColor.slice(5, 7) : 'ff', 16);
+          const rgb = hexToRgb(s.color);
           const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
-          grad.addColorStop(0, `rgba(${r},${g},${b},0.12)`);
-          grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+          grad.addColorStop(0, `rgba(${rgb},0.22)`);
+          grad.addColorStop(0.6, `rgba(${rgb},0.08)`);
+          grad.addColorStop(1, `rgba(${rgb},0)`);
           ctx.fillStyle = grad;
           ctx.fill();
         }
@@ -312,42 +353,48 @@ export default function EconChartCanvas({
     // Restore full canvas for overlays (crosshair, labels, scrollbar)
     ctx.restore();
 
-    // Event markers (vertical lines with labels)
+    // Event markers (vertical lines with subtle band)
     if (eventMarkers && eventMarkers.length > 0) {
       const primaryData = series[0]?.data;
       if (primaryData) {
         const slicedData = primaryData.slice(start, end);
         for (const marker of eventMarkers) {
-          // Find matching index in visible range
           const idx = slicedData.findIndex((d) => d.x.startsWith(marker.date) || marker.date.startsWith(d.x));
           if (idx < 0) continue;
-
           const mx = xScale(idx);
-          const markerColor = marker.color || (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)');
+          const markerColor = marker.color || (isDark ? 'rgba(255,255,255,0.32)' : cssVar('--neutral-500', '#999999'));
 
           // Vertical dashed line
           ctx.strokeStyle = markerColor;
           ctx.lineWidth = 1;
-          ctx.setLineDash([4, 4]);
+          ctx.setLineDash([3, 3]);
           ctx.beginPath();
-          ctx.moveTo(mx, padding.top);
-          ctx.lineTo(mx, padding.top + chartHeight);
+          ctx.moveTo(Math.round(mx) + 0.5, padding.top);
+          ctx.lineTo(Math.round(mx) + 0.5, padding.top + chartHeight);
           ctx.stroke();
           ctx.setLineDash([]);
 
+          // Small triangle mark at the top
+          ctx.fillStyle = markerColor;
+          ctx.beginPath();
+          ctx.moveTo(mx - 4, padding.top);
+          ctx.lineTo(mx + 4, padding.top);
+          ctx.lineTo(mx, padding.top + 5);
+          ctx.closePath();
+          ctx.fill();
         }
       }
     }
 
     // Date labels (use first left-axis series for x labels)
     const primarySeries = series[0];
-    const dateY = h - padding.bottom - scrollbarH + 10;
+    const dateY = padding.top + chartHeight + 16;
     if (primarySeries) {
       const sliced = primarySeries.data.slice(start, end);
       ctx.fillStyle = textColor;
       ctx.font = axisFont;
       ctx.textAlign = 'center';
-      const labelStep = Math.max(1, Math.ceil(sliced.length / 10));
+      const labelStep = Math.max(1, Math.ceil(sliced.length / 8));
       for (let i = 0; i < sliced.length; i++) {
         if (i % labelStep === 0) {
           ctx.fillText(xAxisFormat(sliced[i].x), xScale(i), dateY);
@@ -356,80 +403,130 @@ export default function EconChartCanvas({
 
       // Event labels below date labels
       if (eventMarkers && eventMarkers.length > 0) {
-        const eventY = dateY + 12;
-        ctx.font = 'bold 9px -apple-system, sans-serif';
+        const eventY = dateY + 14;
+        ctx.font = `bold ${axisFont}`;
         ctx.textAlign = 'center';
         for (const marker of eventMarkers) {
           const idx = sliced.findIndex((d) => d.x.startsWith(marker.date) || marker.date.startsWith(d.x));
           if (idx < 0) continue;
           const mx = xScale(idx);
-          ctx.fillStyle = marker.color || (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)');
+          ctx.fillStyle = marker.color || labelColor;
           ctx.fillText(marker.label, mx, eventY);
         }
       }
     }
 
-    // Crosshair
+    // Crosshair + tooltip pill
     if (mouseRef.current.active && mouseRef.current.x >= padding.left && mouseRef.current.x <= width - padding.right) {
       const mx = mouseRef.current.x;
-      // Vertical line
-      ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+      // Vertical line — solid 1px in brand-700
+      ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.18)' : cssVar('--neutral-300', '#CCCCCC');
       ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
       ctx.beginPath();
-      ctx.moveTo(mx, padding.top);
-      ctx.lineTo(mx, padding.top + chartHeight);
+      ctx.moveTo(Math.round(mx) + 0.5, padding.top);
+      ctx.lineTo(Math.round(mx) + 0.5, padding.top + chartHeight);
       ctx.stroke();
-      ctx.setLineDash([]);
 
       // Find nearest data index
       const nearestIdx = Math.round((mx - padding.left) / pointSpacing);
       if (nearestIdx >= 0 && nearestIdx < visibleCount) {
-        let tooltipY = padding.top + 14;
-        ctx.font = axisFont;
+        ctx.font = labelFont;
+        ctx.textBaseline = 'alphabetic';
 
-        // Measure tooltip width to decide left/right placement
+        // Build tooltip rows
         const primarySliced = series[0]?.data.slice(start, end);
-        let maxTextWidth = 0;
-        if (primarySliced?.[nearestIdx]) {
-          maxTextWidth = ctx.measureText(primarySliced[nearestIdx].x).width;
-        }
+        const dateLabel = primarySliced?.[nearestIdx]?.x ?? '';
+        type Row = { label: string; value: string; color: string };
+        const rows: Row[] = [];
         for (const s of series) {
           const sliced = s.data.slice(start, end);
           const val = sliced[nearestIdx]?.y;
-          if (val != null) {
-            const fmt = s.yAxisSide === 'right' ? (yAxisRightFormat || yAxisFormat) : yAxisFormat;
-            const tw = ctx.measureText(`${s.label}: ${fmt(val)}`).width;
-            if (tw > maxTextWidth) maxTextWidth = tw;
+          if (val == null) continue;
+          const fmt = s.yAxisSide === 'right' ? (yAxisRightFormat || yAxisFormat) : yAxisFormat;
+          rows.push({ label: s.label, value: fmt(val), color: s.color });
+        }
+
+        if (rows.length > 0) {
+          // Measure widest row
+          ctx.font = `bold ${labelFont}`;
+          let maxLabelW = 0;
+          for (const r of rows) maxLabelW = Math.max(maxLabelW, ctx.measureText(r.label).width);
+          ctx.font = labelFont;
+          let maxValW = 0;
+          for (const r of rows) maxValW = Math.max(maxValW, ctx.measureText(r.value).width);
+          const dateW = ctx.measureText(dateLabel).width;
+
+          const padX = 12;
+          const padY = 10;
+          const rowH = 16;
+          const swatchW = 10;
+          const gap = 16;
+          const innerW = Math.max(dateW, swatchW + 8 + maxLabelW + gap + maxValW);
+          const tooltipW = innerW + padX * 2;
+          const tooltipH = padY * 2 + 18 + rows.length * rowH;
+
+          // Position: prefer right side of cursor; flip if overflow
+          let tooltipX = mx + 14;
+          if (tooltipX + tooltipW > width - padding.right) {
+            tooltipX = mx - 14 - tooltipW;
           }
-        }
-        // Flip tooltip to left side if it would overflow the right edge
-        const tooltipX = (mx + 8 + maxTextWidth > width - padding.right)
-          ? mx - maxTextWidth - 8
-          : mx + 8;
+          if (tooltipX < padding.left) tooltipX = padding.left + 4;
+          let tooltipY = padding.top + 8;
 
-        // Date label
-        if (primarySliced?.[nearestIdx]) {
-          ctx.fillStyle = legendColor;
+          // Background pill
+          ctx.fillStyle = cardColor;
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = 1;
+          roundRect(ctx, tooltipX, tooltipY, tooltipW, tooltipH, 6);
+          ctx.fill();
+          // Subtle shadow
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.08)';
+          ctx.shadowBlur = 12;
+          ctx.shadowOffsetY = 2;
+          ctx.fill();
+          ctx.restore();
+          ctx.stroke();
+
+          // Date header
+          ctx.fillStyle = textColor;
+          ctx.font = `${axisFont}`;
           ctx.textAlign = 'left';
-          ctx.fillText(primarySliced[nearestIdx].x, tooltipX, tooltipY);
-          tooltipY += 14;
-        }
-        // Values
-        for (const s of series) {
-          const sliced = s.data.slice(start, end);
-          const val = sliced[nearestIdx]?.y;
-          if (val != null) {
-            ctx.fillStyle = s.color;
-            const fmt = s.yAxisSide === 'right' ? (yAxisRightFormat || yAxisFormat) : yAxisFormat;
-            ctx.fillText(`${s.label}: ${fmt(val)}`, tooltipX, tooltipY);
-            tooltipY += 13;
+          ctx.fillText(dateLabel, tooltipX + padX, tooltipY + padY + 10);
 
-            // Dot on the line
+          // Rows
+          let ry = tooltipY + padY + 10 + 18;
+          for (const r of rows) {
+            // swatch
+            ctx.fillStyle = r.color;
+            ctx.fillRect(tooltipX + padX, ry - 9, swatchW, 10);
+            // label
+            ctx.fillStyle = labelColor;
+            ctx.font = labelFont;
+            ctx.fillText(r.label, tooltipX + padX + swatchW + 8, ry);
+            // value (right aligned)
+            ctx.font = `bold ${labelFont}`;
+            ctx.textAlign = 'right';
+            ctx.fillText(r.value, tooltipX + tooltipW - padX, ry);
+            ctx.textAlign = 'left';
+            ry += rowH;
+          }
+
+          // Dots on each line at cursor
+          for (const s of series) {
+            const sliced = s.data.slice(start, end);
+            const val = sliced[nearestIdx]?.y;
+            if (val == null) continue;
             const yFn = s.yAxisSide === 'right' ? yScaleRight : yScaleLeft;
             const dotY = yFn(val);
+            const dotX = xScale(nearestIdx);
+            // Outer ring (background color) for contrast
             ctx.beginPath();
-            ctx.arc(xScale(nearestIdx), dotY, 3, 0, Math.PI * 2);
+            ctx.arc(dotX, dotY, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
             ctx.fillStyle = s.color;
             ctx.fill();
           }
@@ -437,30 +534,37 @@ export default function EconChartCanvas({
       }
     }
 
-    // Legend
+    // Legend — DA テンプレ準拠で chart 下に配置
     ctx.textAlign = 'left';
-    let legendX = padding.left + 4;
-    const legendY = 16;
+    ctx.textBaseline = 'middle';
+    const legendY = h - scrollbarH - 14;
+    let legendX = padding.left;
+    ctx.font = labelFont;
     for (const s of series) {
       ctx.strokeStyle = s.color;
-      ctx.lineWidth = 2;
-      ctx.setLineDash(s.dashed ? [4, 2] : []);
+      ctx.lineWidth = 2.25;
+      ctx.setLineDash(s.dashed ? [5, 2] : []);
       if (s.type === 'bar') {
         ctx.fillStyle = s.color;
         ctx.fillRect(legendX, legendY - 4, 12, 8);
       } else {
         ctx.beginPath();
         ctx.moveTo(legendX, legendY);
-        ctx.lineTo(legendX + 14, legendY);
+        ctx.lineTo(legendX + 16, legendY);
         ctx.stroke();
+        // dot at center
+        ctx.beginPath();
+        ctx.arc(legendX + 8, legendY, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = s.color;
+        ctx.fill();
       }
       ctx.setLineDash([]);
-      legendX += 18;
+      legendX += 22;
       ctx.fillStyle = legendColor;
-      ctx.font = axisFont;
-      ctx.fillText(s.label, legendX, legendY + 4);
-      legendX += ctx.measureText(s.label).width + 12;
+      ctx.fillText(s.label, legendX, legendY);
+      legendX += ctx.measureText(s.label).width + 18;
     }
+    ctx.textBaseline = 'alphabetic';
 
     // Scrollbar
     if (totalLen > MIN_VISIBLE) {

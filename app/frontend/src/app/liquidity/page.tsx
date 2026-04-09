@@ -11,7 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import EconChartCanvas from '@/components/charts/EconChartCanvas';
-import type { ChartSeries, ChartReferenceLine } from '@/components/charts/EconChartCanvas';
+import type { ChartSeries, ChartReferenceLine, ChartEventMarker } from '@/components/charts/EconChartCanvas';
 import { usePlumbingSummary, useHistoryCharts, useBacktestStates, useMarketEvents, usePolicyRegime } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import {
@@ -612,6 +612,30 @@ function toSeries(
   };
 }
 
+// ============================================================
+// Digital Agency color tokens (正典: ~/Desktop/policy-dashboard-assets)
+// ============================================================
+const DA = {
+  brand900: '#0017C1',
+  brand700: '#0017C1',
+  brand500: '#3460FB',
+  brand400: '#7096F8',
+  brand200: '#C5D7FB',
+  brand100: '#E8F1FE',
+  safe500: '#259D63',
+  safe300: '#9BD4B5',
+  caution500: '#FB5B01',
+  caution400: '#FF8D44',
+  caution300: '#FFC199',
+  danger500: '#FE3939',
+  danger300: '#FFBBBB',
+  neutral900: '#4D4D4D',
+  neutral700: '#767676',
+  neutral500: '#999999',
+  neutral300: '#CCCCCC',
+  neutral200: '#E6E6E6',
+} as const;
+
 function mergeOverlay(
   base: Array<Record<string, unknown>>,
   marketIndicators: Array<Record<string, unknown>>,
@@ -624,26 +648,27 @@ function mergeOverlay(
   if (showSP500) {
     overlay.push({
       data: base.map(r => { const mi = miMap.get(r.date as string); return { x: r.date as string, y: mi ? (mi.sp500 as number | null) : null }; }),
-      type: 'line', color: '#10b981', label: 'S&P500', dashed: true, yAxisSide: 'right',
+      type: 'line', color: DA.neutral700, label: 'S&P500', dashed: true, yAxisSide: 'right',
     });
   }
   if (showNASDAQ) {
     overlay.push({
       data: base.map(r => { const mi = miMap.get(r.date as string); return { x: r.date as string, y: mi ? (mi.nasdaq as number | null) : null }; }),
-      type: 'line', color: '#8b5cf6', label: 'NASDAQ', dashed: true, yAxisSide: 'right',
+      type: 'line', color: DA.neutral500, label: 'NASDAQ', dashed: true, yAxisSide: 'right',
     });
   }
   return overlay;
 }
 
+// Chart types with subtitle for the chart header
 const CHART_TYPES = [
-  { key: 'net_liquidity', label: 'Net Liquidity' },
-  { key: 'margin_debt', label: '信用取引残高' },
-  { key: 'kre', label: 'KRE（地銀）' },
-  { key: 'spreads', label: 'クレジットスプレッド' },
-  { key: 'vix', label: 'VIX' },
-  { key: 'layer_scores', label: 'Layerスコア' },
-  { key: 'divergence', label: '乖離分析' },
+  { key: 'net_liquidity', label: 'Net Liquidity', sub: 'SOMA − RRP − TGA', unit: '$B' },
+  { key: 'margin_debt', label: '信用取引残高', sub: 'FINRA Margin Debt', unit: 'M$' },
+  { key: 'kre', label: 'KRE（地銀）', sub: 'SPDR S&P Regional Banking ETF', unit: 'USD' },
+  { key: 'spreads', label: 'クレジットスプレッド', sub: 'High-Yield / Investment-Grade OAS', unit: '%' },
+  { key: 'vix', label: 'VIX', sub: 'CBOE Volatility Index', unit: 'pt' },
+  { key: 'layer_scores', label: 'Layerスコア', sub: 'L1 政策 / L2A 銀行 / L2B 市場', unit: '0-100' },
+  { key: 'divergence', label: '乖離分析', sub: 'L2 vs L1 標準偏差', unit: 'σ' },
 ] as const;
 
 const PERIODS = [
@@ -654,21 +679,78 @@ const PERIODS = [
   { label: 'ALL', value: 'all' },
 ];
 
+// Crisis presets with key event dates for vertical markers on the chart
 const CRISIS_PRESETS = [
-  { label: 'リーマン', start: '2007-06-01', end: '2010-06-01' },
-  { label: '欧州債務', start: '2011-01-01', end: '2012-12-31' },
-  { label: 'コロナ', start: '2019-10-01', end: '2021-06-01' },
-  { label: 'QT', start: '2021-10-01', end: '2023-12-31' },
+  {
+    label: 'リーマン', start: '2007-06-01', end: '2010-06-01',
+    events: [
+      { date: '2008-09', label: 'Lehman' },
+      { date: '2008-10', label: 'TARP' },
+      { date: '2009-03', label: 'QE1' },
+    ],
+  },
+  {
+    label: '欧州債務', start: '2011-01-01', end: '2012-12-31',
+    events: [
+      { date: '2011-08', label: 'S&P米国格下げ' },
+      { date: '2012-07', label: 'Whatever it takes' },
+    ],
+  },
+  {
+    label: 'コロナ', start: '2019-10-01', end: '2021-06-01',
+    events: [
+      { date: '2020-03', label: 'COVID crash' },
+      { date: '2020-03', label: 'QE Infinity' },
+    ],
+  },
+  {
+    label: 'QT', start: '2021-10-01', end: '2023-12-31',
+    events: [
+      { date: '2022-03', label: '利上げ開始' },
+      { date: '2023-03', label: 'SVB破綻' },
+    ],
+  },
+] as const;
+
+// Major events visible on long timelines (5Y / 10Y / ALL)
+const MAJOR_EVENTS = [
+  { date: '2008-09', label: 'Lehman' },
+  { date: '2020-03', label: 'COVID' },
+  { date: '2022-03', label: '利上げ開始' },
+  { date: '2023-03', label: 'SVB' },
 ];
 
 type ChartType = typeof CHART_TYPES[number]['key'];
 
-function HistoryChartsTab() {
+// Extract latest value + delta vs first point of visible window
+function lastAndDelta(arr: Array<Record<string, unknown>>, field: string): { last: number | null; delta: number | null; deltaPct: number | null } {
+  if (!arr || arr.length === 0) return { last: null, delta: null, deltaPct: null };
+  let last: number | null = null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const v = arr[i][field];
+    if (typeof v === 'number' && Number.isFinite(v)) { last = v; break; }
+  }
+  let first: number | null = null;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i][field];
+    if (typeof v === 'number' && Number.isFinite(v)) { first = v; break; }
+  }
+  if (last == null || first == null) return { last, delta: null, deltaPct: null };
+  const delta = last - first;
+  const deltaPct = first !== 0 ? (delta / Math.abs(first)) * 100 : null;
+  return { last, delta, deltaPct };
+}
+
+type ViewMode = 'overview' | 'detail';
+
+export function HistoryChartsTab() {
+  const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [period, setPeriod] = useState('2y');
   const [chartType, setChartType] = useState<ChartType>('net_liquidity');
   const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
   const [showSP500, setShowSP500] = useState(false);
   const [showNASDAQ, setShowNASDAQ] = useState(false);
+  const [showEvents, setShowEvents] = useState(true);
 
   const { data: histData, error: histError, isLoading: loading } = useHistoryCharts(
     period,
@@ -680,7 +762,69 @@ function HistoryChartsTab() {
   const handlePeriod = (p: string) => { setCustomRange(null); setPeriod(p); };
   const handleCrisis = (start: string, end: string) => { setCustomRange({ start, end }); };
 
-  function renderChart() {
+  // Active crisis preset (if any)
+  const activeCrisis = customRange ? CRISIS_PRESETS.find(c => c.start === customRange.start) : null;
+
+  // Compute event markers based on selection (crisis events) or major events on long timelines
+  const eventMarkers: ChartEventMarker[] | undefined = (() => {
+    if (!showEvents) return undefined;
+    if (activeCrisis) return [...activeCrisis.events];
+    if (period === '5y' || period === '10y' || period === 'all') return MAJOR_EVENTS;
+    return undefined;
+  })();
+
+  // Current chart meta (title, sub, unit)
+  const currentMeta = CHART_TYPES.find(c => c.key === chartType)!;
+
+  // Compute latest value + delta for any chart type (used by header + grid tiles)
+  function statFor(ct: ChartType): { value: string; delta: number | null; deltaUnit?: string } | null {
+    if (!histData) return null;
+    const d = histData.data;
+    switch (ct) {
+      case 'net_liquidity': {
+        const r = lastAndDelta(d.net_liquidity, 'net_liquidity');
+        return { value: r.last != null ? `$${Math.round(r.last).toLocaleString()}B` : '—', delta: r.deltaPct };
+      }
+      case 'margin_debt': {
+        const r = lastAndDelta(d.margin_debt, 'debit_balance');
+        return { value: r.last != null ? `${(r.last / 1000).toFixed(0)}K` : '—', delta: r.deltaPct };
+      }
+      case 'kre': {
+        const r = lastAndDelta(d.bank_sector, 'kre_close');
+        return { value: r.last != null ? `$${r.last.toFixed(2)}` : '—', delta: r.deltaPct };
+      }
+      case 'spreads': {
+        const r = lastAndDelta(d.credit_spreads, 'hy_spread');
+        return { value: r.last != null ? `${r.last.toFixed(2)}%` : '—', delta: r.deltaPct, deltaUnit: 'pp' };
+      }
+      case 'vix': {
+        const r = lastAndDelta(d.market_indicators, 'vix');
+        return { value: r.last != null ? r.last.toFixed(2) : '—', delta: r.deltaPct };
+      }
+      case 'layer_scores': {
+        const lsData = d.layer_scores ?? [];
+        if (lsData.length === 0) return null;
+        const r = lastAndDelta(lsData as Array<Record<string, unknown>>, 'layer1');
+        return { value: r.last != null ? r.last.toFixed(0) : '—', delta: r.deltaPct };
+      }
+      case 'divergence': {
+        const dvData = d.layer_divergence ?? [];
+        if (dvData.length === 0) return null;
+        const r = lastAndDelta(dvData as Array<Record<string, unknown>>, 'divergence');
+        return { value: r.last != null ? `${r.last.toFixed(2)}σ` : '—', delta: null };
+      }
+      default: return null;
+    }
+  }
+  const headerStat = statFor(chartType);
+
+  function buildChartConfig(ct: ChartType): {
+    series: ChartSeries[];
+    refs: ChartReferenceLine[];
+    yFmt?: (v: number) => string;
+    yRFmt?: (v: number) => string;
+    empty?: boolean;
+  } | null {
     if (!histData) return null;
     const d = histData.data;
     let series: ChartSeries[] = [];
@@ -688,83 +832,85 @@ function HistoryChartsTab() {
     let yFmt: ((v: number) => string) | undefined;
     let yRFmt: ((v: number) => string) | undefined;
 
-    switch (chartType) {
+    switch (ct) {
       case 'net_liquidity': {
         series = [
-          toSeries(d.net_liquidity, 'net_liquidity', { type: 'area', color: '#3b82f6', label: 'Net Liquidity' }),
+          toSeries(d.net_liquidity, 'net_liquidity', { type: 'area', color: DA.brand500, label: 'Net Liquidity' }),
           ...mergeOverlay(d.net_liquidity, d.market_indicators, showSP500, showNASDAQ),
         ];
-        yFmt = (v) => `$${v.toLocaleString()}B`;
-        yRFmt = (v) => fmt(v);
+        yFmt = (v) => `$${Math.round(v).toLocaleString()}B`;
+        yRFmt = (v) => Math.round(v).toLocaleString();
         break;
       }
       case 'margin_debt': {
         series = [
-          toSeries(d.margin_debt, 'debit_balance', { type: 'bar', color: 'rgba(6,182,212,0.5)', label: '残高 (M$)' }),
-          toSeries(d.margin_debt, 'change_2y', { type: 'line', color: '#f97316', label: '2Y変化率 (%)', dashed: true, yAxisSide: 'right' }),
+          toSeries(d.margin_debt, 'debit_balance', { type: 'bar', color: DA.brand400, label: '残高 (M$)' }),
+          toSeries(d.margin_debt, 'change_2y', { type: 'line', color: DA.caution500, label: '2Y変化率 (%)', dashed: true, yAxisSide: 'right' }),
           ...mergeOverlay(d.margin_debt, d.market_indicators, showSP500, showNASDAQ),
         ];
         yFmt = (v) => `${(v / 1000).toFixed(0)}K`;
-        yRFmt = (v) => `${v}%`;
+        yRFmt = (v) => `${v.toFixed(0)}%`;
         break;
       }
       case 'kre': {
         series = [
-          toSeries(d.bank_sector, 'kre_close', { type: 'area', color: '#a855f7', label: 'KRE ($)' }),
-          toSeries(d.bank_sector, 'kre_52w_change', { type: 'line', color: '#f59e0b', label: '52W変化率 (%)', dashed: true, yAxisSide: 'right' }),
+          toSeries(d.bank_sector, 'kre_close', { type: 'area', color: DA.brand700, label: 'KRE ($)' }),
+          toSeries(d.bank_sector, 'kre_52w_change', { type: 'line', color: DA.caution500, label: '52W変化率 (%)', dashed: true, yAxisSide: 'right' }),
           ...mergeOverlay(d.bank_sector, d.market_indicators, showSP500, showNASDAQ),
         ];
-        yFmt = (v) => `$${v}`;
-        yRFmt = (v) => `${v}%`;
+        yFmt = (v) => `$${v.toFixed(0)}`;
+        yRFmt = (v) => `${v.toFixed(0)}%`;
         break;
       }
       case 'spreads': {
         series = [
-          toSeries(d.credit_spreads, 'hy_spread', { type: 'line', color: '#ef4444', label: 'HYスプレッド (%)' }),
-          toSeries(d.credit_spreads, 'ig_spread', { type: 'line', color: '#f59e0b', label: 'IGスプレッド (%)' }),
+          toSeries(d.credit_spreads, 'hy_spread', { type: 'line', color: DA.danger500, label: 'HYスプレッド' }),
+          toSeries(d.credit_spreads, 'ig_spread', { type: 'line', color: DA.caution500, label: 'IGスプレッド' }),
           ...mergeOverlay(d.credit_spreads, d.market_indicators, showSP500, showNASDAQ),
         ];
-        refs = [{ y: 5, color: 'rgba(239,68,68,0.4)', label: 'HY危険', dashed: true }];
-        yFmt = (v) => `${v}%`;
-        yRFmt = (v) => fmt(v);
+        refs = [{ y: 5, color: DA.danger300, label: 'HY危険', dashed: true }];
+        yFmt = (v) => `${v.toFixed(2)}%`;
+        yRFmt = (v) => Math.round(v).toLocaleString();
         break;
       }
       case 'vix': {
         series = [
-          toSeries(d.market_indicators, 'vix', { type: 'area', color: '#fb923c', label: 'VIX' }),
+          toSeries(d.market_indicators, 'vix', { type: 'area', color: DA.caution500, label: 'VIX' }),
           ...mergeOverlay(d.market_indicators, d.market_indicators, showSP500, showNASDAQ),
         ];
         refs = [
-          { y: 20, color: 'rgba(251,191,36,0.4)', label: '警戒', dashed: true },
-          { y: 30, color: 'rgba(239,68,68,0.4)', label: '危険', dashed: true },
+          { y: 20, color: DA.caution300, label: '警戒', dashed: true },
+          { y: 30, color: DA.danger300, label: '危険', dashed: true },
         ];
-        yRFmt = (v) => fmt(v);
+        yFmt = (v) => v.toFixed(0);
+        yRFmt = (v) => Math.round(v).toLocaleString();
         break;
       }
       case 'layer_scores': {
         const lsData = d.layer_scores ?? [];
-        if (lsData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">Layerスコアデータがありません</div>;
+        if (lsData.length === 0) return { series: [], refs: [], empty: true };
         series = [
-          toSeries(lsData, 'layer1', { type: 'line', color: '#3b82f6', label: 'L1 政策' }),
-          toSeries(lsData, 'layer2a', { type: 'line', color: '#a855f7', label: 'L2A 銀行' }),
-          toSeries(lsData, 'layer2b', { type: 'line', color: '#06b6d4', label: 'L2B 市場' }),
+          toSeries(lsData, 'layer1', { type: 'line', color: DA.brand700, label: 'L1 政策' }),
+          toSeries(lsData, 'layer2a', { type: 'line', color: DA.brand500, label: 'L2A 銀行' }),
+          toSeries(lsData, 'layer2b', { type: 'line', color: DA.brand400, label: 'L2B 市場' }),
         ];
         refs = [
-          { y: 30, color: 'rgba(16,185,129,0.4)', label: '安全', dashed: true },
-          { y: 70, color: 'rgba(239,68,68,0.4)', label: '危険', dashed: true },
+          { y: 30, color: DA.safe300, label: '安全', dashed: true },
+          { y: 70, color: DA.danger300, label: '危険', dashed: true },
         ];
+        yFmt = (v) => v.toFixed(0);
         break;
       }
       case 'divergence': {
         const divData = d.layer_divergence ?? [];
-        if (divData.length === 0) return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">乖離データがありません</div>;
+        if (divData.length === 0) return { series: [], refs: [], empty: true };
         series = [
-          toSeries(divData, 'divergence', { type: 'area', color: '#6366f1', label: '乖離 (σ)' }),
+          toSeries(divData, 'divergence', { type: 'area', color: DA.brand500, label: '乖離 (σ)' }),
         ];
         refs = [
-          { y: 0, color: 'rgba(150,150,150,0.3)', dashed: false },
-          { y: 1, color: 'rgba(239,68,68,0.3)', label: '+1σ 注意', dashed: true },
-          { y: -1, color: 'rgba(16,185,129,0.3)', label: '-1σ 買い候補', dashed: true },
+          { y: 0, color: DA.neutral300, dashed: false },
+          { y: 1, color: DA.danger300, label: '+1σ 注意', dashed: true },
+          { y: -1, color: DA.safe300, label: '-1σ 買い候補', dashed: true },
         ];
         yFmt = (v) => `${v.toFixed(1)}σ`;
         break;
@@ -773,86 +919,304 @@ function HistoryChartsTab() {
         return null;
     }
 
+    return { series, refs, yFmt, yRFmt };
+  }
+
+  function renderChart() {
+    const cfg = buildChartConfig(chartType);
+    if (!cfg) return null;
+    if (cfg.empty) {
+      return <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">データがありません</div>;
+    }
     return (
       <EconChartCanvas
-        series={series}
-        referenceLines={refs.length > 0 ? refs : undefined}
-        yAxisFormat={yFmt}
-        yAxisRightFormat={yRFmt}
-        height={400}
+        series={cfg.series}
+        referenceLines={cfg.refs.length > 0 ? cfg.refs : undefined}
+        eventMarkers={eventMarkers}
+        yAxisFormat={cfg.yFmt}
+        yAxisRightFormat={cfg.yRFmt}
+        height={420}
       />
     );
   }
 
+  const allowOverlay = chartType !== 'divergence' && chartType !== 'layer_scores';
+  const deltaUnit = (headerStat as { deltaUnit?: string } | null)?.deltaUnit ?? '%';
+
   return (
-    <div className="space-y-4 plumb-animate-in">
-      {/* Period + Crisis */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 plumb-glass rounded-lg p-1">
-          {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => handlePeriod(p.value)}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-mono font-bold uppercase tracking-wider transition-colors ${
-                period === p.value && !customRange ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground'
-              }`}>{p.label}</button>
-          ))}
+    <div className="space-y-3 plumb-animate-in">
+      {/* ============ Toolbar (view mode + period + crisis presets) ============ */}
+      <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-card p-3 md:p-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        {/* View mode toggle */}
+        <div className="inline-flex items-center rounded-md border border-neutral-200 dark:border-white/10 bg-white dark:bg-white/[0.02] overflow-hidden">
+          {[
+            { v: 'overview' as ViewMode, label: '一覧' },
+            { v: 'detail' as ViewMode, label: '詳細' },
+          ].map((m, i) => {
+            const isActive = viewMode === m.v;
+            return (
+              <button
+                key={m.v}
+                onClick={() => setViewMode(m.v)}
+                className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
+                  i > 0 ? 'border-l border-neutral-200 dark:border-white/10' : ''
+                } ${
+                  isActive
+                    ? 'bg-[var(--brand-100)] text-[var(--brand-700)] dark:text-[var(--brand-400)]'
+                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/[0.04]'
+                }`}
+              >{m.label}</button>
+            );
+          })}
         </div>
-        <div className="flex items-center gap-1">
-          {CRISIS_PRESETS.map((c) => (
-            <button key={c.label} onClick={() => handleCrisis(c.start, c.end)}
-              className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                customRange?.start === c.start ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20' : 'text-muted-foreground hover:text-foreground border border-transparent'
-              }`}>{c.label}</button>
-          ))}
+
+        {/* Period segmented control */}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">期間</span>
+          <div className="inline-flex items-center rounded-md border border-neutral-200 dark:border-white/10 bg-white dark:bg-white/[0.02] overflow-hidden">
+            {PERIODS.map((p, i) => {
+              const isActive = period === p.value && !customRange;
+              return (
+                <button
+                  key={p.value}
+                  onClick={() => handlePeriod(p.value)}
+                  className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
+                    i > 0 ? 'border-l border-neutral-200 dark:border-white/10' : ''
+                  } ${
+                    isActive
+                      ? 'bg-[var(--brand-100)] text-[var(--brand-700)] dark:text-[var(--brand-400)]'
+                      : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/[0.04]'
+                  }`}
+                >{p.label}</button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Crisis preset chips */}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">クライシス</span>
+          <div className="flex items-center gap-1.5">
+            {CRISIS_PRESETS.map((c) => {
+              const isActive = customRange?.start === c.start;
+              return (
+                <button
+                  key={c.label}
+                  onClick={() => handleCrisis(c.start, c.end)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                    isActive
+                      ? 'bg-[var(--brand-100)] text-[var(--brand-700)] border-[var(--brand-200)] dark:bg-[var(--brand-100)]/20 dark:text-[var(--brand-400)] dark:border-[var(--brand-400)]/30'
+                      : 'bg-white dark:bg-white/[0.02] text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-white/10 hover:border-neutral-300 dark:hover:border-white/20'
+                  }`}
+                >{c.label}</button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Event toggle */}
+        <label className="ml-auto flex items-center gap-2 cursor-pointer text-[11px] text-neutral-700 dark:text-neutral-300 hover:text-foreground">
+          <input
+            type="checkbox"
+            checked={showEvents}
+            onChange={(e) => setShowEvents(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-neutral-300 accent-[var(--brand-500)]"
+          />
+          <span>イベント表示</span>
+        </label>
+      </div>
+
+      {/* ============ OVERVIEW MODE: Grid of all charts (Power BI style) ============ */}
+      {viewMode === 'overview' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {CHART_TYPES.map((ct) => {
+            const cfg = buildChartConfig(ct.key);
+            const stat = statFor(ct.key);
+            const isEmpty = !cfg || cfg.empty;
+            const open = () => { setChartType(ct.key); setViewMode('detail'); };
+            return (
+              <div
+                key={ct.key}
+                role="button"
+                tabIndex={0}
+                onClick={open}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
+                className="cursor-pointer text-left rounded-xl border border-neutral-200 dark:border-white/10 bg-card hover:border-[var(--brand-400)] hover:shadow-[0_0_0_3px_var(--brand-100)] focus:outline-none focus:border-[var(--brand-500)] transition-all overflow-hidden group"
+              >
+                {/* Tile header */}
+                <div className="px-4 pt-3.5 pb-2 flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-white/[0.06]">
+                  <div className="min-w-0">
+                    <h4 className="text-[13px] font-bold text-foreground tracking-tight truncate">{ct.label}</h4>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{ct.sub}</p>
+                  </div>
+                  {stat && (
+                    <div className="shrink-0 text-right">
+                      <p className="text-[16px] leading-none font-bold tabular-nums text-foreground">{stat.value}</p>
+                      {stat.delta != null && (
+                        <p className={`text-[10px] font-bold tabular-nums mt-1 ${
+                          stat.delta >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'
+                        }`}>
+                          {stat.delta >= 0 ? '+' : ''}{stat.delta.toFixed(1)}{stat.deltaUnit ?? '%'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Mini chart */}
+                <div className="px-2 py-1">
+                  {isEmpty || !cfg ? (
+                    <div className="h-[180px] flex items-center justify-center text-[11px] text-neutral-400">データなし</div>
+                  ) : (
+                    <EconChartCanvas
+                      series={cfg.series}
+                      referenceLines={cfg.refs.length > 0 ? cfg.refs : undefined}
+                      eventMarkers={eventMarkers}
+                      yAxisFormat={cfg.yFmt}
+                      yAxisRightFormat={cfg.yRFmt}
+                      height={200}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ============ DETAIL MODE: Single large chart with type selector ============ */}
+      {viewMode === 'detail' && (<>
+      {/* Chart type segmented bar */}
+      <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-card overflow-hidden">
+        <div className="flex overflow-x-auto scrollbar-hide">
+          {CHART_TYPES.map((ct, i) => {
+            const isActive = chartType === ct.key;
+            return (
+              <button
+                key={ct.key}
+                onClick={() => setChartType(ct.key)}
+                className={`flex-1 min-w-[120px] px-4 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors ${
+                  i > 0 ? 'border-l border-neutral-200 dark:border-white/10' : ''
+                } ${
+                  isActive
+                    ? 'text-[var(--brand-700)] dark:text-[var(--brand-400)] bg-[var(--brand-100)]/40 dark:bg-[var(--brand-100)]/10'
+                    : 'text-neutral-700 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-white/[0.03]'
+                }`}
+              >
+                {ct.label}
+                {isActive && (
+                  <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[var(--brand-500)]" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Chart type selector + overlay toggles */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 plumb-glass rounded-lg p-1 overflow-x-auto">
-          {CHART_TYPES.map((ct) => (
-            <button key={ct.key} onClick={() => setChartType(ct.key)}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${
-                chartType === ct.key ? 'bg-black/[0.06] dark:bg-white/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}>{ct.label}</button>
-          ))}
+      {/* Main chart card */}
+      <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-card">
+        {/* Chart header */}
+        <div className="flex flex-wrap items-end justify-between gap-4 p-5 pb-3 border-b border-neutral-100 dark:border-white/[0.06]">
+          <div>
+            <h3 className="text-[18px] font-bold text-foreground tracking-tight">{currentMeta.label}</h3>
+            <p className="text-[11px] text-neutral-500 mt-1">{currentMeta.sub}</p>
+          </div>
+          {headerStat && (
+            <div className="flex items-end gap-3">
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 font-medium">直近値</p>
+                <p className="text-[24px] leading-none font-bold tabular-nums text-foreground mt-1">
+                  {headerStat.value}
+                </p>
+              </div>
+              {headerStat.delta != null && (
+                <div className={`px-2.5 py-1 rounded-md text-[11px] font-bold tabular-nums border ${
+                  headerStat.delta >= 0
+                    ? 'text-[var(--signal-safe-500)] bg-[var(--signal-safe-100)] border-[var(--signal-safe-300)]/40'
+                    : 'text-[var(--signal-danger-500)] bg-[var(--signal-danger-100)] border-[var(--signal-danger-300)]/50'
+                }`}>
+                  {headerStat.delta >= 0 ? '+' : ''}{headerStat.delta.toFixed(1)}{deltaUnit}
+                  <span className="ml-1 font-normal text-[9px] uppercase tracking-wider opacity-70">期間</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        {chartType !== 'divergence' && chartType !== 'layer_scores' && (
-          <div className="flex items-center gap-3 text-[11px]">
-            <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
-              <input type="checkbox" checked={showSP500} onChange={(e) => setShowSP500(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-emerald-500/50 text-emerald-500 focus:ring-emerald-500/30" />
-              <span className="text-emerald-600 dark:text-emerald-400 font-mono">S&P500</span>
+
+        {/* Overlay toggles row */}
+        {allowOverlay && (
+          <div className="px-5 py-2 border-b border-neutral-100 dark:border-white/[0.06] flex items-center gap-4">
+            <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-neutral-500">オーバーレイ</span>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-neutral-700 dark:text-neutral-300 hover:text-foreground">
+              <input
+                type="checkbox"
+                checked={showSP500}
+                onChange={(e) => setShowSP500(e.target.checked)}
+                className="w-3.5 h-3.5 accent-[var(--neutral-700)]"
+              />
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-3 h-[2px] bg-[var(--neutral-700)] dark:bg-neutral-400" />
+                S&P 500
+              </span>
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
-              <input type="checkbox" checked={showNASDAQ} onChange={(e) => setShowNASDAQ(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-purple-500/50 text-purple-500 focus:ring-purple-500/30" />
-              <span className="text-purple-600 dark:text-purple-400 font-mono">NASDAQ</span>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-neutral-700 dark:text-neutral-300 hover:text-foreground">
+              <input
+                type="checkbox"
+                checked={showNASDAQ}
+                onChange={(e) => setShowNASDAQ(e.target.checked)}
+                className="w-3.5 h-3.5 accent-[var(--neutral-500)]"
+              />
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-3 h-[2px] bg-[var(--neutral-500)] dark:bg-neutral-500" />
+                NASDAQ
+              </span>
             </label>
           </div>
         )}
-      </div>
 
-      {/* Chart */}
-      <GlassCard>
-        <div className="p-5">
+        {/* Chart canvas */}
+        <div className="p-4 md:p-5">
           {loading ? (
-            <div className="h-[400px] flex items-center justify-center">
-              <div className="text-sm text-muted-foreground font-mono">Loading...</div>
+            <div className="h-[420px] flex items-center justify-center">
+              <div className="text-sm text-neutral-500">Loading…</div>
             </div>
           ) : error ? (
-            <div className="h-[400px] flex items-center justify-center">
-              <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+            <div className="h-[420px] flex items-center justify-center">
+              <div className="text-sm text-[var(--signal-danger-500)]">{error}</div>
             </div>
           ) : (
-            <div className="plumb-chart">{renderChart()}</div>
+            renderChart()
           )}
         </div>
-      </GlassCard>
 
-      {histData && (
-        <p className="text-[11px] text-muted-foreground font-mono text-right">
-          {histData.start_date} — {histData.end_date}
-        </p>
+        {/* Footer */}
+        {histData && (
+          <div className="px-5 pb-4 pt-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-neutral-500">
+            <span className="font-medium">
+              データ範囲: <span className="tabular-nums">{histData.start_date}</span> → <span className="tabular-nums">{histData.end_date}</span>
+            </span>
+            <span>出典: FRED, FRB H.4.1, FINRA, Yahoo Finance</span>
+          </div>
+        )}
+      </div>
+      </>)}
+
+      {/* Common loading / error display for overview mode */}
+      {viewMode === 'overview' && (loading || error) && (
+        <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-card p-8">
+          {loading
+            ? <div className="text-sm text-neutral-500 text-center">Loading…</div>
+            : <div className="text-sm text-[var(--signal-danger-500)] text-center">{error}</div>}
+        </div>
+      )}
+
+      {/* Common footer for overview mode */}
+      {viewMode === 'overview' && histData && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-neutral-500 px-1">
+          <span className="font-medium">
+            データ範囲: <span className="tabular-nums">{histData.start_date}</span> → <span className="tabular-nums">{histData.end_date}</span>
+          </span>
+          <span>出典: FRED, FRB H.4.1, FINRA, Yahoo Finance</span>
+        </div>
       )}
     </div>
   );
