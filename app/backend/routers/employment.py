@@ -1252,25 +1252,28 @@ async def _compute_risk_score_fresh():
 
 
 @router.get("/risk-score")
-async def get_risk_score():
+async def get_risk_score(
+    purge: int = Query(0, description="1でキャッシュ破棄して再計算"),
+):
     """
     景気警戒タブ：100点満点のリセッションリスクスコア
     雇用(50点) + 消費(25点) + 構造(25点) → 5フェーズ分類
     """
-    # 高速パス: 事前計算結果をチェック
-    # ただし旧 precomputed (NFP 24 件制限) は破棄して再計算させる
-    from precomputed import get_precomputed
-    precomputed = get_precomputed("risk_score")
-    if precomputed is not None:
-        nfp_hist = precomputed.get("nfp_history") if isinstance(precomputed, dict) else None
-        if nfp_hist and len(nfp_hist) > 24:
-            return precomputed
+    if not purge:
+        # 高速パス: 事前計算結果をチェック
+        # ただし旧 precomputed (NFP 24 件制限) は破棄して再計算させる
+        from precomputed import get_precomputed
+        precomputed = get_precomputed("risk_score")
+        if precomputed is not None:
+            nfp_hist = precomputed.get("nfp_history") if isinstance(precomputed, dict) else None
+            if nfp_hist and len(nfp_hist) > 24:
+                return precomputed
 
-    # キャッシュチェック（L1 インメモリ → L2 Redis）
-    # v2 = 履歴を全期間に拡張した版
-    cached = _cache_get("employment:risk_score:v2")
-    if cached is not None:
-        return cached
+        # キャッシュチェック（L1 インメモリ → L2 Redis）
+        # v2 = 履歴を全期間に拡張した版
+        cached = _cache_get("employment:risk_score:v2")
+        if cached is not None:
+            return cached
 
     return await _compute_risk_score_fresh()
 
