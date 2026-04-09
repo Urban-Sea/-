@@ -49,16 +49,115 @@
   --color-brand-primary-700: var(--brand-primary-700);
   --color-brand-accent: var(--brand-accent);
   --color-brand-danger: var(--brand-danger);
+
+  /* ============================================================
+     Digital Agency Dashboard Tokens (出典: デジタル庁 PDL1.0)
+     https://www.digital.go.jp/resources/dashboard-guidebook
+     ============================================================ */
+
+  /* Brand scale (情報・リンク用 — 判断色とは混ぜない) */
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-700: var(--brand-700);
+  --color-brand-900: var(--brand-900);
+
+  /* Signal Safe (緑) */
+  --color-signal-safe-100: var(--signal-safe-100);
+  --color-signal-safe-300: var(--signal-safe-300);
+  --color-signal-safe-400: var(--signal-safe-400);
+  --color-signal-safe-500: var(--signal-safe-500);
+  --color-signal-safe-900: var(--signal-safe-900);
+
+  /* Signal Caution (橙) */
+  --color-signal-caution-100: var(--signal-caution-100);
+  --color-signal-caution-300: var(--signal-caution-300);
+  --color-signal-caution-400: var(--signal-caution-400);
+  --color-signal-caution-500: var(--signal-caution-500);
+  --color-signal-caution-900: var(--signal-caution-900);
+
+  /* Signal Danger (赤) */
+  --color-signal-danger-100: var(--signal-danger-100);
+  --color-signal-danger-300: var(--signal-danger-300);
+  --color-signal-danger-400: var(--signal-danger-400);
+  --color-signal-danger-500: var(--signal-danger-500);
+  --color-signal-danger-900: var(--signal-danger-900);
+
+  /* Neutral */
+  --color-neutral-50: var(--neutral-50);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-500: var(--neutral-500);
+  --color-neutral-700: var(--neutral-700);
+  --color-neutral-900: var(--neutral-900);
+
+  /* Heatmap (diverging — state×phase matrix 等) */
+  --color-heatmap-min: var(--heatmap-min);
+  --color-heatmap-center: var(--heatmap-center);
+  --color-heatmap-max: var(--heatmap-max);
 }
 
 :root {
   --radius: 0.625rem;
-  --brand-primary: #3460FB;
-  --brand-primary-700: #0017C1;
+
+  /* ============================================================
+     Digital Agency tokens — Open Regime ダッシュボード正典
+     ============================================================ */
+
+  /* Brand scale (情報・リンク。判断色には使わない) */
+  --brand-100: #E8F1FE;
+  --brand-200: #C5D7FB;
+  --brand-400: #7096F8;
+  --brand-500: #3460FB;
+  --brand-700: #0017C1;
+  --brand-900: #0017C1;
+
+  /* Signal Safe (緑) */
+  --signal-safe-100: #E6F5EC;
+  --signal-safe-300: #9BD4B5;
+  --signal-safe-400: #51B883;
+  --signal-safe-500: #259D63;
+  --signal-safe-900: #115A36;
+
+  /* Signal Caution (橙) */
+  --signal-caution-100: #FFEEE2;
+  --signal-caution-300: #FFC199;
+  --signal-caution-400: #FF8D44;
+  --signal-caution-500: #FB5B01;
+  --signal-caution-900: #AC3E00;
+
+  /* Signal Danger (赤) */
+  --signal-danger-100: #FDEEEE;
+  --signal-danger-300: #FFBBBB;
+  --signal-danger-400: #FF7171;
+  --signal-danger-500: #FE3939;
+  --signal-danger-900: #CE0000;
+
+  /* Neutral */
+  --neutral-50: #F8F8FB;
+  --neutral-100: #F2F2F2;
+  --neutral-200: #E6E6E6;
+  --neutral-300: #CCCCCC;
+  --neutral-500: #999999;
+  --neutral-700: #767676;
+  --neutral-900: #4D4D4D;
+
+  /* Heatmap (diverging) */
+  --heatmap-min: #FFBBBB;
+  --heatmap-center: #E6E6E6;
+  --heatmap-max: #C5D7FB;
+
+  /* ============================================================
+     Legacy aliases (既存コード互換)
+     ============================================================ */
+  --brand-primary: var(--brand-500);
+  --brand-primary-700: var(--brand-700);
   --brand-accent: #a78bfa;
-  --brand-danger: #FE3939;
-  --background: #f8f9fa;
-  --foreground: #111111;
+  --brand-danger: var(--signal-danger-500);
+  --background: #ffffff;
+  --foreground: #0f172a; /* slate-900, landing と統一 */
   --card: #ffffff;
   --card-foreground: #111111;
   --popover: #ffffff;
@@ -75,11 +174,12 @@
   --border: #e4e4e7;
   --input: #e4e4e7;
   --ring: #a1a1aa;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Recharts デフォルトパレット — デジタル庁トークンに整合 */
+  --chart-1: var(--brand-500);
+  --chart-2: var(--signal-safe-500);
+  --chart-3: var(--signal-caution-500);
+  --chart-4: var(--signal-danger-500);
+  --chart-5: var(--brand-400);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -91,6 +191,53 @@
 }
 
 .dark {
+  /* ============================================================
+     Digital Agency tokens — dark variant (彩度 1 段下げ)
+     ============================================================ */
+
+  /* Brand scale */
+  --brand-100: #1A2238;
+  --brand-200: #2A3A66;
+  --brand-400: #5878D4;
+  --brand-500: #4A6EE0;
+  --brand-700: #3556C7;
+  --brand-900: #2A3FB0;
+
+  /* Signal Safe (緑) — 彩度を抑え視認性優先 */
+  --signal-safe-100: #15281D;
+  --signal-safe-300: #4A8A66;
+  --signal-safe-400: #5BA67A;
+  --signal-safe-500: #4FB07A;
+  --signal-safe-900: #2E6B47;
+
+  /* Signal Caution (橙) */
+  --signal-caution-100: #2E1F12;
+  --signal-caution-300: #B07A50;
+  --signal-caution-400: #DB8A4A;
+  --signal-caution-500: #E07235;
+  --signal-caution-900: #8A4A1F;
+
+  /* Signal Danger (赤) */
+  --signal-danger-100: #2E1515;
+  --signal-danger-300: #B05656;
+  --signal-danger-400: #DB6060;
+  --signal-danger-500: #E84A4A;
+  --signal-danger-900: #8A2828;
+
+  /* Neutral (dark) */
+  --neutral-50: #1A1A1A;
+  --neutral-100: #242424;
+  --neutral-200: #2E2E2E;
+  --neutral-300: #404040;
+  --neutral-500: #737373;
+  --neutral-700: #A6A6A6;
+  --neutral-900: #D4D4D4;
+
+  /* Heatmap (dark diverging) */
+  --heatmap-min: #6B3A3A;
+  --heatmap-center: #2E2E2E;
+  --heatmap-max: #3A4D7A;
+
   /* Pure black theme */
   --background: #0a0a0a;
   --foreground: #e5e5e5;
@@ -110,12 +257,12 @@
   --border: #262626;
   --input: #262626;
   --ring: #525252;
-  /* Chart colors - muted */
-  --chart-1: #22c55e;
-  --chart-2: #ef4444;
-  --chart-3: #3b82f6;
-  --chart-4: #f59e0b;
-  --chart-5: #a855f7;
+  /* Chart colors — デジタル庁トークン (dark variant) */
+  --chart-1: var(--brand-500);
+  --chart-2: var(--signal-safe-500);
+  --chart-3: var(--signal-caution-500);
+  --chart-4: var(--signal-danger-500);
+  --chart-5: var(--brand-400);
   --sidebar: #111111;
   --sidebar-foreground: #e5e5e5;
   --sidebar-primary: #e5e5e5;
@@ -271,36 +418,23 @@
   animation: plumb-data-flash 1.5s ease-out;
 }
 
-/* Glassmorphism card base */
-.dark .plumb-glass {
-  background: rgba(17, 17, 17, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-:root:not(.dark) .plumb-glass {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.02);
+/**
+ * Card base — landing ページのカードと同じスタイル.
+ * 白背景 + slate-200 細枠 + 軽い shadow. Glass blur は廃止.
+ * クラス名 (.plumb-glass) は歴史的経緯で残しているだけで、もはや glass ではない.
+ */
+.plumb-glass {
+  background: #ffffff;
+  border: 1px solid #E2E8F0; /* slate-200 */
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .plumb-glass-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.dark .plumb-glass-hover:hover {
-  background: rgba(17, 17, 17, 0.8);
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-:root:not(.dark) .plumb-glass-hover:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(0, 0, 0, 0.14);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+.plumb-glass-hover:hover {
+  border-color: #CBD5E1; /* slate-300 */
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 /* Gradient border effect */

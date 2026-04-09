@@ -1,8 +1,9 @@
 [data-theme="landing"] {
-  --lp-primary: #3460FB;
-  --lp-primary-700: #0017C1;
+  /* Landing は globals.css のデジタル庁トークンを参照 (重複定義廃止) */
+  --lp-primary: var(--brand-500);
+  --lp-primary-700: var(--brand-700);
   --lp-accent: #a78bfa;
-  --lp-danger: #FE3939;
+  --lp-danger: var(--signal-danger-500);
   --lp-bg: #FFFFFF;
   --lp-fg: #0F172A;
   background: var(--lp-bg);

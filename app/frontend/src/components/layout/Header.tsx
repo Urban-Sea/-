@@ -5,7 +5,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { GlossaryButton } from '@/components/onboarding/GlossaryPanel';
 import { UserMenu } from './UserMenu';
 import { useUser } from '@/components/providers/UserProvider';
@@ -78,7 +77,6 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             <Link
               href="/login/"
               className="hidden md:inline text-sm text-slate-600 hover:text-slate-900"
@@ -184,7 +182,6 @@ export function Header() {
 
         <div className="flex items-center gap-1 shrink-0">
           <GlossaryButton />
-          <ThemeToggle />
           <UserMenu />
 
           {/* Mobile hamburger */}
