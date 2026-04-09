@@ -1,0 +1,65 @@
+# open-regime Discovery Phase A — finviz スクリーニングプリセット
+#
+# このファイルはコードではなくデータです。Phase A の磨き込み中に
+# Python を触らずに調整できるよう外出ししています。
+#
+# ──────────────────────────────────────────────────────────────────
+# 重要: フィルター名とオプション値は finvizfinance v1.3.0 の内部 API
+# キーと完全一致が必要です (typo すると ValueError になります)。
+#
+# 特に "EPS growththis year" / "EPS growthnext year" は意図的に
+# スペースなしです。これは lit26 が finvizfinance/constants.py:695-717
+# でそう実装しているためで、誤記ではありません。
+# (PoC で 21 銘柄取得済 — 2026-04-09 検証)
+# ──────────────────────────────────────────────────────────────────
+
+# ① モメンタム × 流動性: 上昇トレンド継続中、BOS 待ちの母集団
+momentum:
+  module: technical
+  filters:
+    "52-Week High/Low": "0-10% below High"
+    "200-Day Simple Moving Average": "Price above SMA200"
+    "50-Day Simple Moving Average": "Price above SMA50"
+    "Average Volume": "Over 1M"
+    "Price": "Over $10"
+
+# ② Discount Pullback: 上昇トレンド中の押し目 (OTE / Discount Zone 候補)
+pullback:
+  module: technical
+  filters:
+    "200-Day Simple Moving Average": "Price above SMA200"
+    "50-Day Simple Moving Average": "Price below SMA50"
+    "Average Volume": "Over 1M"
+    "Price": "Over $10"
+    "RSI (14)": "Oversold (40)"
+
+# ③ Quality + Growth: 高 ROE × 低 PER × 利益成長 (ファンダ裏付け)
+quality:
+  module: financial
+  filters:
+    "Return on Equity": "Over +20%"
+    "P/E": "Under 25"
+    "EPS growththis year": "Over 15%"
+    "EPS growthnext year": "Positive (>0%)"
+    "Debt/Equity": "Under 0.5"
+    "Average Volume": "Over 500K"
+    "Market Cap.": "+Mid (over $2bln)"
+
+# ④ Breakout: 既に発火、追随判定用 (週 +10% × 出来高 1.5x × 高値圏)
+breakout:
+  module: technical
+  filters:
+    "52-Week High/Low": "0-3% below High"
+    "Relative Volume": "Over 1.5"
+    "200-Day Simple Moving Average": "Price above SMA200"
+    "Price": "Over $10"
+
+# スコアリング重み (省略するとデフォルト値が使われる)
+# 詳細: tools/finviz/_scorer.py::DEFAULT_WEIGHTS
+scoring:
+  weights:
+    in_uptrend: 1.0          # SMA200 上にあるか
+    near_52w_high: 0.8       # 52週高値からの距離 (0-10% 線形減衰)
+    rel_volume_high: 0.6     # Rel Volume > 1.5
+    rsi_pullback: 0.5        # 30 < RSI < 50
+    quality_fundament: 0.4   # ROE > 15% かつ Debt/Eq < 1.0

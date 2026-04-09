@@ -1,0 +1,16 @@
+# open-regime Discovery Phase A — finviz スキャナの依存
+#
+# このファイルは tools/finviz/.venv 専用。app/backend, app/batch とは独立。
+# VPS には install されません (tools/ は deploy-vps.yml の paths-filter 対象外)。
+#
+# 完全 pin の理由: FinViz の HTML 変更で finvizfinance の挙動が変わる可能性があり、
+# 再現性最優先で固定する。アップデートは pip install -U で明示的に行う。
+finvizfinance==1.3.0
+
+# pandas メジャーバージョンは app/backend/requirements.txt (pandas==2.2.0) と整合
+pandas>=2.2.0,<3.0.0
+
+# プリセット定義 YAML パーサ
+pyyaml>=6.0,<7.0
+
+# requests / beautifulsoup4 / lxml は finvizfinance の依存として自動 install されます
