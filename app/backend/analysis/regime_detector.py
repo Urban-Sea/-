@@ -115,6 +115,8 @@ class RegimeDetector:
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period="1y")
+            # 未確定バー (yfinance が当日の Close=NaN で返す行) を落とす
+            df = df.dropna(subset=['Close'])
             if df.empty:
                 return None
             df = df.reset_index()

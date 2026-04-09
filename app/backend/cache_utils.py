@@ -40,6 +40,8 @@ def fetch_ohlcv_cached(ticker: str, period: str = "6mo", ttl: int = DEFAULT_TTL)
 
         stock = yf.Ticker(ticker)
         df = stock.history(period=period)
+        # 未確定バー (yfinance が当日の Close=NaN で返す行) を落とす
+        df = df.dropna(subset=["Close"])
         if df.empty:
             return None
         df = df.reset_index()
