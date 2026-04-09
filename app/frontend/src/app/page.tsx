@@ -7,6 +7,7 @@ import { FAQ } from "@/components/landing/FAQ";
 import { AudienceFeatures } from "@/components/landing/AudienceFeatures";
 import { ValidatedPerformance } from "@/components/landing/ValidatedPerformance";
 import { HashScroll } from "@/components/landing/HashScroll";
+import { LandingCTA } from "@/components/landing/LandingCTA";
 
 type IconType = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
 
@@ -119,20 +120,7 @@ export default function HomePage() {
                 <br />
                 数日〜数か月のスイングトレード向け。
               </p>
-              <div className="mt-12 flex flex-wrap gap-4">
-                <Link
-                  href="/login/"
-                  className="inline-flex items-center rounded-full bg-brand-primary px-8 py-4 text-base font-semibold text-white shadow-md hover:opacity-90 transition-opacity"
-                >
-                  無料ではじめる →
-                </Link>
-                <Link
-                  href="#features"
-                  className="inline-flex items-center rounded-full border border-slate-300 px-8 py-4 text-base font-semibold text-slate-800 hover:bg-white"
-                >
-                  機能を見る
-                </Link>
-              </div>
+              <LandingCTA variant="hero" />
             </div>
             <div className="md:col-span-5 relative">
               <HeroMock />
@@ -303,12 +291,7 @@ export default function HomePage() {
           <h2 className="text-5xl md:text-7xl font-semibold text-white tracking-tight leading-[1.05]">
             はじめましょう。
           </h2>
-          <Link
-            href="/login/"
-            className="mt-14 inline-flex items-center rounded-full bg-white px-12 py-5 text-base md:text-lg font-semibold text-slate-900 hover:bg-slate-100 shadow-xl"
-          >
-            アカウント作成 →
-          </Link>
+          <LandingCTA variant="final" />
         </div>
       </section>
 
