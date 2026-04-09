@@ -216,7 +216,7 @@ export default function HomePage() {
               OUR PHILOSOPHY
             </div>
             <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-slate-900 leading-[1.35]">
-              <span className="whitespace-nowrap">株の構造が上昇方向に変化したときに買い、</span>
+              <span className="md:whitespace-nowrap">株の構造が上昇方向に変化したときに買い、</span>
               <br />
               <span
                 style={{
@@ -229,7 +229,7 @@ export default function HomePage() {
                 下落方向になる前に売る。
               </span>
             </h2>
-            <p className="mt-6 text-base text-slate-500 whitespace-nowrap">
+            <p className="mt-6 text-base text-slate-500 md:whitespace-nowrap">
               Open Regime のすべてのロジックは、この一文を機械的に実行するために設計されています。
             </p>
             <div className="mt-12 space-y-5">

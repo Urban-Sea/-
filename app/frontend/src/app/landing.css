@@ -8,3 +8,10 @@
   background: var(--lp-bg);
   color: var(--lp-fg);
 }
+
+/* layout.tsx の <main className="w-full py-6"> が landing ページの上下に
+   24px の余白を作るのを打ち消す。dashboard ページには影響しない。 */
+main:has(> [data-theme="landing"]) {
+  padding-top: 0;
+  padding-bottom: 0;
+}

@@ -59,8 +59,8 @@ export function Header() {
     return (
       <header className="sticky top-0 z-50 w-full backdrop-blur-md bg-white/80 border-b border-slate-200/70">
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/icon.png" alt="Open Regime" width={28} height={28} className="rounded-md" />
+          <Link href="/" className="flex items-center gap-2.5">
+            <Image src="/icon.png" alt="Open Regime" width={36} height={36} className="rounded-md" />
             <span className="font-bold tracking-tight text-lg text-slate-900">Open Regime</span>
           </Link>
 
@@ -156,8 +156,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
       <div className="flex h-14 items-center px-4">
-        <Link href="/" className="mr-8 flex items-center gap-2 shrink-0">
-          <Image src="/icon.png" alt="" width={28} height={28} className="rounded-md" />
+        <Link href="/" className="mr-8 flex items-center gap-2.5 shrink-0">
+          <Image src="/icon.png" alt="" width={36} height={36} className="rounded-md" />
           <span className="text-lg font-bold tracking-tight text-foreground">Open Regime</span>
         </Link>
 
