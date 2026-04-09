@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useTheme } from 'next-themes';
 
 export interface DonutSegment {
   label: string;
@@ -33,8 +32,6 @@ export default function DonutChart({
   showLegend = true,
 }: DonutChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
   const mouseRef = useRef({ x: -1, y: -1, active: false });
   const hoverRef = useRef(-1);
 
@@ -71,7 +68,7 @@ export default function DonutChart({
     ctx.clearRect(0, 0, width, h);
 
     if (total === 0 || prepared.length === 0) {
-      ctx.fillStyle = isDark ? '#555' : '#999';
+      ctx.fillStyle = '#999';
       ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -151,21 +148,21 @@ export default function DonutChart({
     // Center hole fill (for clean inner circle)
     ctx.beginPath();
     ctx.arc(cx, cy, innerR - 1, 0, 2 * Math.PI);
-    ctx.fillStyle = isDark ? '#0a0a0a' : '#ffffff';
+    ctx.fillStyle = '#ffffff';
     ctx.globalAlpha = 0.01; // nearly invisible, just to cover anti-aliasing
     ctx.fill();
     ctx.globalAlpha = 1;
 
     // Center text
     if (centerValue) {
-      ctx.fillStyle = isDark ? '#e5e5e5' : '#18181b';
+      ctx.fillStyle = '#18181b';
       ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(centerValue, cx, centerLabel ? cy - 8 : cy);
     }
     if (centerLabel) {
-      ctx.fillStyle = isDark ? '#888' : '#71717a';
+      ctx.fillStyle = '#71717a';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -192,8 +189,8 @@ export default function DonutChart({
       if (ty < 0) ty = my + 14;
 
       // Tooltip background
-      ctx.fillStyle = isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)';
-      ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
       ctx.lineWidth = 1;
       const cornerR = 6;
       ctx.beginPath();
@@ -217,14 +214,14 @@ export default function DonutChart({
       ctx.fill();
 
       // Label
-      ctx.fillStyle = isDark ? '#e5e5e5' : '#18181b';
+      ctx.fillStyle = '#18181b';
       ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(line1, tx + 22, ty + 16);
 
       // Value
-      ctx.fillStyle = isDark ? '#aaa' : '#52525b';
+      ctx.fillStyle = '#52525b';
       ctx.font = '11px "SF Mono", "Menlo", monospace';
       ctx.fillText(line2, tx + 10, ty + 32);
     }
@@ -250,21 +247,21 @@ export default function DonutChart({
         ctx.globalAlpha = 1;
 
         // Label
-        ctx.fillStyle = isDark ? (isHoveredLeg ? '#fff' : '#aaa') : (isHoveredLeg ? '#000' : '#52525b');
+        ctx.fillStyle = isHoveredLeg ? '#000' : '#52525b';
         ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(seg.label, legendX + 16, y + 7);
 
         // Percentage
-        ctx.fillStyle = isDark ? '#666' : '#a1a1aa';
+        ctx.fillStyle = '#a1a1aa';
         ctx.font = '10px "SF Mono", "Menlo", monospace';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.fillText(`${pct}%`, width - 6, y + 7);
       }
     }
-  }, [prepared, total, isDark, height, innerRadiusRatio, centerLabel, centerValue, valueFormat, showLegend, maxSegments]);
+  }, [prepared, total, height, innerRadiusRatio, centerLabel, centerValue, valueFormat, showLegend, maxSegments]);
 
   // Redraw on state/theme change
   useEffect(() => {

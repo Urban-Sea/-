@@ -4,7 +4,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { Header } from "@/components/layout/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { UserProvider } from "@/components/providers/UserProvider";
 import { SWRProvider } from "@/lib/swr";
 import { ChunkErrorHandler } from "@/components/providers/ChunkErrorHandler";
@@ -40,7 +39,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({
@@ -49,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja" suppressHydrationWarning>
+    <html lang="ja">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
       >
@@ -65,18 +64,16 @@ export default function RootLayout({
           </>
         )}
         <ChunkErrorHandler />
-        <ThemeProvider>
-          <SWRProvider>
-            <UserProvider>
-              <TooltipProvider>
-                <Header />
-                <main className="w-full py-6">
-                  {children}
-                </main>
-              </TooltipProvider>
-            </UserProvider>
-          </SWRProvider>
-        </ThemeProvider>
+        <SWRProvider>
+          <UserProvider>
+            <TooltipProvider>
+              <Header />
+              <main className="w-full py-6">
+                {children}
+              </main>
+            </TooltipProvider>
+          </UserProvider>
+        </SWRProvider>
       </body>
     </html>
   );

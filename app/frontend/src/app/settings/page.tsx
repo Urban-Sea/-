@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useTheme } from 'next-themes';
 import { useUser } from '@/components/providers/UserProvider';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { useMe, updateMe } from '@/lib/api';
@@ -41,7 +40,6 @@ export default function AccountPage() {
 function AccountContent() {
   const { email, signOut } = useUser();
   const { data: me, mutate } = useMe();
-  const { theme, setTheme } = useTheme();
 
   const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -154,26 +152,13 @@ function AccountContent() {
         </div>
       </GlassCard>
 
-      {/* Theme */}
+      {/* Theme — dark mode は廃止済み */}
       <GlassCard stagger={3}>
         <div className="p-5 space-y-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">表示テーマ</h2>
-          <div className="flex gap-3">
-            {(['dark', 'light'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className={cn(
-                  'flex-1 rounded-lg border p-3 text-center text-sm font-medium transition-all',
-                  theme === t
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : 'border-border text-muted-foreground hover:border-primary/50'
-                )}
-              >
-                {t === 'dark' ? 'ダーク' : 'ライト'}
-              </button>
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground">
+            ライトモード固定です。ダークモードは 2026-04-09 に廃止されました。
+          </p>
         </div>
       </GlassCard>
 

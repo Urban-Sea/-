@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useTheme } from 'next-themes';
 
 const TICKER_COLORS = [
   '#3b82f6', // blue
@@ -30,8 +29,6 @@ const LOGO_CDN = 'https://cdn.jsdelivr.net/gh/nvstly/icons/ticker_icons';
 
 export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: number }) {
   const [logoFailed, setLogoFailed] = useState(false);
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
   const color = TICKER_COLORS[hashTicker(ticker) % TICKER_COLORS.length];
   const isJP = /^\d+$/.test(ticker);
   const abbr = isJP ? ticker : (ticker.length <= 2 ? ticker : ticker.slice(0, 2));
@@ -49,8 +46,8 @@ export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: numbe
         style={{
           width: size,
           height: size,
-          backgroundColor: isDark ? '#1a1a1a' : '#f4f4f5',
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}`,
+          backgroundColor: '#f4f4f5',
+          border: '1px solid rgba(0,0,0,0.1)',
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -61,9 +58,7 @@ export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: numbe
           height={size - 4}
           className="object-contain"
           style={{
-            filter: isDark
-              ? 'drop-shadow(0 0 1px rgba(255,255,255,0.2))'
-              : 'drop-shadow(0 0 1px rgba(0,0,0,0.4))',
+            filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.4))',
           }}
           onError={() => setLogoFailed(true)}
         />
@@ -77,9 +72,9 @@ export function TickerIcon({ ticker, size = 32 }: { ticker: string; size?: numbe
       style={{
         width: size,
         height: size,
-        backgroundColor: isDark ? `${color}20` : `${color}15`,
-        border: `1px solid ${isDark ? `${color}40` : `${color}35`}`,
-        color: isDark ? color : darkenColor(color, 0.25),
+        backgroundColor: `${color}15`,
+        border: `1px solid ${color}35`,
+        color: darkenColor(color, 0.25),
         fontSize,
       }}
     >

@@ -190,96 +190,11 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-.dark {
-  /* ============================================================
-     Digital Agency tokens — dark variant (彩度 1 段下げ)
-     ============================================================ */
-
-  /* Brand scale */
-  --brand-100: #1A2238;
-  --brand-200: #2A3A66;
-  --brand-400: #5878D4;
-  --brand-500: #4A6EE0;
-  --brand-700: #3556C7;
-  --brand-900: #2A3FB0;
-
-  /* Signal Safe (緑) — 彩度を抑え視認性優先 */
-  --signal-safe-100: #15281D;
-  --signal-safe-300: #4A8A66;
-  --signal-safe-400: #5BA67A;
-  --signal-safe-500: #4FB07A;
-  --signal-safe-900: #2E6B47;
-
-  /* Signal Caution (橙) */
-  --signal-caution-100: #2E1F12;
-  --signal-caution-300: #B07A50;
-  --signal-caution-400: #DB8A4A;
-  --signal-caution-500: #E07235;
-  --signal-caution-900: #8A4A1F;
-
-  /* Signal Danger (赤) */
-  --signal-danger-100: #2E1515;
-  --signal-danger-300: #B05656;
-  --signal-danger-400: #DB6060;
-  --signal-danger-500: #E84A4A;
-  --signal-danger-900: #8A2828;
-
-  /* Neutral (dark) */
-  --neutral-50: #1A1A1A;
-  --neutral-100: #242424;
-  --neutral-200: #2E2E2E;
-  --neutral-300: #404040;
-  --neutral-500: #737373;
-  --neutral-700: #A6A6A6;
-  --neutral-900: #D4D4D4;
-
-  /* Heatmap (dark diverging) */
-  --heatmap-min: #6B3A3A;
-  --heatmap-center: #2E2E2E;
-  --heatmap-max: #3A4D7A;
-
-  /* Pure black theme */
-  --background: #0a0a0a;
-  --foreground: #e5e5e5;
-  --card: #111111;
-  --card-foreground: #e5e5e5;
-  --popover: #111111;
-  --popover-foreground: #e5e5e5;
-  --primary: #e5e5e5;
-  --primary-foreground: #0a0a0a;
-  --secondary: #1a1a1a;
-  --secondary-foreground: #e5e5e5;
-  --muted: #1a1a1a;
-  --muted-foreground: #737373;
-  --accent: #1a1a1a;
-  --accent-foreground: #e5e5e5;
-  --destructive: #dc2626;
-  --border: #262626;
-  --input: #262626;
-  --ring: #525252;
-  /* Chart colors — デジタル庁トークン (dark variant) */
-  --chart-1: var(--brand-500);
-  --chart-2: var(--signal-safe-500);
-  --chart-3: var(--signal-caution-500);
-  --chart-4: var(--signal-danger-500);
-  --chart-5: var(--brand-400);
-  --sidebar: #111111;
-  --sidebar-foreground: #e5e5e5;
-  --sidebar-primary: #e5e5e5;
-  --sidebar-primary-foreground: #0a0a0a;
-  --sidebar-accent: #1a1a1a;
-  --sidebar-accent-foreground: #e5e5e5;
-  --sidebar-border: #262626;
-  --sidebar-ring: #525252;
-}
-
-/* Custom utility colors */
-.dark {
-  --color-success: #26a69a;
-  --color-danger: #ef5350;
-  --color-warning: #ff9800;
-  --color-info: #2196f3;
-}
+/* dark mode は 2026-04-09 に廃止。
+   旧 .dark { ... } CSS 変数オーバーライドはこの位置にあったが削除済み。
+   既存の dark:* Tailwind ユーティリティおよび .dark .foo セレクタは
+   ThemeProvider/<html class="dark"> が無いため発火しない死コードとして残存。
+   完全削除は別 PR で行う予定。 */
 
 @layer base {
   * {

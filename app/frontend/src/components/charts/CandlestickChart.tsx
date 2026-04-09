@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useTheme } from 'next-themes';
 import type { BOSMarker, CHoCHMarker, FVGMarker, OrderBlockMarker, OTEZoneMarker, PremiumDiscountZone } from '@/types';
 
 interface CandleData {
@@ -54,8 +53,6 @@ export default function CandlestickChart({
   pdZone = null,
 }: CandlestickChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
 
   // Viewport state (refs to avoid re-render on every pan)
   const viewRef = useRef({ start: 0, end: 0 });
@@ -118,13 +115,13 @@ export default function CandlestickChart({
     };
 
     // Theme colors
-    const bgColor = isDark ? '#0a0a0a' : '#ffffff';
-    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
-    const priceTextColor = isDark ? '#555' : '#999';
-    const dateTextColor = isDark ? '#606060' : '#999';
-    const legendTextColor = isDark ? '#808080' : '#666';
-    const volSepColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
-    const volLabelColor = isDark ? '#444' : '#aaa';
+    const bgColor = '#ffffff';
+    const gridColor = 'rgba(0,0,0,0.06)';
+    const priceTextColor = '#999';
+    const dateTextColor = '#999';
+    const legendTextColor = '#666';
+    const volSepColor = 'rgba(0,0,0,0.08)';
+    const volLabelColor = '#aaa';
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, height);
@@ -574,16 +571,16 @@ export default function CandlestickChart({
       const sbY = height - scrollbarH - 2;
       const sbWidth = chartWidth;
       const sbX = padding.left;
-      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
       roundRect(ctx, sbX, sbY, sbWidth, scrollbarH, 3);
       ctx.fill();
       const thumbStart = (start / data.length) * sbWidth;
       const thumbWidth = Math.max(20, ((end - start) / data.length) * sbWidth);
-      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
       roundRect(ctx, sbX + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [data, ticker, showEMA, showBOS, showCHoCH, showFVG, showOB, showOTE, showPD, bosMarkers, chochMarkers, fvgMarkers, obMarkers, oteMarkers, pdZone, isDark]);
+  }, [data, ticker, showEMA, showBOS, showCHoCH, showFVG, showOB, showOTE, showPD, bosMarkers, chochMarkers, fvgMarkers, obMarkers, oteMarkers, pdZone]);
 
   // Draw on data/options change
   useEffect(() => {

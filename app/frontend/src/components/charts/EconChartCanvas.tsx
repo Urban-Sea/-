@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useTheme } from 'next-themes';
 
 // Read CSS variable from <html> element. Fallback for SSR / first paint.
 function cssVar(name: string, fallback: string): string {
@@ -76,8 +75,6 @@ export default function EconChartCanvas({
   initialShowAll = false,
 }: EconChartCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
 
   const viewRef = useRef({ start: 0, end: 0 });
   const dragRef = useRef({ active: false, startX: 0, startViewStart: 0, startViewEnd: 0 });
@@ -138,14 +135,14 @@ export default function EconChartCanvas({
     const chartWidth = width - padding.left - padding.right;
     const pointSpacing = chartWidth / (visibleCount - 1 || 1);
 
-    // Digital Agency tokens (read live from CSS so theme switching just works)
-    const bgColor = cssVar('--background', isDark ? '#0a0a0a' : '#ffffff');
-    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : cssVar('--neutral-200', '#E6E6E6');
-    const textColor = isDark ? '#9ca3af' : cssVar('--neutral-700', '#767676');
-    const labelColor = isDark ? '#e5e7eb' : cssVar('--neutral-900', '#4D4D4D');
-    const legendColor = isDark ? '#d4d4d8' : cssVar('--neutral-900', '#4D4D4D');
-    const cardColor = cssVar('--card', isDark ? '#0a0a0a' : '#ffffff');
-    const borderColor = isDark ? 'rgba(255,255,255,0.12)' : cssVar('--neutral-200', '#E6E6E6');
+    // Digital Agency tokens (light only — dark mode は廃止)
+    const bgColor = cssVar('--background', '#ffffff');
+    const gridColor = cssVar('--neutral-200', '#E6E6E6');
+    const textColor = cssVar('--neutral-700', '#767676');
+    const labelColor = cssVar('--neutral-900', '#4D4D4D');
+    const legendColor = cssVar('--neutral-900', '#4D4D4D');
+    const cardColor = cssVar('--card', '#ffffff');
+    const borderColor = cssVar('--neutral-200', '#E6E6E6');
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, h);
@@ -362,7 +359,7 @@ export default function EconChartCanvas({
           const idx = slicedData.findIndex((d) => d.x.startsWith(marker.date) || marker.date.startsWith(d.x));
           if (idx < 0) continue;
           const mx = xScale(idx);
-          const markerColor = marker.color || (isDark ? 'rgba(255,255,255,0.32)' : cssVar('--neutral-500', '#999999'));
+          const markerColor = marker.color || cssVar('--neutral-500', '#999999');
 
           // Vertical dashed line
           ctx.strokeStyle = markerColor;
@@ -420,7 +417,7 @@ export default function EconChartCanvas({
     if (mouseRef.current.active && mouseRef.current.x >= padding.left && mouseRef.current.x <= width - padding.right) {
       const mx = mouseRef.current.x;
       // Vertical line — solid 1px in brand-700
-      ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.18)' : cssVar('--neutral-300', '#CCCCCC');
+      ctx.strokeStyle = cssVar('--neutral-300', '#CCCCCC');
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(Math.round(mx) + 0.5, padding.top);
@@ -569,16 +566,16 @@ export default function EconChartCanvas({
     // Scrollbar
     if (totalLen > MIN_VISIBLE) {
       const sbY = h - scrollbarH - 2;
-      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
       roundRect(ctx, padding.left, sbY, chartWidth, scrollbarH, 3);
       ctx.fill();
       const thumbStart = (start / totalLen) * chartWidth;
       const thumbWidth = Math.max(20, ((end - start) / totalLen) * chartWidth);
-      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
       roundRect(ctx, padding.left + thumbStart, sbY, thumbWidth, scrollbarH, 3);
       ctx.fill();
     }
-  }, [series, totalLen, isDark, height, referenceLines, backgroundZones, eventMarkers, yAxisFormat, yAxisRightFormat, xAxisFormat]);
+  }, [series, totalLen, height, referenceLines, backgroundZones, eventMarkers, yAxisFormat, yAxisRightFormat, xAxisFormat]);
 
   useEffect(() => { draw(); }, [draw]);
 
