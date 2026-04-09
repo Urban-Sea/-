@@ -471,7 +471,7 @@ export default function EconChartCanvas({
             tooltipX = mx - 14 - tooltipW;
           }
           if (tooltipX < padding.left) tooltipX = padding.left + 4;
-          let tooltipY = padding.top + 8;
+          const tooltipY = padding.top + 8;
 
           // Background pill
           ctx.fillStyle = cardColor;

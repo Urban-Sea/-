@@ -743,7 +743,7 @@ function lastAndDelta(arr: Array<Record<string, unknown>>, field: string): { las
 
 type ViewMode = 'overview' | 'detail';
 
-export function HistoryChartsTab() {
+function HistoryChartsTab() {
   const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [period, setPeriod] = useState('2y');
   const [chartType, setChartType] = useState<ChartType>('net_liquidity');
