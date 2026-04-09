@@ -145,3 +145,82 @@ Fix1+Fix3+Fix6 (PatB) の方が win% +13.6, PF +4.48, MaxDD -42% と大幅改善
 
 **Rule**: Entry/Exitロジックを変更したら、その上に乗るサイズ調整・スコアリングを
 必ず新ベースラインで再検証する。旧ベースラインでの検証結果は無効になりうる。
+
+## 2026-04-09: Next.js page ファイルから extra export を絶対しない
+
+**Problem**: 流動性履歴 redesign の preview ルートを作るとき、`app/liquidity/page.tsx` から
+`HistoryChartsTab` を `export function` に変更して preview ルート側で import した。
+ローカル `tsc --noEmit` も `next dev` も通っていたので push したが、CI の `next build`
+(production) で ESLint + 静的最適化が走った段階で
+
+```
+Type error: Page "src/app/liquidity/page.tsx" does not match the required types of a Next.js Page.
+"HistoryChartsTab" is not a valid Page export field.
+```
+
+で fail。本番デプロイが止まった。
+
+**Root cause**: Next.js App Router は `page.tsx` から **default export と一部の予約 export
+(metadata, viewport, generateMetadata, dynamic, revalidate, etc.)** **以外を許可しない**。
+それ以外の export があると production build (`next build`) で型エラーになる。
+dev mode (`next dev`) は厳密チェックしないので通ってしまう。
+
+**Fix**: 共有したいコンポーネントは `app/liquidity/_components/HistoryChartsTab.tsx` の
+ように **アンダースコア prefix の private file** に切り出して、page.tsx と preview ルート
+の両方からそこを import する。`_` で始まるファイル/フォルダは Next.js が route と
+みなさない (公式仕様)。
+
+**Rule**:
+1. **`app/<route>/page.tsx` から default 以外を export しない**。共有したくなったら
+   private file (`_*.tsx` / `_components/`) に切り出してから import する。
+2. **commit 前に必ず `npm run build` を回す**。`tsc --noEmit` と `next dev` だけでは
+   ESLint + Page export ルール + 静的最適化のチェックが効かない。
+3. preview / 開発用の使い捨てルートを作るときも同じ。直接 page.tsx を改造して export
+   を生やすのではなく、**先に切り出してから preview ルートから import** する。
+
+## 2026-04-09: ESLint `prefer-const` も production build 専用
+
+**Problem**: `let tooltipY = padding.top + 8` と書いたが再代入していなかったため、
+`next build` の ESLint で `'tooltipY' is never reassigned. Use 'const' instead.` で
+fail。dev では warn にもならなかった。
+
+**Rule**: 上の Rule 2 と同じ — **commit 前の `npm run build` を習慣化** する。
+ESLint の `error` 級ルールは `next build` でしか発動しないものが複数ある。
+
+## 2026-04-09: 「廃止」と「改名」を区別する
+
+**Problem**: VPS 移行 (2026-04-05) の際に `api.open-regime.com` サブドメインが削除されたが、
+私は「API そのものが死んでいる」と早合点してユーザーに「Google 認証壊れてるかも」と
+誤報した。実際は API は同じ `open-regime.com` 単一ドメインで nginx 経由で正常稼働中
+(api-go + api-python on Sakura VPS Docker)。
+
+**Root cause**: `architecture-current.md` を読み直す前に外形チェック (`nslookup`) だけで
+判断した。ドメインの NXDOMAIN は「死んだ」を意味するとは限らず、「移転 / 統合 / 削除」の
+いずれかの可能性がある。
+
+**Rule**:
+1. 「死んでる?」と判断する前に `tasks/architecture-current.md` を読む。これがプロジェクトの
+   現行構成の単一の真実源。
+2. ドメインや URL が応答しないのを見たら、まず「**意図的に削除された?**」を疑う。git history
+   や architecture doc で削除された記録を探してから「壊れた」と報告する。
+3. 旧 `.env.local` が古いままの可能性を考慮する。本番の設定 (docker-compose.prod.yml) と
+   ローカル設定 (.env.local) は別物。
+
+## 2026-04-09: API の取得制限はチャート要件と乖離しがち
+
+**Problem**: `/api/employment/risk-score` は元々ダッシュボード (現在状態表示) 用で、
+`fetch_nfp` が `limit(24)` 月、`fetch_claims` が `limit(52)` 週だった。指標グラフ tab を
+新設したとき、同じエンドポイントを再利用したら **2 年分しか描画できない** とユーザーに指摘された。
+データを使ってないわけではなく、API 側で切られていただけ。
+
+**Root cause**: スコア計算には直近 24 ヶ月で十分という設計判断が、後でチャート機能が
+追加されたときに見直されなかった。
+
+**Rule**:
+1. 既存 API を新しい用途 (履歴チャート等) に再利用するとき、**必ず取得制限を見直す**。
+   特に `limit()` `range()` の値。
+2. 全期間欲しいときは PostgREST の 1000 行制限を回避するために `range()` でページ
+   ネーションする (既存の `fetch_market` パターン参照)。
+3. キャッシュキーをバージョニング (`employment:risk_score:v2`) して、デプロイ後に古い
+   キャッシュが返らないようにする。precomputed キャッシュも同様か、`len(data) > 旧上限`
+   ガードで弾く。
