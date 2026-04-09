@@ -44,6 +44,9 @@ type Config struct {
 	// Sentry
 	SentryDSN string
 
+	// Warmup token (batch から ?purge=1 を叩く際の認証ヘッダ X-Warmup-Token と照合)
+	WarmupToken string
+
 	// Environment
 	Environment string
 }
@@ -87,6 +90,8 @@ func Load() *Config {
 		MFAEncryptionKey: getEnv("MFA_ENCRYPTION_KEY", ""),
 
 		SentryDSN: getEnv("SENTRY_DSN", ""),
+
+		WarmupToken: getEnv("WARMUP_TOKEN", ""),
 
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}

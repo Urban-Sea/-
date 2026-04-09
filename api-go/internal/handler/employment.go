@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"sort"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/open-regime/api-go/internal/analysis"
@@ -18,14 +22,42 @@ import (
 	"github.com/open-regime/api-go/internal/repository"
 )
 
+// ---- Cache constants (Redis skill rules: ram-ttl / data-key-naming / conn-timeouts) ----
+const (
+	employmentRiskScoreTTL   = 24 * time.Hour
+	employmentRiskScoreKey   = "employment:risk_score:v1"
+	employmentRiskHistoryTTL = 24 * time.Hour
+	// risk-history key is parameterized by months: fmt.Sprintf("employment:risk_history:v1:%d", months)
+
+	// Per-operation context timeouts (skill rule: conn-timeouts)
+	// 同ホスト Docker Redis のラウンドトリップは <1ms なので 200ms / 500ms は十分余裕。
+	// Redis 遅延時に API リクエストを巻き込まないためのフォールバック装置。
+	employmentCacheGetTimeout = 200 * time.Millisecond
+	employmentCacheSetTimeout = 500 * time.Millisecond // payload ~350KB のため少し長め
+)
+
+// Query limits for risk-score (撤廃前は 24/52/150 でハードコード = ちょうど 2 年)
+// 実 DB は NFP 327 行 / claims 1422 行 / consumer 6 指標 ~2000 行。倍率は将来余裕。
+const (
+	riskScoreNFPLimit       = 2000  // 実 DB 327 行 → 6 倍余裕
+	riskScoreClaimsLimit    = 5000  // 実 DB 1422 行 → 3.5 倍余裕
+	riskScoreIndicatorLimit = 10000 // 実 DB ~2000 行 → 5 倍余裕
+)
+
 // EmploymentHandler handles /api/employment endpoints.
 type EmploymentHandler struct {
-	repo *repository.EmploymentRepository
+	repo        *repository.EmploymentRepository
+	redis       *redis.Client
+	warmupToken string
 }
 
 // NewEmploymentHandler creates a new EmploymentHandler.
-func NewEmploymentHandler(repo *repository.EmploymentRepository) *EmploymentHandler {
-	return &EmploymentHandler{repo: repo}
+func NewEmploymentHandler(repo *repository.EmploymentRepository, redisClient *redis.Client, warmupToken string) *EmploymentHandler {
+	return &EmploymentHandler{
+		repo:        repo,
+		redis:       redisClient,
+		warmupToken: warmupToken,
+	}
 }
 
 // Register mounts all employment routes on the given Echo group.
@@ -315,21 +347,48 @@ func (h *EmploymentHandler) UpsertIndicator(c echo.Context) error {
 // ---------- Calculation endpoints ----------
 
 // GetRiskScore handles GET /api/employment/risk-score.
+//
+// Cache: 24h Redis (key: employment:risk_score:v1)
+// Purge: ?purge=1 with X-Warmup-Token header (used by batch warmup cron)
+//
+// 注 (§5.1.A): cache miss と cache hit でフィールドの動的型が変わる (time.Time → string、
+// pgtype.Numeric → float64 等) が、analysis 系の関数 (CalcNFPTrend 等) は cache miss
+// 経路でしか呼ばれず、ハンドラ自身は LatestNFP / *History を type assertion せずに
+// レスポンスへパススルーするだけなので問題ない。analysis/employment_score.go の
+// getString/getFloat/getInt ヘルパーは複数型に対応済。
 func (h *EmploymentHandler) GetRiskScore(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	// 1. ?purge=1 認証 (DoS 対策、§5.1.B)
+	purge := false
+	if c.QueryParam("purge") == "1" {
+		if h.warmupToken == "" || c.Request().Header.Get("X-Warmup-Token") != h.warmupToken {
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"detail": "purge requires valid X-Warmup-Token",
+			})
+		}
+		purge = true
+	}
+
+	// 2. Cache check (purge=true ならスキップして再計算)
+	if !purge {
+		if cached, err := h.getRiskScoreCache(ctx); err == nil && cached != nil {
+			return c.JSON(http.StatusOK, cached)
+		}
+	}
+
 	var (
-		nfpData        []map[string]any
-		claimsData     []map[string]any
-		allIndicators  []map[string]any
-		marketData     []map[string]any
-		manualInputs   []map[string]any
+		nfpData       []map[string]any
+		claimsData    []map[string]any
+		allIndicators []map[string]any
+		marketData    []map[string]any
+		manualInputs  []map[string]any
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		data, err := h.repo.ListNFPRows(gCtx, 24)
+		data, err := h.repo.ListNFPRows(gCtx, riskScoreNFPLimit)
 		if err != nil {
 			return err
 		}
@@ -338,7 +397,7 @@ func (h *EmploymentHandler) GetRiskScore(c echo.Context) error {
 	})
 
 	g.Go(func() error {
-		data, err := h.repo.ListClaimsRows(gCtx, 52)
+		data, err := h.repo.ListClaimsRows(gCtx, riskScoreClaimsLimit)
 		if err != nil {
 			return err
 		}
@@ -348,7 +407,7 @@ func (h *EmploymentHandler) GetRiskScore(c echo.Context) error {
 
 	g.Go(func() error {
 		names := []string{"W875RX1", "UMCSENT", "DRCCLACBS", "CPILFESL", "JOLTS", "UNEMPLOY"}
-		data, err := h.repo.ListIndicatorsByNames(gCtx, names, 150)
+		data, err := h.repo.ListIndicatorsByNames(gCtx, names, riskScoreIndicatorLimit)
 		if err != nil {
 			return err
 		}
@@ -472,7 +531,7 @@ func (h *EmploymentHandler) GetRiskScore(c echo.Context) error {
 		latestClaimsMap = claimsData[0]
 	}
 
-	return c.JSON(http.StatusOK, model.EmploymentRiskScore{
+	result := model.EmploymentRiskScore{
 		TotalScore:      totalScore,
 		Phase:           analysis.GetPhase(totalScore),
 		Categories:      []model.RiskScoreCategory{employmentCat, consumerCat, structureCat},
@@ -484,10 +543,20 @@ func (h *EmploymentHandler) GetRiskScore(c echo.Context) error {
 		NFPHistory:      nfpData,
 		ClaimsHistory:   claimsData,
 		ConsumerHistory: consumerData,
-	})
+	}
+
+	// Cache write (best-effort, errors are logged but not propagated)
+	if err := h.setRiskScoreCache(ctx, &result); err != nil {
+		slog.Warn("employment.risk-score cache set failed", "error", err)
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
 
 // GetRiskHistory handles GET /api/employment/risk-history.
+//
+// Cache: 24h Redis (key: employment:risk_history:v1:{months})
+// Purge: ?purge=1 with X-Warmup-Token header (used by batch warmup cron)
 func (h *EmploymentHandler) GetRiskHistory(c echo.Context) error {
 	months := 120
 	if m := c.QueryParam("months"); m != "" {
@@ -497,6 +566,25 @@ func (h *EmploymentHandler) GetRiskHistory(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+
+	// 1. ?purge=1 認証 (DoS 対策、§5.1.B)
+	purge := false
+	if c.QueryParam("purge") == "1" {
+		if h.warmupToken == "" || c.Request().Header.Get("X-Warmup-Token") != h.warmupToken {
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"detail": "purge requires valid X-Warmup-Token",
+			})
+		}
+		purge = true
+	}
+
+	// 2. Cache check
+	if !purge {
+		if cached, err := h.getRiskHistoryCache(ctx, months); err == nil && cached != nil {
+			return c.JSON(http.StatusOK, cached)
+		}
+	}
+
 	startDate := time.Now().AddDate(0, -(months + 12), 0).Format("2006-01-02")
 
 	var (
@@ -784,10 +872,17 @@ func (h *EmploymentHandler) GetRiskHistory(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, model.RiskHistoryResponse{
+	result := model.RiskHistoryResponse{
 		History: history,
 		SP500:   sp500List,
-	})
+	}
+
+	// Cache write (best-effort)
+	if err := h.setRiskHistoryCache(ctx, months, &result); err != nil {
+		slog.Warn("employment.risk-history cache set failed", "error", err, "months", months)
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
 
 // overlayLatestMonth replaces the last history entry with a real-time computed score.
@@ -926,4 +1021,79 @@ func carryForward(d map[string]float64, allKeys []string) map[string]float64 {
 		}
 	}
 	return filled
+}
+
+// --- Cache helpers (Redis skill: conn-timeouts, ram-ttl, data-key-naming) ---
+//
+// All cache operations use a per-operation context.WithTimeout to prevent
+// Redis latency from blocking the API request. On any error (timeout,
+// connection failure, marshal/unmarshal error) the helpers return so that
+// the caller falls through to the cache miss / DB recompute path.
+//
+// Pattern intentionally mirrors api-go/internal/handler/fx.go (getCache/setCache).
+
+func (h *EmploymentHandler) getRiskScoreCache(parent context.Context) (*model.EmploymentRiskScore, error) {
+	if h.redis == nil {
+		return nil, redis.Nil
+	}
+	ctx, cancel := context.WithTimeout(parent, employmentCacheGetTimeout)
+	defer cancel()
+
+	data, err := h.redis.Get(ctx, employmentRiskScoreKey).Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var score model.EmploymentRiskScore
+	if err := json.Unmarshal(data, &score); err != nil {
+		return nil, err
+	}
+	return &score, nil
+}
+
+func (h *EmploymentHandler) setRiskScoreCache(parent context.Context, score *model.EmploymentRiskScore) error {
+	if h.redis == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(parent, employmentCacheSetTimeout)
+	defer cancel()
+
+	data, err := json.Marshal(score)
+	if err != nil {
+		return err
+	}
+	return h.redis.Set(ctx, employmentRiskScoreKey, data, employmentRiskScoreTTL).Err()
+}
+
+func (h *EmploymentHandler) getRiskHistoryCache(parent context.Context, months int) (*model.RiskHistoryResponse, error) {
+	if h.redis == nil {
+		return nil, redis.Nil
+	}
+	ctx, cancel := context.WithTimeout(parent, employmentCacheGetTimeout)
+	defer cancel()
+
+	key := fmt.Sprintf("employment:risk_history:v1:%d", months)
+	data, err := h.redis.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var resp model.RiskHistoryResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (h *EmploymentHandler) setRiskHistoryCache(parent context.Context, months int, resp *model.RiskHistoryResponse) error {
+	if h.redis == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(parent, employmentCacheSetTimeout)
+	defer cancel()
+
+	key := fmt.Sprintf("employment:risk_history:v1:%d", months)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	return h.redis.Set(ctx, key, data, employmentRiskHistoryTTL).Err()
 }

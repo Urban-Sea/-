@@ -119,30 +119,39 @@ import urllib.request
 
 logger = logging.getLogger("batch")
 
-WORKER_URL = "https://open-regime-api.ryu3ta-ke-mo100307.workers.dev"
+# 2026-04-09: 旧 CF Worker URL (open-regime-api.ryu3ta-ke-mo100307.workers.dev) は
+# 2026-04-05 の DNS 切替で削除済み。本番 (https://open-regime.com) に向ける。
+BACKEND_URL = os.getenv("WARMUP_BACKEND_URL", "https://open-regime.com")
 
+# 2026-04-09: warmup 対象を「実際にキャッシュ実装済みエンドポイント」だけに絞る。
+# api-go ハンドラのうち Redis cache を持つのは fx と employment (本日追加) のみ。
+# liquidity / market-state / stocks は cache 未実装なので warmup を打っても重い計算が
+# 走って結果が捨てられるだけの無駄な DB 負荷になるので除外。
+# /api/regime は api-python が serve しているので Python の cache_get/cache_set が効く。
 WARMUP_ENDPOINTS = [
-    "/api/regime",
-    "/api/market-state/latest",
-    "/api/employment/risk-score",
-    "/api/employment/overview",
-    "/api/employment/risk-history?months=350",
-    "/api/liquidity/overview",
-    "/api/liquidity/plumbing-summary",
-    "/api/liquidity/events",
-    "/api/liquidity/policy-regime",
-    "/api/liquidity/history-charts?period=2y",
-    "/api/liquidity/backtest-states?limit=120",
-    "/api/stocks",
+    "/api/regime",                                       # api-python (24h cache, 既存)
+    "/api/employment/risk-score?purge=1",                # api-go (24h cache, 本日追加)
+    "/api/employment/risk-history?months=350&purge=1",   # api-go (24h cache, 本日追加)
 ]
+
+# api-go の ?purge=1 認証用ヘッダ。
+# api-go config.go の WarmupToken と一致しなければ 403 になる。
+WARMUP_TOKEN = os.getenv("WARMUP_TOKEN", "")
 
 
 def _warmup_cache():
-    """Worker キャッシュをウォームアップ（バッチ後に全エンドポイントを1回叩く）"""
+    """API キャッシュをウォームアップ (cron 後に対象エンドポイントを ?purge=1 で叩いて再計算 + cache 更新)"""
     logger.info("--- Cache warmup ---")
+    headers = {}
+    if WARMUP_TOKEN:
+        headers["X-Warmup-Token"] = WARMUP_TOKEN
+    else:
+        logger.warning("WARMUP_TOKEN env var not set — purge endpoints will return 403")
+
     for ep in WARMUP_ENDPOINTS:
         try:
-            urllib.request.urlopen(f"{WORKER_URL}{ep}", timeout=30)
+            req = urllib.request.Request(f"{BACKEND_URL}{ep}", headers=headers)
+            urllib.request.urlopen(req, timeout=60)
             logger.info(f"  ✓ {ep}")
         except Exception as e:
             logger.warning(f"  ✗ {ep}: {e}")
