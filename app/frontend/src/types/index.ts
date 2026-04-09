@@ -392,6 +392,7 @@ export interface EmploymentRiskScore {
   latest_claims: WeeklyClaims | null;
   nfp_history: Array<{
     reference_period: string;
+    current_value: number | null;  // PAYEMS 絶対値 (千人) — NFP 累積チャート用
     nfp_change: number | null;
     u3_rate: number | null;
     u6_rate: number | null;
