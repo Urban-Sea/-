@@ -41,7 +41,9 @@ _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 # L1+L2 キャッシュ (インメモリ + Upstash Redis)
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 from market_hours import adaptive_ttl
-_CACHE_TTL = 300  # 5分
+_QUOTE_TTL = 300     # 5分 (現在価格・info: リアルタイム性必要)
+_HISTORY_TTL = 86400  # 24時間 (OHLCV 履歴: 営業日終了後に確定し変動なし)
+_EMA_TTL = 86400      # 24時間 (日足ベース EMA: 営業日終了後に確定)
 _executor = ThreadPoolExecutor(max_workers=10)
 
 
@@ -115,7 +117,7 @@ def _fetch_single_quote(ticker: str) -> dict:
                 "volume": info.get("volume") or 0,
                 "name": info.get("shortName") or info.get("longName") or None,
             }
-            _cache_set(cache_key, quote, ttl=adaptive_ttl(_CACHE_TTL, ticker))
+            _cache_set(cache_key, quote, ttl=adaptive_ttl(_QUOTE_TTL, ticker))
             return quote
         return {"ticker": ticker, "error": "No price data"}
     except Exception:
@@ -242,7 +244,7 @@ async def get_stock_info(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
+        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_QUOTE_TTL, ticker))
         return result
 
     except HTTPException:
@@ -297,7 +299,7 @@ async def get_stock_quote(ticker: str):
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
+        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_QUOTE_TTL, ticker))
         return result
 
     except HTTPException:
@@ -362,7 +364,7 @@ async def get_stock_history(
             updated_at=datetime.now().isoformat(),
         )
 
-        _cache_set(cache_key, result.model_dump(), ttl=adaptive_ttl(_CACHE_TTL, ticker))
+        _cache_set(cache_key, result.model_dump(), ttl=_HISTORY_TTL)
         return result
 
     except HTTPException:
@@ -393,6 +395,11 @@ async def get_stock_ema(
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid EMA periods")
 
+    cache_key = f"stock:ema:{ticker}:{','.join(str(p) for p in ema_periods_list)}"
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
+
     try:
         yf_ticker = _to_yf(ticker)
         stock = yf.Ticker(yf_ticker)
@@ -410,12 +417,14 @@ async def get_stock_ema(
             emas[f"ema_{period}"] = round(ema_value, 2)
             emas[f"above_ema_{period}"] = current_price > ema_value
 
-        return {
+        result = {
             "ticker": ticker.upper(),
             "current_price": round(current_price, 2),
             **emas,
             "updated_at": datetime.now().isoformat(),
         }
+        _cache_set(cache_key, result, ttl=_EMA_TTL)
+        return result
 
     except HTTPException:
         raise

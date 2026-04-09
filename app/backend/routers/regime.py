@@ -14,11 +14,10 @@ from analysis.regime_detector import RegimeDetector, RegimeResult
 from analysis.asset_class import AssetClass
 from auth import require_proxy
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
-from market_hours import adaptive_ttl
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
 
-_REGIME_TTL = 300  # 5分
+_REGIME_TTL = 86400  # 24時間 (日足ベースの計算: 営業日終了後に確定し翌日まで変わらない)
 
 
 class RegimeResponse(BaseModel):
@@ -88,7 +87,7 @@ async def get_regime():
             asset_class=result.asset_class,
         )
 
-        _cache_set("regime:v2:us", response.model_dump(), ttl=adaptive_ttl(_REGIME_TTL))
+        _cache_set("regime:v2:us", response.model_dump(), ttl=_REGIME_TTL)
         return response
 
     except Exception as e:

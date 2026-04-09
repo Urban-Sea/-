@@ -12,8 +12,11 @@ import numpy as np
 from datetime import datetime, timedelta
 from analysis.asset_class import AssetClass, normalize_ticker_yfinance
 from auth import require_proxy
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
+
+_EXIT_TTL = 86400  # 24時間 (日足ベースの 5 層 Exit 判定)
 
 
 def _detect_asset_class(ticker: str) -> AssetClass:
@@ -133,6 +136,11 @@ async def analyze_exit(
     - L4: EMA Cascade（8/13/21 EMA）
     - L5: Time Stop（新高値なし日数）
     """
+    cache_key = f"exit:{ticker.upper()}:{entry_price}:{entry_date or 'none'}:{bos_grade}:{structure_stop_pct}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return ExitAnalysisResponse(**cached)
+
     try:
         # 株価データ取得（日本株対応: 7203 → 7203.T）
         ticker_upper = ticker.upper()
@@ -322,7 +330,7 @@ async def analyze_exit(
             "above_ema_21": current_price > ema_21,
         }
 
-        return ExitAnalysisResponse(
+        response = ExitAnalysisResponse(
             ticker=ticker.upper(),
             current_price=round(current_price, 2),
             entry_price=entry_price,
@@ -338,6 +346,8 @@ async def analyze_exit(
             ema_status=ema_status,
             updated_at=datetime.now().isoformat(),
         )
+        _cache_set(cache_key, response.model_dump(), ttl=_EXIT_TTL)
+        return response
 
     except HTTPException:
         raise
@@ -355,6 +365,11 @@ async def quick_exit_check(
 
     8%の固定ストップロス判定
     """
+    cache_key = f"exit:quick:{ticker.upper()}:{entry_price}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         ticker_upper = ticker.upper()
         asset_class = _detect_asset_class(ticker_upper)
@@ -375,7 +390,7 @@ async def quick_exit_check(
         should_exit = current_price <= structure_stop
         urgency = "CRITICAL" if should_exit else ("WARNING" if pnl_pct < -5 else "SAFE")
 
-        return {
+        result = {
             "ticker": ticker.upper(),
             "current_price": round(current_price, 2),
             "entry_price": entry_price,
@@ -384,6 +399,8 @@ async def quick_exit_check(
             "should_exit": should_exit,
             "urgency": urgency,
         }
+        _cache_set(cache_key, result, ttl=_EXIT_TTL)
+        return result
 
     except HTTPException:
         raise

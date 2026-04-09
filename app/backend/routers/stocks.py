@@ -6,8 +6,11 @@ from pydantic import BaseModel
 from typing import Optional
 import main
 from auth import require_proxy
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
+
+_STOCKS_TTL = 86400  # 24時間 (stock_master は静的、管理者更新時のみ)
 
 
 class StockMaster(BaseModel):
@@ -42,6 +45,11 @@ async def get_stocks(
     - **watchlist**: robotics, defense, ai など
     - **active_only**: is_active=trueのみ
     """
+    cache_key = f"stocks:master:{category or 'all'}:{watchlist or 'all'}:{active_only}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return StocksResponse(**cached)
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -65,7 +73,9 @@ async def get_stocks(
 
         stocks = [StockMaster(**row) for row in result.data]
 
-        return StocksResponse(stocks=stocks, total=len(stocks))
+        response = StocksResponse(stocks=stocks, total=len(stocks))
+        _cache_set(cache_key, response.model_dump(), ttl=_STOCKS_TTL)
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -76,6 +86,11 @@ async def get_stock(ticker: str):
     """
     特定の銘柄情報を取得
     """
+    cache_key = f"stocks:master:single:{ticker.upper()}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return StockMaster(**cached)
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -86,7 +101,9 @@ async def get_stock(ticker: str):
         if not result.data:
             raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
 
-        return StockMaster(**result.data)
+        stock = StockMaster(**result.data)
+        _cache_set(cache_key, stock.model_dump(), ttl=_STOCKS_TTL)
+        return stock
 
     except HTTPException:
         raise
@@ -99,6 +116,11 @@ async def get_categories():
     """
     利用可能なカテゴリ一覧を取得
     """
+    cache_key = "stocks:master:categories"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -115,10 +137,12 @@ async def get_categories():
             if row.get("watchlist_category"):
                 watchlist_categories.add(row["watchlist_category"])
 
-        return {
+        response = {
             "price_categories": sorted(list(price_categories)),
             "watchlist_categories": sorted(list(watchlist_categories)),
         }
+        _cache_set(cache_key, response, ttl=_STOCKS_TTL)
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -21,8 +21,8 @@ router = APIRouter(dependencies=[Depends(require_proxy)])
 # ============================================================
 
 _executor = ThreadPoolExecutor(max_workers=5)
-_RISK_SCORE_TTL = 21600   # 6時間 (BLS月次更新)
-_RISK_HISTORY_TTL = 21600  # 6時間
+_RISK_SCORE_TTL = 86400   # 24時間 (NFP/失業率は月次、batch precompute 済み)
+_RISK_HISTORY_TTL = 86400  # 24時間 (月次過去データ集約)
 
 
 class EconomicIndicator(BaseModel):

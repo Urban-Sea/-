@@ -7,8 +7,11 @@ from typing import Optional, List
 from datetime import datetime
 import main
 from auth import require_proxy, require_auth
+from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 router = APIRouter(dependencies=[Depends(require_proxy)])
+
+_MARKET_STATE_TTL = 86400  # 24時間 (layer_stress / market_state は月次集計)
 
 
 class MarketStateRecord(BaseModel):
@@ -56,6 +59,11 @@ async def get_market_state_history(
     - デフォルトで直近30日分
     - 日付降順でソート
     """
+    cache_key = f"market_state:history:{limit}:{offset}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return MarketStateResponse(**cached)
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -79,7 +87,9 @@ async def get_market_state_history(
         )
         total = count_result.count if count_result.count else len(records)
 
-        return MarketStateResponse(records=records, total=total)
+        response = MarketStateResponse(records=records, total=total)
+        _cache_set(cache_key, response.model_dump(), ttl=_MARKET_STATE_TTL)
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -90,6 +100,11 @@ async def get_latest_market_state():
     """
     最新の市場状態を取得
     """
+    cache_key = "market_state:latest"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return LatestMarketState(**cached)
+
     supabase = main.get_supabase()
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -108,7 +123,7 @@ async def get_latest_market_state():
 
         row = result.data[0]
 
-        return LatestMarketState(
+        response = LatestMarketState(
             date=row.get("date", ""),
             spy_regime=row.get("spy_regime"),
             qqq_regime=row.get("qqq_regime"),
@@ -123,6 +138,8 @@ async def get_latest_market_state():
             },
             updated_at=row.get("created_at"),
         )
+        _cache_set(cache_key, response.model_dump(), ttl=_MARKET_STATE_TTL)
+        return response
 
     except HTTPException:
         raise

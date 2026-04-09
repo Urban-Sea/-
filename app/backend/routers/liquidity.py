@@ -32,10 +32,10 @@ router = APIRouter(dependencies=[Depends(require_proxy)])
 # 並列実行 + インメモリキャッシュ
 # ============================================================
 _executor = ThreadPoolExecutor(max_workers=8)
-_PLUMBING_TTL = 21600   # 6時間 (FRED週次更新)
-_EVENTS_TTL = 21600     # 6時間
-_POLICY_TTL = 21600     # 6時間
-_BACKTEST_TTL = 21600   # 6時間
+_PLUMBING_TTL = 86400   # 24時間 (batch cron が日次/週次で precompute → API は読むだけ)
+_EVENTS_TTL = 86400     # 24時間 (FRED 系列の更新は週次中心)
+_POLICY_TTL = 86400     # 24時間 (batch precompute 済み)
+_BACKTEST_TTL = 86400   # 24時間 (layer_stress_history は月次集計)
 
 
 # ============================================================
