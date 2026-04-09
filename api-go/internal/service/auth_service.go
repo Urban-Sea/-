@@ -13,7 +13,15 @@ import (
 	"github.com/open-regime/api-go/internal/repository"
 )
 
-const userCacheTTL = 5 * time.Minute
+const (
+	userCacheTTL = 5 * time.Minute
+	// Per-operation context timeouts (skill rule: conn-timeouts).
+	// GetUser is called on every authenticated request via AuthMiddleware,
+	// so a slow Redis must not block the API. 500ms is generous (Docker-local
+	// Redis ~1ms) but errs on the side of cache hits over false negatives.
+	userCacheGetTimeout = 500 * time.Millisecond
+	userCacheSetTimeout = 500 * time.Millisecond
+)
 
 // Claims represents the JWT claims issued by this service.
 type Claims struct {
@@ -98,17 +106,25 @@ func (s *AuthService) ValidateJWTForRefresh(tokenStr string) (*Claims, error) {
 }
 
 // GetUser returns a user by ID, checking Redis cache first, then falling back to DB.
+//
+// Cache GET/SET each have their own context.WithTimeout (skill rule: conn-timeouts)
+// so that a slow/unhealthy Redis cannot block the request. This is critical because
+// GetUser is invoked on every authenticated API call via AuthMiddleware.
 func (s *AuthService) GetUser(ctx context.Context, userID string) (*model.User, error) {
 	cacheKey := "user:" + userID
 
-	// Try cache first.
-	data, err := s.redis.Get(ctx, cacheKey).Bytes()
-	if err == nil {
-		var u model.User
-		if jsonErr := json.Unmarshal(data, &u); jsonErr == nil {
-			return &u, nil
+	// Try cache first (with bounded timeout).
+	{
+		getCtx, cancel := context.WithTimeout(ctx, userCacheGetTimeout)
+		data, err := s.redis.Get(getCtx, cacheKey).Bytes()
+		cancel()
+		if err == nil {
+			var u model.User
+			if jsonErr := json.Unmarshal(data, &u); jsonErr == nil {
+				return &u, nil
+			}
+			// If unmarshal fails, fall through to DB.
 		}
-		// If unmarshal fails, fall through to DB.
 	}
 
 	// Cache miss — query DB.
@@ -117,9 +133,11 @@ func (s *AuthService) GetUser(ctx context.Context, userID string) (*model.User, 
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	// Cache the result.
+	// Cache the result (best-effort, with bounded timeout).
 	if encoded, jsonErr := json.Marshal(u); jsonErr == nil {
-		_ = s.redis.Set(ctx, cacheKey, encoded, userCacheTTL).Err()
+		setCtx, cancel := context.WithTimeout(ctx, userCacheSetTimeout)
+		_ = s.redis.Set(setCtx, cacheKey, encoded, userCacheTTL).Err()
+		cancel()
 	}
 
 	return u, nil

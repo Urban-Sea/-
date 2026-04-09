@@ -135,7 +135,7 @@ func main() {
 	watchlistHandler := handler.NewWatchlistHandler(watchlistRepo)
 	marketStateHandler := handler.NewMarketStateHandler(marketStateRepo)
 	liquidityHandler := handler.NewLiquidityHandler(liquidityRepo)
-	employmentHandler := handler.NewEmploymentHandler(employmentRepo)
+	employmentHandler := handler.NewEmploymentHandler(employmentRepo, rdb, cfg.WarmupToken)
 	adminHandler := handler.NewAdminHandler(adminRepo)
 	billingHandler := handler.NewBillingHandler(cfg, userRepo)
 

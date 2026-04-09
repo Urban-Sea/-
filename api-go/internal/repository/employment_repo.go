@@ -242,17 +242,19 @@ func (r *EmploymentRepository) ListNFPRowsForHistory(ctx context.Context, limit 
 }
 
 // ListClaimsRowsSince returns weekly claims since start date.
+// Limit 10000 = 約 192 年分の週次データに相当 (実 DB は 1422 行)
 func (r *EmploymentRepository) ListClaimsRowsSince(ctx context.Context, startDate string) ([]map[string]any, error) {
 	query := `SELECT week_ending, initial_claims, initial_claims_4w_avg FROM weekly_claims
-		WHERE week_ending >= $1 ORDER BY week_ending ASC LIMIT 1000`
+		WHERE week_ending >= $1 ORDER BY week_ending ASC LIMIT 10000`
 	return r.queryToMaps(ctx, query, startDate)
 }
 
 // ListConsumerIndicatorsSince returns consumer/structure indicators since start date.
+// Limit 10000 = 5 指標 × 月次で約 166 年分に相当 (実 DB は ~1700 行)
 func (r *EmploymentRepository) ListConsumerIndicatorsSince(ctx context.Context, startDate string) ([]map[string]any, error) {
 	query := `SELECT indicator, reference_period, current_value FROM economic_indicators
 		WHERE indicator = ANY($1) AND reference_period >= $2
-		ORDER BY reference_period ASC LIMIT 1000`
+		ORDER BY reference_period ASC LIMIT 10000`
 	names := []string{"W875RX1", "UMCSENT", "DRCCLACBS", "UNEMPLOY", "JOLTS"}
 	return r.queryToMaps(ctx, query, names, startDate)
 }
