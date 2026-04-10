@@ -1,6 +1,6 @@
-# 現行アーキテクチャ図 (2026-04-09 更新)
+# 現行アーキテクチャ図 (2026-04-10 更新)
 
-> **2026-04-05** に VPS 切替完了 / **2026-04-07** に admin サブドメイン分離 / **2026-04-08** にログ JSON 化 + R2 バックアップ + cron 完了 / **2026-04-09** に Redis TTL チューニング完了
+> **2026-04-05** に VPS 切替完了 / **2026-04-07** に admin サブドメイン分離 / **2026-04-08** にログ JSON 化 + R2 バックアップ + cron 完了 / **2026-04-09** に Redis TTL チューニング + デジタル庁デザイン統一 / **2026-04-10** に signals ページ UX 全面改善
 >
 > 本番は CF Pages / CF Workers / Cloud Run / Supabase ではなく **Sakura VPS 上の Docker 構成** で稼働中。
 > 旧 SaaS (CF Workers, Cloud Run, Supabase, Upstash) は #28 廃止条件達成まで残存中 (動いてはいるが本番トラフィック 0)。
@@ -507,7 +507,33 @@ git push (main)
 
 ---
 
-## 11. 関連ドキュメント
+## 11. フロントエンド ページ構成 (2026-04-10 時点)
+
+| ページ | タブ構成 | 備考 |
+|---|---|---|
+| `/` | — | ランディングページ |
+| `/signals` | エントリー判定 / 決済分析 / 過去のポジション / システム解説 | **保有分析タブは 2026-04-10 に廃止** (決済分析に統合) |
+| `/liquidity` | ダッシュボード / 履歴グラフ / バックテスト | 履歴は Power BI 風グリッド (一覧/詳細 2 view) |
+| `/employment` | ダッシュボード / リスク履歴 / 指標グラフ | 指標は Power BI 風グリッド |
+| `/holdings` | — | ポートフォリオ管理 |
+| `/dashboard` | — | 統合ダッシュボード |
+| `/discovery` | — | finviz スキャン結果 |
+| `/settings` | — | 設定 |
+| `/login` | — | Google OAuth ログイン |
+
+### signals ページの主要変更 (2026-04-10)
+
+- **運用モード** (balanced/aggressive/conservative): UI 非表示、balanced 固定。API パラメータは残存
+- **Exit モード** (standard/stable): UI 非表示、standard 固定。API パラメータは残存
+- **決済分析**: 1 件 → Hero + 3 chip (損切/反転/利確)、2+ → Power BI 風グリッド (緊急度ソート)
+- **過去のポジション**: trade_results + active positions を 1 行 1 ポジション表示。partial + full を entry_date でグルーピング
+- **システム解説**: 実物 chip + アクション表示で色の意味を図解。バックテスト結果は S&P500 / NASDAQ100 / Nikkei225 の 10 年データ
+- **デザイン**: DA token 全面適用。Tailwind 素色禁止。`--brand-*` / `--signal-*` / `--neutral-*`
+- **localhost auth バイパス**: UserProvider / swr.tsx / api.ts に `hostname === 'localhost'` チェック追加 (dev 専用)
+
+---
+
+## 12. 関連ドキュメント
 
 - [`tasks/順番.md`](順番.md) — 全 Phase の作業順序
 - [`tasks/今後やること.md`](今後やること.md) — 公開前スプリント + Phase 7 構想
