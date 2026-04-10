@@ -30,7 +30,7 @@ DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "output"
 API_URL = os.environ.get("OPEN_REGIME_API_URL", "").rstrip("/")
 PUBLISH_TOKEN = os.environ.get("OPEN_REGIME_PUBLISH_TOKEN", "")
 
-ENDPOINT = "/api/admin/discovery/upsert"
+ENDPOINT = "/api/discovery/upsert"
 
 
 def resolve_json_path(arg: str | None) -> Path:

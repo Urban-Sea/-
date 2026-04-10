@@ -12,11 +12,11 @@ import type { DiscoveredStock } from '@/types';
 
 // ── Preset color mapping ──
 
-const PRESET_COLORS: Record<string, string> = {
-  momentum: 'blue',
-  pullback: 'orange',
-  quality: 'green',
-  breakout: 'purple',
+const PRESET_LABELS: Record<string, { label: string; color: string; description: string }> = {
+  momentum: { label: '上昇トレンド', color: 'blue', description: 'SMA200上 × 52W高値圏' },
+  pullback: { label: '押し目', color: 'orange', description: '上昇トレンド中の一時下落' },
+  quality: { label: 'ファンダ優良', color: 'green', description: '高ROE × 低PER × 利益成長' },
+  breakout: { label: 'ブレイクアウト', color: 'purple', description: '新高値 × 出来高急増' },
 };
 
 // ── Sort helpers ──
@@ -129,6 +129,7 @@ function DiscoveryPage() {
       <div className="flex items-center gap-2">
         <Search className="w-5 h-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">銘柄発掘</h1>
+        <span className="text-xs text-muted-foreground">米国株</span>
         <span className="text-xs text-muted-foreground ml-auto">
           スキャン日: {data.scan_date}
         </span>
@@ -149,11 +150,11 @@ function DiscoveryPage() {
           <div className="text-xl font-bold tabular-nums font-mono">{data.threshold}</div>
         </GlassCard>
         <GlassCard className="p-4">
-          <div className="text-xs text-muted-foreground">プリセット別</div>
+          <div className="text-xs text-muted-foreground">条件別ヒット数</div>
           <div className="flex flex-wrap gap-1 mt-1">
             {allPresets.map(p => (
               <span key={p} className="text-xs tabular-nums">
-                {p}: {data.preset_counts[p]}
+                {PRESET_LABELS[p]?.label ?? p}: {data.preset_counts[p]}
               </span>
             ))}
           </div>
@@ -172,19 +173,23 @@ function DiscoveryPage() {
         >
           全て ({data.after_threshold})
         </button>
-        {allPresets.map(p => (
-          <button
-            key={p}
-            onClick={() => setPresetFilter(presetFilter === p ? null : p)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              presetFilter === p
-                ? 'bg-foreground text-background border-foreground'
-                : 'bg-transparent text-muted-foreground border-border hover:border-foreground/50'
-            }`}
-          >
-            {p} ({data.preset_counts[p] ?? 0})
-          </button>
-        ))}
+        {allPresets.map(p => {
+          const info = PRESET_LABELS[p];
+          return (
+            <button
+              key={p}
+              onClick={() => setPresetFilter(presetFilter === p ? null : p)}
+              title={info?.description}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                presetFilter === p
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'bg-transparent text-muted-foreground border-border hover:border-foreground/50'
+              }`}
+            >
+              {info?.label ?? p} ({data.preset_counts[p] ?? 0})
+            </button>
+          );
+        })}
       </div>
 
       {/* Table */}
@@ -214,7 +219,7 @@ function DiscoveryPage() {
                 SMA200
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Presets
+                該当条件
               </th>
             </tr>
           </thead>
@@ -245,9 +250,16 @@ function DiscoveryPage() {
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1">
-                    {stock.presets.map(p => (
-                      <StatusChip key={p} label={p} color={PRESET_COLORS[p] ?? 'blue'} />
-                    ))}
+                    {stock.presets.map(p => {
+                      const info = PRESET_LABELS[p];
+                      return (
+                        <StatusChip
+                          key={p}
+                          label={info?.label ?? p}
+                          color={info?.color ?? 'blue'}
+                        />
+                      );
+                    })}
                   </div>
                 </td>
               </tr>
