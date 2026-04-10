@@ -1,18 +1,12 @@
 # Open Regime - Production nginx configuration
 # ${PROXY_SECRET} is replaced by envsubst at container startup
+#
+# NOTE: upstream blocks are NOT used. Instead, proxy_pass uses variables
+# so that nginx re-resolves DNS via the resolver directive on every request.
+# This prevents stale IP caching when containers restart and get new IPs.
 
-upstream frontend {
-    server frontend:3000;
-}
-upstream admin_frontend {
-    server admin-frontend:3002;
-}
-upstream api_go {
-    server api-go:8080;
-}
-upstream api_python {
-    server api-python:8081;
-}
+# Docker internal DNS — re-resolve every 10s
+resolver 127.0.0.11 valid=10s ipv6=off;
 
 # Block direct IP access and unknown Host headers
 server {
@@ -46,6 +40,11 @@ server {
     # HSTS — force browsers to use HTTPS for 1 year
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
+    # Upstream endpoints as variables (forces DNS re-resolution per request)
+    set $upstream_api_python http://api-python:8081;
+    set $upstream_api_go     http://api-go:8080;
+    set $upstream_frontend   http://frontend:3000;
+
     # Health check
     location /health {
         access_log off;
@@ -55,7 +54,7 @@ server {
 
     # Python compute API — inject x-proxy-secret for CSRF protection
     location ~ ^/api/(signal|regime|exit|stock)(/|$) {
-        proxy_pass http://api_python;
+        proxy_pass $upstream_api_python;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -70,7 +69,7 @@ server {
         if ($arg_purge) {
             return 403;
         }
-        proxy_pass http://api_go;
+        proxy_pass $upstream_api_go;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -84,7 +83,7 @@ server {
 
     # Frontend (catch-all)
     location / {
-        proxy_pass http://frontend;
+        proxy_pass $upstream_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_http_version 1.1;
@@ -103,12 +102,16 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
+    # Upstream endpoints as variables (forces DNS re-resolution per request)
+    set $upstream_api_go_admin     http://api-go:8080;
+    set $upstream_admin_frontend   http://admin-frontend:3002;
+
     # Go API (so admin-frontend can use relative /api/ paths)
     location /api/ {
         if ($arg_purge) {
             return 403;
         }
-        proxy_pass http://api_go;
+        proxy_pass $upstream_api_go_admin;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -118,7 +121,7 @@ server {
 
     # Admin Frontend
     location / {
-        proxy_pass http://admin_frontend;
+        proxy_pass $upstream_admin_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_http_version 1.1;
