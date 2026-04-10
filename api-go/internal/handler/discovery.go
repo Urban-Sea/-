@@ -43,11 +43,12 @@ func NewDiscoveryHandler(
 	}
 }
 
-// Register mounts discovery routes on both admin and public groups.
-func (h *DiscoveryHandler) Register(adminGroup *echo.Group, publicGroup *echo.Group) {
-	adminGroup.POST("/discovery/upsert", h.Upsert)
-	publicGroup.GET("/today", h.GetToday)
-	publicGroup.GET("/history", h.GetHistory)
+// Register mounts all discovery routes on a single group.
+// POST is protected by X-Publish-Token (handler-level auth).
+func (h *DiscoveryHandler) Register(g *echo.Group) {
+	g.POST("/upsert", h.Upsert)
+	g.GET("/today", h.GetToday)
+	g.GET("/history", h.GetHistory)
 }
 
 // Upsert handles POST /api/admin/discovery/upsert.

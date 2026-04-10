@@ -221,10 +221,10 @@ func main() {
 	admin := e.Group("/api/admin", middleware.AuthMiddleware(authSvc), middleware.AdminMFAMiddleware(cfg, pool))
 	adminHandler.Register(admin)
 
-	// Discovery (public GET + token-auth POST)
-	// POST uses X-Publish-Token (handler-level auth), not admin middleware.
-	discoveryPublic := e.Group("/api/discovery")
-	discoveryHandler.Register(admin, discoveryPublic)
+	// Discovery (all token-auth, no cookie/MFA middleware)
+	// POST uses X-Publish-Token (handler-level auth).
+	discoveryGroup := e.Group("/api/discovery")
+	discoveryHandler.Register(discoveryGroup)
 
 	// Admin MFA (auth + admin check, but no MFA required for setup)
 	adminMFA := e.Group("/api/admin/mfa", middleware.AuthMiddleware(authSvc), middleware.AdminMiddleware(cfg))

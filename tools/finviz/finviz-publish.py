@@ -77,23 +77,44 @@ def main() -> int:
     scan_date = payload["scan_date"]
     print(f"Publishing {ticker_count} tickers for {scan_date} to {API_URL}{ENDPOINT}")
 
+    headers = {
+        "X-Publish-Token": PUBLISH_TOKEN,
+        "Content-Type": "application/json",
+    }
+
+    # CF Access Service Token (optional — set if site is behind Cloudflare Access)
+    cf_client_id = os.environ.get("CF_ACCESS_CLIENT_ID", "")
+    cf_client_secret = os.environ.get("CF_ACCESS_CLIENT_SECRET", "")
+    if cf_client_id and cf_client_secret:
+        headers["CF-Access-Client-Id"] = cf_client_id
+        headers["CF-Access-Client-Secret"] = cf_client_secret
+
     resp = requests.post(
         f"{API_URL}{ENDPOINT}",
         json=payload,
-        headers={
-            "X-Publish-Token": PUBLISH_TOKEN,
-            "Content-Type": "application/json",
-        },
+        headers=headers,
         timeout=30,
+        allow_redirects=False,
     )
 
     if resp.status_code == 200:
-        result = resp.json()
+        try:
+            result = resp.json()
+        except Exception:
+            print(f"ERROR: Got HTTP 200 but response is not JSON", file=sys.stderr)
+            print(resp.text[:500], file=sys.stderr)
+            return 1
         print(f"OK: {result.get('count', '?')} tickers upserted for {result.get('scan_date', '?')}")
         return 0
 
+    if resp.status_code in (301, 302, 303):
+        print("ERROR: Redirected (Cloudflare Access is blocking the request)", file=sys.stderr)
+        print("Set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET env vars.", file=sys.stderr)
+        print("See: https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/", file=sys.stderr)
+        return 1
+
     print(f"ERROR: HTTP {resp.status_code}", file=sys.stderr)
-    print(resp.text, file=sys.stderr)
+    print(resp.text[:500], file=sys.stderr)
     return 1
 
 
