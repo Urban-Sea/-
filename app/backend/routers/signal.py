@@ -994,6 +994,34 @@ async def get_signal_history(
                     continue  # データ不足でトレード未完了
                 if result.exit_idx <= ep["entry_idx"]:
                     continue  # 0日保有（データ末尾エントリー）はスキップ
+
+                # partial exit (CHoCH 50%売却) がある場合、先に partial レコードを追加
+                if result.partial_exit_price is not None:
+                    p_ret = (result.partial_exit_price - ep["entry_price"]) / ep["entry_price"] * 100
+                    p_date = df['Date'].iloc[result.partial_exit_idx] if result.partial_exit_idx < len(df) else ep["date"]
+                    p_days = result.partial_exit_idx - ep["entry_idx"]
+                    trade_results.append({
+                        "entry_date": ep["date"],
+                        "exit_date": p_date,
+                        "entry_price": ep["entry_price"],
+                        "exit_price": result.partial_exit_price,
+                        "exit_reason": "Mirror_Partial",
+                        "return_pct": p_ret,
+                        "holding_days": p_days,
+                    })
+                    timeline.append({
+                        "date": p_date,
+                        "type": "TRADE_EXIT",
+                        "price": round(result.partial_exit_price, 2),
+                        "detail": f"Mirror_Partial → {p_ret:+.1f}%（{p_days}日保有）",
+                        "exit_reason": "Mirror_Partial",
+                        "return_pct": round(p_ret, 2),
+                        "holding_days": p_days,
+                        "entry_date": ep["date"],
+                        "entry_price": round(ep["entry_price"], 2),
+                    })
+
+                # full exit レコード（partial がない場合は唯一のレコード）
                 ret_pct = (result.exit_price - ep["entry_price"]) / ep["entry_price"] * 100
                 exit_date = df['Date'].iloc[result.exit_idx] if result.exit_idx < len(df) else ep["date"]
                 trade_results.append({
@@ -1005,7 +1033,6 @@ async def get_signal_history(
                     "return_pct": ret_pct,
                     "holding_days": result.exit_idx - ep["entry_idx"],
                 })
-                # タイムラインにTRADE_EXITイベントを追加
                 timeline.append({
                     "date": exit_date,
                     "type": "TRADE_EXIT",
@@ -1066,6 +1093,7 @@ async def get_signal_history(
                     entry_price = float(ep["entry_price"])
                     unrealized = (current_close / entry_price - 1) * 100 if entry_price > 0 else 0
                     atr_floor = entry_price - float(ep["entry_atr"]) * 3.0
+                    had_partial = result.partial_exit_price is not None
                     live_exit_statuses.append({
                         "entry_date": ep["date"],
                         "entry_price": entry_price,
@@ -1074,9 +1102,9 @@ async def get_signal_history(
                         "unrealized_pct": round(unrealized, 2),
                         "atr_floor_price": round(atr_floor, 2),
                         "atr_floor_triggered": "ATR_Floor" in result.exit_reason,
-                        "partial_exit_done": "partial" in result.exit_reason.lower() or "Mirror" in result.exit_reason,
-                        "bearish_choch_detected": "Mirror" in result.exit_reason,
-                        "ema_death_cross": "Mirror" in result.exit_reason and "Full" not in result.exit_reason,
+                        "partial_exit_done": had_partial,
+                        "bearish_choch_detected": had_partial,
+                        "ema_death_cross": had_partial and "Mirror" in result.exit_reason,
                         "trail_active": "Trail" in result.exit_reason,
                         "trail_stop_price": None,
                         "highest_price": round(current_close, 2),
@@ -1089,13 +1117,16 @@ async def get_signal_history(
         # 時系列ソート
         timeline.sort(key=lambda x: x['date'])
 
-        # 統計計算
+        # 統計計算 — ポジション単位 (partial + full を 1 ポジションとして集計)
         entry_signals = [s for s in timeline if s['type'] == 'ENTRY']
+        positions_by_entry = {}
+        for t in trade_results:
+            positions_by_entry.setdefault(t["entry_date"], []).append(t)
         stats = {
             "total_signals": len(timeline),
             "entry_count": len(entry_signals),
             "exit_count": len([s for s in timeline if s['type'] == 'EXIT']),
-            "trade_exit_count": len(trade_results),
+            "trade_exit_count": len(positions_by_entry),
             "rsi_high_count": len([s for s in timeline if s['type'] == 'RSI_HIGH']),
             "avg_pnl_5d": None,
             "avg_pnl_10d": None,
@@ -1105,18 +1136,28 @@ async def get_signal_history(
             "win_rate_20d": None,
         }
 
-        # PatB Exit統計
-        if trade_results:
-            rets = [t["return_pct"] for t in trade_results]
-            wins = [r for r in rets if r > 0]
-            losses = [r for r in rets if r <= 0]
+        # PatB Exit統計 — ポジション単位で集計
+        if positions_by_entry:
+            pos_rets = []
+            pos_hold_days = []
+            for legs in positions_by_entry.values():
+                if len(legs) >= 2:
+                    blended = legs[0]["return_pct"] * 0.5 + legs[1]["return_pct"] * 0.5
+                    hold = max(l["holding_days"] for l in legs)
+                else:
+                    blended = legs[0]["return_pct"]
+                    hold = legs[0]["holding_days"]
+                pos_rets.append(blended)
+                pos_hold_days.append(hold)
+            wins = [r for r in pos_rets if r > 0]
+            losses = [r for r in pos_rets if r <= 0]
             pf = sum(wins) / abs(sum(losses)) if losses and sum(losses) != 0 else float('inf')
-            stats["patb_trades"] = len(trade_results)
-            stats["patb_avg_pnl"] = round(float(np.mean(rets)), 2)
-            stats["patb_median_pnl"] = round(float(np.median(rets)), 2)
-            stats["patb_win_rate"] = round(len(wins) / len(rets) * 100, 1)
+            stats["patb_trades"] = len(pos_rets)
+            stats["patb_avg_pnl"] = round(float(np.mean(pos_rets)), 2)
+            stats["patb_median_pnl"] = round(float(np.median(pos_rets)), 2)
+            stats["patb_win_rate"] = round(len(wins) / len(pos_rets) * 100, 1)
             stats["patb_pf"] = round(pf, 2) if pf != float('inf') else None
-            stats["patb_avg_hold_days"] = round(float(np.mean([t["holding_days"] for t in trade_results])), 1)
+            stats["patb_avg_hold_days"] = round(float(np.mean(pos_hold_days)), 1)
 
         if legacy_signals:
             pnl_5d_list = [s["pnl_5d"] for s in legacy_signals if s["pnl_5d"] is not None]

@@ -1439,7 +1439,7 @@ function SignalsPage() {
                 <div className="flex items-center gap-3 mb-5">
                   <span className="text-base font-bold text-foreground">過去のポジション（1 年間）</span>
                   {signalHistory && (
-                    <span className="text-sm text-neutral-500">({(signalHistory.trade_results?.length ?? 0) + (signalHistory.live_exit_statuses?.filter(s => !s.trade_completed)?.length ?? 0)} 件)</span>
+                    <span className="text-sm text-neutral-500">({new Set(signalHistory.trade_results?.map(t => t.entry_date) ?? []).size + (signalHistory.live_exit_statuses?.filter(s => !s.trade_completed)?.length ?? 0)} 件)</span>
                   )}
                   <button
                     onClick={handleFetchSignalHistory}

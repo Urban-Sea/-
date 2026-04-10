@@ -35,7 +35,9 @@ class TradeResult:
     """evaluate_trade の戻り値"""
     exit_idx: int
     exit_price: float
-    exit_reason: str  # ATR_Floor, Mirror_Full, Mirror_Partial, Trail_Stop, Time_Stop etc.
+    exit_reason: str  # ATR_Floor, Mirror_Full, Trail_Stop, Time_Stop etc.
+    partial_exit_idx: Optional[int] = None      # CHoCH 50%売却日の index
+    partial_exit_price: Optional[float] = None   # CHoCH 50%売却時の価格
 
 
 @dataclass
@@ -110,8 +112,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                     trail_active, trail_stop_price, highest,
                     entry_price, close, d - entry_idx, "ATR_Floor")
             if choch_exit_price is not None:
-                blended = choch_exit_price * 0.5 + close * 0.5
-                return TradeResult(d, blended, "ATR_Floor(partial)")
+                return TradeResult(d, close, "ATR_Floor", choch_exit_idx, choch_exit_price)
             return TradeResult(d, close, "ATR_Floor")
 
         # CHoCH + Mirror チェック
@@ -132,8 +133,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                             trail_active, trail_stop_price, highest,
                             entry_price, close, d - entry_idx, "Mirror_Partial")
                     if choch_exit_price is not None:
-                        blended = choch_exit_price * 0.5 + close * 0.5
-                        return TradeResult(d, blended, "Mirror_Partial")
+                        return TradeResult(d, close, "Mirror_Full", choch_exit_idx, choch_exit_price)
                     return TradeResult(d, close, "Mirror_Full")
                 mirror_triggered = True
 
@@ -181,8 +181,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
                         trail_active, trail_stop_price, highest,
                         entry_price, close, d - entry_idx, "Trail_Stop")
                 if choch_exit_price is not None:
-                    blended = choch_exit_price * 0.5 + exit_price * 0.5
-                    return TradeResult(d, blended, "Trail_Stop(partial)")
+                    return TradeResult(d, exit_price, "Trail_Stop", choch_exit_idx, choch_exit_price)
                 return TradeResult(d, exit_price, "Trail_Stop")
 
     # ループ完了
@@ -213,8 +212,7 @@ def _run_exit_loop(df, entry_idx, entry_price, entry_atr, regime, choch_signals,
         return None
     exit_price = df['Close'].iloc[max_day]
     if choch_exit_price is not None:
-        blended = choch_exit_price * 0.5 + exit_price * 0.5
-        return TradeResult(max_day, blended, "Time_Stop(partial)")
+        return TradeResult(max_day, exit_price, "Time_Stop", choch_exit_idx, choch_exit_price)
     return TradeResult(max_day, exit_price, "Time_Stop")
 
 
