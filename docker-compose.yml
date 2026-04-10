@@ -69,6 +69,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - ENVIRONMENT=development
       - SENTRY_DSN=${SENTRY_DSN:-}
+      # K_SERVICE が non-empty だと stdout ログに切り替わる (Dockerfile 参照)
+      # ローカル dev では /var/log/open-regime ボリュームを mount しない代わりにこれで stdout 出力
+      - K_SERVICE=local
     depends_on:
       postgres:
         condition: service_healthy

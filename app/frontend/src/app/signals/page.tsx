@@ -9,7 +9,7 @@ import { Crosshair, Package, History, BookOpen, ShieldAlert } from 'lucide-react
 import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GlassCard, StatusChip, Metric, DocSection, DocTable } from '@/components/shared/glass';
+import { GlassCard, StatusChip, Metric, DocSection } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
 import { useUser } from '@/components/providers/UserProvider';
 import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
@@ -24,16 +24,9 @@ type Period = '1d' | '5d' | '1mo' | '3mo' | '6mo' | 'ytd' | '1y' | '5y' | 'max';
 type ChartType = 'line' | 'candlestick';
 type ChartOption = 'ema' | 'fvg' | 'bos' | 'choch' | 'ob' | 'ote' | 'pd';
 
-const modeLabels: Record<Mode, { label: string; desc: string }> = {
-  balanced: { label: '標準', desc: 'RS下落時はエントリー禁止。最もバランスが良い。' },
-  aggressive: { label: '積極型', desc: 'RS無視で全エントリー。機会重視。' },
-  conservative: { label: '慎重型', desc: 'RS下落時は50%サイズ。リスク抑制。' },
-};
+// modeLabels は UI 非表示 (balanced 固定)。API 呼び出し時にのみ mode を使用。
 
-const exitModeLabels: Record<ExitMode, { label: string; desc: string }> = {
-  standard: { label: 'ハイブリッド', desc: '含み益30%超でトレイル緩和。PF 8.59 / 勝率73%' },
-  stable: { label: '安定', desc: 'タイトなトレイルで利益確保。PF 6.59 / 勝率73%' },
-};
+// exitModeLabels は UI 非表示 (standard 固定)。API 呼び出し時にのみ exitMode を使用。
 
 const defaultQuickTickers = ['NVDA', 'TSLA', 'META', 'PLTR', 'COIN', 'IONQ', 'SOUN', 'RKLB'];
 const defaultJpTickers = [
@@ -79,8 +72,8 @@ export default function SignalsPageWrapper() {
 
 function SignalsPage() {
   const [ticker, setTicker] = useState('');
-  const [mode, setMode] = useState<Mode>('balanced');
-  const [exitMode, setExitMode] = useState<ExitMode>('standard');
+  const [mode] = useState<Mode>('balanced');
+  const [exitMode] = useState<ExitMode>('standard');
   const [signal, setSignal] = useState<SignalResponse | null>(null);
   const { data: regimeData } = useRegime();
   const regime = regimeData ?? null;
@@ -373,36 +366,12 @@ function SignalsPage() {
           </div>
           <p className="text-xs text-muted-foreground pl-3.5">エントリー判定・Exit分析・シグナル履歴</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500">運用モード</span>
-          <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
-            {(Object.keys(modeLabels) as Mode[]).map((m, i) => {
-              const isActive = mode === m;
-              return (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  title={modeLabels[m].desc}
-                  className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
-                    i > 0 ? 'border-l border-neutral-200' : ''
-                  } ${
-                    isActive
-                      ? 'bg-[var(--brand-100)] text-[var(--brand-700)]'
-                      : 'text-neutral-700 hover:bg-neutral-50'
-                  }`}
-                >
-                  {modeLabels[m].label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* 運用モードは balanced 固定。UI は非表示 */}
       </div>
 
       {/* ── Search Section ── */}
       <div className="rounded-xl border border-neutral-200 bg-card">
-        <div className="p-5 space-y-4">
-          {/* Row 1: Input + Actions */}
+        <div className="p-5">
           <div className="flex gap-2 items-center flex-wrap">
             <div className="relative">
               <input
@@ -448,21 +417,35 @@ function SignalsPage() {
             >
               {batchLoading ? '分析中...' : '一括分析'}
             </button>
-          </div>
 
-          {/* Row 2: Quick Tickers */}
-          <div className="flex gap-1.5 flex-wrap items-center pt-3 border-t border-neutral-100">
-            <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-neutral-500 mr-1">Quick</span>
+            {/* Watchlist — 分析ボタンと同じ行 */}
+            <div className="w-px h-5 bg-neutral-200 mx-1" />
+            <div className="flex gap-1 flex-wrap items-center">
             {quickTickers.map((t) => (
               <span
                 key={t}
-                className="group relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-200 bg-white text-xs font-semibold text-neutral-700 hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] transition-colors cursor-pointer"
+                className="group relative flex items-center gap-1 px-2 py-1 rounded border border-neutral-200 bg-white text-[11px] font-mono font-semibold text-neutral-700 hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] transition-colors cursor-pointer"
               >
-                <TickerIcon ticker={t} size={20} />
+                <TickerIcon ticker={t} size={16} />
                 <span onClick={() => handleAnalyze(t)}>{t}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeQuickTicker(t); }}
-                  className="hidden group-hover:inline text-[var(--signal-danger-500)] font-bold text-xs ml-0.5"
+                  className="hidden group-hover:inline text-[var(--signal-danger-500)] font-bold text-[10px] ml-0.5"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {jpTickers.map((t) => (
+              <span
+                key={t.ticker}
+                className="group relative flex items-center gap-1 px-2 py-1 rounded border border-neutral-200 bg-white text-[11px] font-mono font-semibold text-neutral-700 hover:border-[var(--signal-danger-300)] hover:text-[var(--signal-danger-500)] transition-colors cursor-pointer"
+              >
+                <span onClick={() => handleAnalyze(t.ticker)}>{t.ticker}</span>
+                <span className="text-[9px] text-neutral-500 font-sans" onClick={() => handleAnalyze(t.ticker)}>{t.name}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeJpTicker(t.ticker); }}
+                  className="hidden group-hover:inline text-[var(--signal-danger-500)] font-bold text-[10px] ml-0.5"
                 >
                   ×
                 </button>
@@ -476,41 +459,13 @@ function SignalsPage() {
                   onChange={(e) => setNewTickerInput(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === 'Enter' && addQuickTicker(newTickerInput)}
                   placeholder="AAPL"
-                  className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs w-16 focus:outline-none focus:border-[var(--brand-500)] focus:ring-1 focus:ring-[var(--brand-500)]/30 text-foreground"
+                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] w-14 focus:outline-none focus:border-[var(--brand-500)] focus:ring-1 focus:ring-[var(--brand-500)]/30 text-foreground font-mono"
                   autoFocus
                 />
-                <button onClick={() => addQuickTicker(newTickerInput)} className="px-2.5 py-1.5 bg-[var(--brand-100)] text-[var(--brand-700)] rounded-md text-xs font-bold hover:bg-[var(--brand-200)]">OK</button>
-                <button onClick={() => { setShowAddTicker(false); setNewTickerInput(''); }} className="px-2.5 py-1.5 border border-[var(--signal-danger-300)] text-[var(--signal-danger-500)] rounded-md text-xs font-bold hover:bg-[var(--signal-danger-100)]">×</button>
+                <button onClick={() => addQuickTicker(newTickerInput)} className="px-2 py-1 bg-[var(--brand-100)] text-[var(--brand-700)] rounded text-[11px] font-bold hover:bg-[var(--brand-200)]">OK</button>
+                <button onClick={() => { setShowAddTicker(false); setNewTickerInput(''); }} className="px-2 py-1 text-neutral-500 rounded text-[11px] font-bold hover:text-[var(--signal-danger-500)]">×</button>
               </span>
-            ) : (
-              <button
-                onClick={() => setShowAddTicker(true)}
-                className="px-2.5 py-1.5 border border-dashed border-neutral-300 rounded-md text-neutral-500 text-xs font-semibold hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] transition-colors"
-              >
-                + 追加
-              </button>
-            )}
-          </div>
-
-          {/* Row 3: JP Quick Tickers */}
-          <div className="flex gap-1.5 flex-wrap items-center pt-2 border-t border-neutral-100">
-            <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[var(--signal-danger-500)] mr-1">JP</span>
-            {jpTickers.map((t) => (
-              <span
-                key={t.ticker}
-                className="group relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-200 bg-white text-xs font-semibold text-neutral-700 hover:border-[var(--signal-danger-300)] hover:text-[var(--signal-danger-500)] transition-colors cursor-pointer"
-              >
-                <span className="font-mono" onClick={() => handleAnalyze(t.ticker)}>{t.ticker}</span>
-                <span className="ml-0.5 text-[10px] text-neutral-500" onClick={() => handleAnalyze(t.ticker)}>{t.name}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeJpTicker(t.ticker); }}
-                  className="hidden group-hover:inline text-[var(--signal-danger-500)] font-bold text-xs ml-0.5"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {showAddJpTicker ? (
+            ) : showAddJpTicker ? (
               <span className="flex items-center gap-1">
                 <input
                   type="text"
@@ -518,7 +473,7 @@ function SignalsPage() {
                   onChange={(e) => setNewJpTickerInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addJpTicker(newJpTickerInput, newJpNameInput)}
                   placeholder="7203"
-                  className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs w-16 focus:outline-none focus:border-[var(--signal-danger-500)] focus:ring-1 focus:ring-[var(--signal-danger-500)]/30 text-foreground font-mono"
+                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] w-14 focus:outline-none focus:border-[var(--signal-danger-500)] focus:ring-1 focus:ring-[var(--signal-danger-500)]/30 text-foreground font-mono"
                   autoFocus
                 />
                 <input
@@ -527,19 +482,28 @@ function SignalsPage() {
                   onChange={(e) => setNewJpNameInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addJpTicker(newJpTickerInput, newJpNameInput)}
                   placeholder="名前"
-                  className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs w-20 focus:outline-none focus:border-[var(--signal-danger-500)] focus:ring-1 focus:ring-[var(--signal-danger-500)]/30 text-foreground"
+                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] w-16 focus:outline-none focus:border-[var(--signal-danger-500)] focus:ring-1 focus:ring-[var(--signal-danger-500)]/30 text-foreground"
                 />
-                <button onClick={() => addJpTicker(newJpTickerInput, newJpNameInput)} className="px-2.5 py-1.5 bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)] rounded-md text-xs font-bold hover:bg-[var(--signal-danger-300)]">OK</button>
-                <button onClick={() => { setShowAddJpTicker(false); setNewJpTickerInput(''); setNewJpNameInput(''); }} className="px-2.5 py-1.5 border border-[var(--signal-danger-300)] text-[var(--signal-danger-500)] rounded-md text-xs font-bold hover:bg-[var(--signal-danger-100)]">×</button>
+                <button onClick={() => addJpTicker(newJpTickerInput, newJpNameInput)} className="px-2 py-1 bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)] rounded text-[11px] font-bold hover:bg-[var(--signal-danger-300)]">OK</button>
+                <button onClick={() => { setShowAddJpTicker(false); setNewJpTickerInput(''); setNewJpNameInput(''); }} className="px-2 py-1 text-neutral-500 rounded text-[11px] font-bold hover:text-[var(--signal-danger-500)]">×</button>
               </span>
             ) : (
-              <button
-                onClick={() => setShowAddJpTicker(true)}
-                className="px-2.5 py-1.5 border border-dashed border-neutral-300 rounded-md text-neutral-500 text-xs font-semibold hover:border-[var(--signal-danger-300)] hover:text-[var(--signal-danger-500)] transition-colors"
-              >
-                + 追加
-              </button>
+              <span className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowAddTicker(true)}
+                  className="px-2 py-1 border border-dashed border-neutral-300 rounded text-neutral-500 text-[11px] font-semibold hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] transition-colors"
+                >
+                  + US
+                </button>
+                <button
+                  onClick={() => setShowAddJpTicker(true)}
+                  className="px-2 py-1 border border-dashed border-neutral-300 rounded text-neutral-500 text-[11px] font-semibold hover:border-[var(--signal-danger-300)] hover:text-[var(--signal-danger-500)] transition-colors"
+                >
+                  + JP
+                </button>
+              </span>
             )}
+          </div>
           </div>
         </div>
       </div>
@@ -592,7 +556,7 @@ function SignalsPage() {
           <div className="rounded-xl border border-neutral-200 bg-card px-5 py-3 flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <span className="text-sm font-bold text-foreground">一括分析結果</span>
-              <span className="text-sm text-neutral-500">{batchResults.total_analyzed}銘柄 / {modeLabels[mode].label}モード</span>
+              <span className="text-sm text-neutral-500">{batchResults.total_analyzed}銘柄</span>
             </div>
             <StatusChip label={`エントリー可能: ${batchResults.entry_ready_count}`} color="green" />
           </div>
@@ -676,6 +640,47 @@ function SignalsPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Empty State ガイド (初期画面) ── */}
+      {!signal && !loading && !ticker && (
+        <div className="rounded-xl border-2 border-dashed border-[var(--brand-200)] bg-[var(--brand-100)]/30 p-8 md:p-12 text-center plumb-animate-in">
+          <div className="max-w-md mx-auto">
+            <div className="w-14 h-14 rounded-full bg-[var(--brand-100)] flex items-center justify-center mx-auto mb-5">
+              <svg className="w-7 h-7 text-[var(--brand-500)]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-2">銘柄を分析してみましょう</h2>
+            <p className="text-sm text-neutral-600 mb-6">
+              ティッカー (例: <span className="font-mono font-semibold text-foreground">NVDA</span>, <span className="font-mono font-semibold text-foreground">AAPL</span>, <span className="font-mono font-semibold text-foreground">7203</span>) を上の入力欄に入力して
+              <strong className="text-foreground"> 分析 </strong>ボタンを押してください。
+            </p>
+            <div className="space-y-3 text-left">
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center border border-[var(--brand-200)]">1</span>
+                <div>
+                  <span className="text-sm font-bold text-foreground">分析ボタンを押す</span>
+                  <p className="text-xs text-neutral-500">買いシグナルの有無、チャート、エントリー条件が表示されます</p>
+                </div>
+              </div>
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center border border-[var(--brand-200)]">2</span>
+                <div>
+                  <span className="text-sm font-bold text-foreground">決済分析タブを開く</span>
+                  <p className="text-xs text-neutral-500">過去のポジションの判定結果が確認できます</p>
+                </div>
+              </div>
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center border border-[var(--brand-200)]">3</span>
+                <div>
+                  <span className="text-sm font-bold text-foreground">システム解説タブを見る</span>
+                  <p className="text-xs text-neutral-500">売買ルール、画面の色の見方、バックテスト結果を確認できます</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -867,7 +872,7 @@ function SignalsPage() {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-base font-bold text-foreground">エントリー判定パネル</span>
                   <span className="text-sm text-neutral-500">統合エントリーシステム</span>
-                  <StatusChip label={modeLabels[mode].label} color="blue" />
+                  {/* モード chip 非表示: balanced 固定 */}
                 </div>
                 <p className="text-xs text-neutral-500 mb-5">前日の終値確定後に判定 → 買いシグナルが出たら翌営業日の寄付で購入</p>
 
@@ -946,32 +951,12 @@ function SignalsPage() {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-base font-bold text-foreground">決済分析パネル</span>
                   <span className="text-sm text-neutral-500">4層決済システム</span>
-                  <div className="ml-auto flex items-center gap-2">
-                    <div className="inline-flex items-center rounded-md border border-neutral-200 bg-white overflow-hidden">
-                      {(Object.entries(exitModeLabels) as [ExitMode, { label: string; desc: string }][]).map(([key, val], i) => {
-                        const isActive = exitMode === key;
-                        return (
-                          <button
-                            key={key}
-                            onClick={() => { setExitMode(key); setSignalHistory(null); }}
-                            className={`px-3.5 py-1.5 text-[11px] font-bold tracking-wider transition-colors ${
-                              i > 0 ? 'border-l border-neutral-200' : ''
-                            } ${
-                              isActive
-                                ? 'bg-[var(--brand-100)] text-[var(--brand-700)]'
-                                : 'text-neutral-700 hover:bg-neutral-50'
-                            }`}
-                            title={val.desc}
-                          >
-                            {val.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {/* Exit モードは standard (ハイブリッド) 固定。UI 非表示 */}
+                  <div className="ml-auto">
                     <button
                       onClick={handleFetchSignalHistory}
                       disabled={historyLoading}
-                      className="px-3 py-1.5 rounded-md text-[11px] font-bold tracking-wider transition-colors disabled:opacity-50 border border-neutral-200 bg-white text-neutral-700 hover:border-[var(--brand-400)] hover:text-[var(--brand-700)]"
+                      className="px-4 py-1.5 rounded-md text-[11px] font-bold tracking-wider transition-colors disabled:opacity-50 bg-[var(--brand-500)] text-white hover:bg-[var(--brand-700)]"
                     >
                       {historyLoading ? '取得中...' : '更新'}
                     </button>
@@ -1008,12 +993,15 @@ function SignalsPage() {
                     const latestActive = actives.length > 0 ? actives[actives.length - 1] : null;
                     type Verdict = { action: string; color: 'red' | 'orange' | 'emerald'; sellPct: number; reason: string };
                     const getActiveVerdict = (s: NonNullable<typeof latestActive>): Verdict => {
-                      if (s.atr_floor_triggered) return { action: '全売却', color: 'red', sellPct: 100, reason: `損切ライン ${ccy}${s.atr_floor_price.toFixed(2)} 割れ` };
-                      if (s.bearish_choch_detected && s.ema_death_cross) return { action: '全売却', color: 'red', sellPct: 100, reason: '反転全決済: トレンド転換 + EMAデスクロス確定' };
-                      if (s.bearish_choch_detected) return { action: '50% 売却', color: 'orange', sellPct: 50, reason: '弱気転換検出 — EMAデスクロスで残りも売却' };
-                      if (s.nearest_exit_reason === 'Time_Stop') return { action: '全売却', color: 'orange', sellPct: 100, reason: '保有期限（252日）到達' };
-                      if (s.trail_active) return { action: '保有継続', color: 'emerald', sellPct: 0, reason: `利確ストップ稼働中 — ストップ: ${s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '計算中'}` };
-                      return { action: '保有継続', color: 'emerald', sellPct: 0, reason: '全条件クリア — 安全' };
+                      if (s.atr_floor_triggered) return { action: '全売却', color: 'red', sellPct: 100, reason: `終値が損切ライン ${ccy}${s.atr_floor_price.toFixed(2)} を割った` };
+                      if (s.bearish_choch_detected && s.ema_death_cross) return { action: '全売却', color: 'red', sellPct: 100, reason: '弱気転換 + EMA デスクロス確定 — 残り 50% も売却' };
+                      if (s.bearish_choch_detected) return { action: '50% 売却', color: 'orange', sellPct: 50, reason: '弱気転換検出 — まず半分売却、EMA デスクロスで残りも' };
+                      if (s.nearest_exit_reason === 'Time_Stop') return { action: '全売却', color: 'orange', sellPct: 100, reason: '保有期限 (252 日) に到達' };
+                      if (s.trail_active && s.trail_stop_price) {
+                        const distancePct = ((signal.price - s.trail_stop_price) / s.trail_stop_price) * 100;
+                        return { action: '保有継続', color: 'emerald', sellPct: 0, reason: `利確ストップ追従中 — 終値が ${ccy}${s.trail_stop_price.toFixed(2)} を割ると全売却 (現在まで +${distancePct.toFixed(1)}% の余裕)` };
+                      }
+                      return { action: '保有継続', color: 'emerald', sellPct: 0, reason: '全条件クリア — 売却シグナルなし' };
                     };
 
                     // 全ポジションの判定を計算
@@ -1041,7 +1029,8 @@ function SignalsPage() {
 
                     return (
                       <>
-                        {/* ── Hero Verdict ── */}
+                        {/* ── Hero Verdict (1 件以下のときだけ表示) ── */}
+                        {actives.length <= 1 && (
                         <div className={`text-center py-8 rounded-xl mb-4 border ${vs.bg} ${vs.border}`}>
                           {heroVerdict ? (
                             <>
@@ -1053,13 +1042,15 @@ function SignalsPage() {
                                 <div className={`mt-2 text-lg font-bold font-mono ${vs.text}`}>売却比率: {heroVerdict.sellPct}%</div>
                               )}
                               <div className="mt-3 flex items-center justify-center gap-4 text-xs text-neutral-600 flex-wrap">
-                                <span>買付: {heroPosition!.entry_date} @ {ccy}{heroPosition!.entry_price.toFixed(2)}</span>
+                                <span>買値 <span className="font-mono font-semibold text-foreground">{ccy}{heroPosition!.entry_price.toFixed(2)}</span> ({heroPosition!.entry_date})</span>
+                                <span className="w-px h-3 bg-neutral-300" />
+                                <span>現在 <span className="font-mono font-semibold text-foreground">{ccy}{signal.price.toFixed(2)}</span></span>
                                 {(() => {
                                   const matchTrade = trades.find(t => t.entry_date === heroPosition!.entry_date);
                                   return matchTrade ? (
                                     <>
                                       <span className="w-px h-3 bg-neutral-300" />
-                                      <span className={vs.text}>売却: {matchTrade.exit_date} @ {ccy}{matchTrade.exit_price.toFixed(2)}</span>
+                                      <span className={vs.text}>売値 {ccy}{matchTrade.exit_price.toFixed(2)} ({matchTrade.exit_date})</span>
                                     </>
                                   ) : null;
                                 })()}
@@ -1101,9 +1092,9 @@ function SignalsPage() {
                                   )}
                                   {lastTrade && (
                                     <div className="mt-3 flex items-center justify-center gap-4 text-xs text-neutral-600 flex-wrap">
-                                      <span>買付: {lastTrade.entry_date} @ {ccy}{lastTrade.entry_price.toFixed(2)}</span>
+                                      <span>買値 <span className="font-mono font-semibold text-foreground">{ccy}{lastTrade.entry_price.toFixed(2)}</span> ({lastTrade.entry_date})</span>
                                       <span className="w-px h-3 bg-neutral-300" />
-                                      <span className="text-[var(--signal-caution-500)]">売却: {lastTrade.exit_date} @ {ccy}{lastTrade.exit_price.toFixed(2)}</span>
+                                      <span className="text-[var(--signal-caution-500)]">売値 {ccy}{lastTrade.exit_price.toFixed(2)} ({lastTrade.exit_date})</span>
                                       <span className="w-px h-3 bg-neutral-300" />
                                       <span className={`font-mono font-semibold ${lastTradeWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
                                         {lastTradeWin ? '+' : ''}{lastTrade.return_pct.toFixed(1)}%
@@ -1124,6 +1115,92 @@ function SignalsPage() {
                             </>
                           )}
                         </div>
+                        )}
+
+                        {/* ── 案 B: 決済トリガー状況 (1 件のときだけ表示) ── */}
+                        {actives.length === 1 && latestActive && (() => {
+                          const atrTriggered = latestActive.atr_floor_triggered;
+                          const atrDistancePct = ((signal.price - latestActive.atr_floor_price) / latestActive.atr_floor_price) * 100;
+
+                          const fullExit = latestActive.bearish_choch_detected && latestActive.ema_death_cross;
+                          const partial = latestActive.bearish_choch_detected;
+
+                          const trailOn = latestActive.trail_active;
+
+                          return (
+                            <div className="mb-4">
+                              <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-500 mb-2">
+                                決済トリガー状況
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                {/* 損切 (ATR_Floor) */}
+                                <div className={`rounded-lg border px-3.5 py-3 ${
+                                  atrTriggered
+                                    ? 'border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)]'
+                                    : 'border-neutral-200 bg-card'
+                                }`}>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-700">損切ライン</span>
+                                    <span className={`w-2 h-2 rounded-full ${atrTriggered ? 'bg-[var(--signal-danger-500)]' : 'bg-neutral-300'}`} />
+                                  </div>
+                                  <div className={`text-sm font-extrabold ${atrTriggered ? 'text-[var(--signal-danger-500)]' : 'text-neutral-500'}`}>
+                                    {atrTriggered ? '発動' : '未発動'}
+                                  </div>
+                                  <div className="mt-1 text-xs font-mono font-semibold text-foreground">{ccy}{latestActive.atr_floor_price.toFixed(2)}</div>
+                                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                                    現在比 <span className={`font-mono font-semibold ${atrDistancePct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>{atrDistancePct >= 0 ? '+' : ''}{atrDistancePct.toFixed(1)}%</span>
+                                  </div>
+                                </div>
+                                {/* 反転 (Mirror / CHoCH) */}
+                                <div className={`rounded-lg border px-3.5 py-3 ${
+                                  fullExit ? 'border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)]'
+                                  : partial ? 'border-[var(--signal-caution-300)] bg-[var(--signal-caution-100)]'
+                                  : 'border-neutral-200 bg-card'
+                                }`}>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-700">弱気転換</span>
+                                    <span className={`w-2 h-2 rounded-full ${
+                                      fullExit ? 'bg-[var(--signal-danger-500)]'
+                                      : partial ? 'bg-[var(--signal-caution-500)]'
+                                      : 'bg-neutral-300'
+                                    }`} />
+                                  </div>
+                                  <div className={`text-sm font-extrabold ${
+                                    fullExit ? 'text-[var(--signal-danger-500)]'
+                                    : partial ? 'text-[var(--signal-caution-500)]'
+                                    : 'text-neutral-500'
+                                  }`}>
+                                    {fullExit ? '全決済' : partial ? '50% 売却済' : '未検出'}
+                                  </div>
+                                  <div className="mt-1 text-xs font-mono font-semibold text-foreground">
+                                    {partial && latestActive.choch_exit_date ? latestActive.choch_exit_date : '—'}
+                                  </div>
+                                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                                    {fullExit ? 'EMA デスクロス確定' : partial ? '残り 50% は EMA 待ち' : 'CHoCH を監視中'}
+                                  </div>
+                                </div>
+                                {/* 利確 (Trail Stop) */}
+                                <div className={`rounded-lg border px-3.5 py-3 ${
+                                  trailOn ? 'border-[var(--brand-200)] bg-[var(--brand-100)]' : 'border-neutral-200 bg-card'
+                                }`}>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-700">利確ストップ</span>
+                                    <span className={`w-2 h-2 rounded-full ${trailOn ? 'bg-[var(--brand-700)]' : 'bg-neutral-300'}`} />
+                                  </div>
+                                  <div className={`text-sm font-extrabold ${trailOn ? 'text-[var(--brand-700)]' : 'text-neutral-500'}`}>
+                                    {trailOn ? '追従中' : '待機'}
+                                  </div>
+                                  <div className="mt-1 text-xs font-mono font-semibold text-foreground">
+                                    {trailOn && latestActive.trail_stop_price ? `${ccy}${latestActive.trail_stop_price.toFixed(2)}` : '—'}
+                                  </div>
+                                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                                    {trailOn ? '終値が割ると全売却' : 'EMA21 × 1.05 で発動'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* ── 現在BUY中: 今買ったらのシミュレーション ── */}
                         {isBuyNow && !latestActive && (
@@ -1167,8 +1244,8 @@ function SignalsPage() {
                           </div>
                         )}
 
-                        {/* ── 売却シグナル発動中のポジション（アラート） ── */}
-                        {urgentPositions.length > 0 && (
+                        {/* ── 売却シグナル発動中のポジション(アラート、1 件モード時のみ) ── */}
+                        {actives.length <= 1 && urgentPositions.length > 0 && (
                           <div className="mb-5">
                             <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold mb-2">
                               売却シグナル発動中（{urgentPositions.length}件）
@@ -1193,7 +1270,7 @@ function SignalsPage() {
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-3 mt-2 text-sm text-neutral-600 flex-wrap">
-                                      <span>買付 {s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
+                                      <span>買値 {ccy}{s.entry_price.toFixed(2)} ({s.entry_date})</span>
                                       <span className="w-px h-4 bg-neutral-300" />
                                       <span>{s.holding_days}日保有</span>
                                       {v.sellPct > 0 && (
@@ -1212,119 +1289,121 @@ function SignalsPage() {
                           </div>
                         )}
 
-                        {/* ── 最新ポジション 4層詳細（1件だけ展開） ── */}
-                        {latestActive && (
-                          <div className="space-y-3 mb-5">
-                            <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">
-                              最新ポジション詳細
-                            </div>
-                            <div className="rounded-xl border border-neutral-200 bg-card p-5">
-                              <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                  <span className="text-sm font-mono text-foreground">買付 {latestActive.entry_date} @ {ccy}{latestActive.entry_price.toFixed(2)}</span>
-                                  <StatusChip label={latestActive.entry_regime} color="blue" />
-                                  <span className="text-sm text-neutral-500">{latestActive.holding_days}日保有</span>
+                        {/* ── ポジション一覧 (Power BI 風グリッド、2 件以上のときに表示) ── */}
+                        {actives.length >= 2 && (() => {
+                          const sellCount = activeVerdicts.filter(v => v.verdict.sellPct > 0).length;
+                          // 緊急度: red(0) > orange(1) > emerald(2) の順、同緊急度内は新しい (entry_date 降順) を上に
+                          const sortedVerdicts = [...activeVerdicts].sort((a, b) => {
+                            const pa = colorPriority[a.verdict.color];
+                            const pb = colorPriority[b.verdict.color];
+                            if (pa !== pb) return pa - pb;
+                            return b.status.entry_date.localeCompare(a.status.entry_date);
+                          });
+                          return (
+                            <div className="mb-5">
+                              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">
+                                  {signal.ticker} のシグナル一覧 ({actives.length} 件)
                                 </div>
-                                <span className={`text-xl font-bold font-mono ${latestActive.unrealized_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                  {latestActive.unrealized_pct >= 0 ? '+' : ''}{latestActive.unrealized_pct.toFixed(1)}%
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div className={`rounded-lg border px-4 py-3 ${latestActive.atr_floor_triggered ? 'bg-[var(--signal-danger-100)] border-[var(--signal-danger-300)]' : 'bg-neutral-50 border-neutral-200'}`}>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs uppercase tracking-wider font-semibold text-neutral-500">損切ライン</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.atr_floor_triggered ? 'bg-[var(--signal-danger-300)]/40 text-[var(--signal-danger-500)]' : 'bg-[var(--signal-safe-100)] text-[var(--signal-safe-500)]'}`}>
-                                      {latestActive.atr_floor_triggered ? '発動' : '安全'}
-                                    </span>
-                                  </div>
-                                  <div className="font-mono font-bold text-base text-foreground">{ccy}{latestActive.atr_floor_price.toFixed(2)}</div>
-                                  <div className="text-xs text-neutral-500 mt-1">終値がこの価格を割ると全額損切り</div>
-                                </div>
-                                <div className={`rounded-lg border px-4 py-3 ${latestActive.bearish_choch_detected ? 'bg-[var(--signal-caution-100)] border-[var(--signal-caution-300)]' : 'bg-neutral-50 border-neutral-200'}`}>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs uppercase tracking-wider font-semibold text-neutral-500">反転検出</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                      latestActive.bearish_choch_detected && latestActive.ema_death_cross ? 'bg-[var(--signal-danger-300)]/40 text-[var(--signal-danger-500)]' :
-                                      latestActive.bearish_choch_detected ? 'bg-[var(--signal-caution-300)]/40 text-[var(--signal-caution-500)]' :
-                                      'bg-[var(--signal-safe-100)] text-[var(--signal-safe-500)]'
-                                    }`}>
-                                      {latestActive.bearish_choch_detected && latestActive.ema_death_cross ? '全決済' : latestActive.bearish_choch_detected ? '警戒' : '安全'}
-                                    </span>
-                                  </div>
-                                  <div className="space-y-1 text-sm">
-                                    <div className="flex justify-between"><span className="text-neutral-500">転換</span><span className={latestActive.bearish_choch_detected ? 'text-[var(--signal-caution-500)] font-semibold' : 'text-neutral-500'}>{latestActive.bearish_choch_detected ? `50%売却${latestActive.choch_exit_date ? ` (${latestActive.choch_exit_date})` : ''}` : '—'}</span></div>
-                                    <div className="flex justify-between"><span className="text-neutral-500">EMA交差</span><span className={latestActive.ema_death_cross ? 'text-[var(--signal-danger-500)] font-semibold' : 'text-neutral-500'}>{latestActive.ema_death_cross ? '発生→残り50%売却' : '—'}</span></div>
-                                  </div>
-                                </div>
-                                <div className={`rounded-lg border px-4 py-3 ${latestActive.trail_active ? 'bg-[var(--brand-100)] border-[var(--brand-200)]' : 'bg-neutral-50 border-neutral-200'}`}>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs uppercase tracking-wider font-semibold text-neutral-500">利確ストップ</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${latestActive.trail_active ? 'bg-[var(--brand-200)] text-[var(--brand-700)]' : 'bg-neutral-100 text-neutral-500'}`}>
-                                      {latestActive.trail_active ? '稼働中' : '待機'}
-                                    </span>
-                                  </div>
-                                  {latestActive.trail_active ? (
-                                    <div className="space-y-1 text-sm">
-                                      <div className="flex justify-between"><span className="text-neutral-500">ストップ</span><span className="font-mono font-bold text-foreground">{latestActive.trail_stop_price ? `${ccy}${latestActive.trail_stop_price.toFixed(2)}` : '—'}</span></div>
-                                      <div className="flex justify-between"><span className="text-neutral-500">最高値</span><span className="font-mono font-bold text-foreground">{ccy}{latestActive.highest_price.toFixed(2)}</span></div>
-                                      <div className="text-xs text-neutral-500 mt-1">高値に追従 — 下落時に自動利確</div>
-                                    </div>
+                                <div className="text-xs text-neutral-600">
+                                  {sellCount > 0 ? (
+                                    <>
+                                      <span className="font-bold text-[var(--signal-caution-500)]">{sellCount} 件</span> 売却シグナル発動 ·
+                                      <span className="ml-1">{actives.length - sellCount} 件 保有継続</span>
+                                    </>
                                   ) : (
-                                    <div className="text-sm text-neutral-500">高値に追従する利確ストップ<br/>EMA21の1.05倍超えで有効化</div>
+                                    <span><span className="font-bold text-[var(--signal-safe-500)]">全 {actives.length} 件</span> 保有継続</span>
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* ── 他のポジション（コンパクト一覧） ── */}
-                        {actives.length > 1 && (
-                          <div className="mb-5">
-                            <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold mb-2">
-                              過去のポジション（{actives.length - 1}件）
-                            </div>
-                            <div className="space-y-2">
-                              {actives.slice(0, -1).reverse().map((s, i) => {
-                                const v = getActiveVerdict(s);
-                                const chipColor = v.color === 'red' ? 'bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)]'
-                                  : v.color === 'orange' ? 'bg-[var(--signal-caution-100)] text-[var(--signal-caution-500)]'
-                                  : 'bg-[var(--signal-safe-100)] text-[var(--signal-safe-500)]';
-                                return (
-                                  <div key={`older-${i}`} className="rounded-md border border-neutral-200 bg-card px-4 py-3">
-                                    <div className="flex items-center justify-between text-sm">
-                                      <div className="flex items-center gap-2.5 flex-wrap">
-                                        <span className={`font-bold px-2 py-0.5 rounded text-xs ${chipColor}`}>{v.action}</span>
-                                        <span className="font-mono text-neutral-500">{s.entry_date} @ {ccy}{s.entry_price.toFixed(2)}</span>
-                                        <StatusChip label={s.entry_regime} color="blue" />
-                                        <span className="text-neutral-500">{s.holding_days}日保有</span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {sortedVerdicts.map(({ status: s, verdict: v }, i) => {
+                                  const tileBorder = v.color === 'red' ? 'border-[var(--signal-danger-300)]'
+                                    : v.color === 'orange' ? 'border-[var(--signal-caution-300)]'
+                                    : 'border-neutral-200';
+                                  const verdictBg = v.color === 'red' ? 'bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)]'
+                                    : v.color === 'orange' ? 'bg-[var(--signal-caution-100)] text-[var(--signal-caution-500)]'
+                                    : 'bg-[var(--signal-safe-100)] text-[var(--signal-safe-500)]';
+                                  const fullExitT = s.bearish_choch_detected && s.ema_death_cross;
+                                  const partialT = s.bearish_choch_detected;
+                                  return (
+                                    <div key={`grid-${i}`} className={`rounded-xl border-2 bg-card p-4 ${tileBorder}`}>
+                                      {/* ヘッダー: 買付情報 + 含み損益 */}
+                                      <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">買付</span>
+                                          <span className="font-mono font-semibold text-foreground">{s.entry_date}</span>
+                                          <span className="font-mono text-xs text-neutral-600">買値 {ccy}{s.entry_price.toFixed(2)} · {s.holding_days}日保有</span>
+                                        </div>
+                                        <div className="flex flex-col items-end">
+                                          <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">含み損益</span>
+                                          <span className={`font-mono text-xl font-extrabold ${s.unrealized_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                            {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
+                                          </span>
+                                        </div>
                                       </div>
-                                      <span className={`font-mono font-bold text-base ${s.unrealized_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                        {s.unrealized_pct >= 0 ? '+' : ''}{s.unrealized_pct.toFixed(1)}%
-                                      </span>
+                                      {/* Verdict バッジ + 売却指示 */}
+                                      <div className={`rounded-lg px-3 py-2.5 mb-3 ${verdictBg}`}>
+                                        <div className="flex items-center justify-between flex-wrap gap-1">
+                                          <span className="font-bold text-sm">{v.action}</span>
+                                          {v.sellPct > 0 && (
+                                            <span className="text-[10px] uppercase tracking-wider font-bold">翌営業日の寄付 · 売却 {v.sellPct}%</span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs mt-0.5 opacity-90">{v.reason}</div>
+                                      </div>
+                                      {/* 3 chip: 損切 / 反転 / 利確 */}
+                                      <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                        <div className={`rounded border px-2 py-1.5 ${s.atr_floor_triggered ? 'border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)]' : 'border-neutral-200 bg-card'}`}>
+                                          <div className="flex items-center justify-between mb-0.5">
+                                            <span className="uppercase tracking-wider font-bold text-neutral-700">損切</span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${s.atr_floor_triggered ? 'bg-[var(--signal-danger-500)]' : 'bg-neutral-300'}`} />
+                                          </div>
+                                          <div className={`font-bold text-xs ${s.atr_floor_triggered ? 'text-[var(--signal-danger-500)]' : 'text-neutral-500'}`}>
+                                            {s.atr_floor_triggered ? '発動' : '未発動'}
+                                          </div>
+                                          <div className="font-mono text-foreground mt-0.5">{ccy}{s.atr_floor_price.toFixed(2)}</div>
+                                        </div>
+                                        <div className={`rounded border px-2 py-1.5 ${
+                                          fullExitT ? 'border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)]'
+                                          : partialT ? 'border-[var(--signal-caution-300)] bg-[var(--signal-caution-100)]'
+                                          : 'border-neutral-200 bg-card'
+                                        }`}>
+                                          <div className="flex items-center justify-between mb-0.5">
+                                            <span className="uppercase tracking-wider font-bold text-neutral-700">反転</span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                              fullExitT ? 'bg-[var(--signal-danger-500)]'
+                                              : partialT ? 'bg-[var(--signal-caution-500)]'
+                                              : 'bg-neutral-300'
+                                            }`} />
+                                          </div>
+                                          <div className={`font-bold text-xs ${
+                                            fullExitT ? 'text-[var(--signal-danger-500)]'
+                                            : partialT ? 'text-[var(--signal-caution-500)]'
+                                            : 'text-neutral-500'
+                                          }`}>
+                                            {fullExitT ? '全決済' : partialT ? '50% 売却済' : '未検出'}
+                                          </div>
+                                          <div className="font-mono text-foreground mt-0.5">{partialT && s.choch_exit_date ? s.choch_exit_date : '—'}</div>
+                                        </div>
+                                        <div className={`rounded border px-2 py-1.5 ${s.trail_active ? 'border-[var(--brand-200)] bg-[var(--brand-100)]' : 'border-neutral-200 bg-card'}`}>
+                                          <div className="flex items-center justify-between mb-0.5">
+                                            <span className="uppercase tracking-wider font-bold text-neutral-700">利確</span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${s.trail_active ? 'bg-[var(--brand-700)]' : 'bg-neutral-300'}`} />
+                                          </div>
+                                          <div className={`font-bold text-xs ${s.trail_active ? 'text-[var(--brand-700)]' : 'text-neutral-500'}`}>
+                                            {s.trail_active ? '追従中' : '待機'}
+                                          </div>
+                                          <div className="font-mono text-foreground mt-0.5">{s.trail_active && s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '—'}</div>
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-3 mt-2 text-xs flex-wrap">
-                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.atr_floor_triggered ? 'bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)]' : 'bg-neutral-100 text-neutral-500'}`}>
-                                        損切 {ccy}{s.atr_floor_price.toFixed(2)} {s.atr_floor_triggered ? '発動' : '安全'}
-                                      </span>
-                                      <span className={`px-2 py-0.5 rounded font-semibold ${
-                                        s.bearish_choch_detected && s.ema_death_cross ? 'bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)]' :
-                                        s.bearish_choch_detected ? 'bg-[var(--signal-caution-100)] text-[var(--signal-caution-500)]' :
-                                        'bg-neutral-100 text-neutral-500'
-                                      }`}>
-                                        反転 {s.bearish_choch_detected && s.ema_death_cross ? '全決済' : s.bearish_choch_detected ? '警戒' : '安全'}
-                                        {s.bearish_choch_detected && s.choch_exit_date && ` (${s.choch_exit_date})`}
-                                      </span>
-                                      <span className={`px-2 py-0.5 rounded font-semibold ${s.trail_active ? 'bg-[var(--brand-100)] text-[var(--brand-700)]' : 'bg-neutral-100 text-neutral-500'}`}>
-                                        利確 {s.trail_active ? (s.trail_stop_price ? `${ccy}${s.trail_stop_price.toFixed(2)}` : '稼働中') : '待機'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* ── トレード履歴（最新5件） ── */}
                         {trades.length > 0 && (
@@ -1351,9 +1430,9 @@ function SignalsPage() {
                                     <span className="text-neutral-500">{t.holding_days}日保有</span>
                                   </div>
                                   <div className="flex items-center gap-3 text-sm mt-2 flex-wrap">
-                                    <span className="text-neutral-500">買 <span className="font-mono text-foreground">{t.entry_date}</span> @ <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)}</span></span>
+                                    <span className="text-neutral-500">買値 <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)}</span> ({t.entry_date})</span>
                                     <span className="text-neutral-500">→</span>
-                                    <span className="text-neutral-500">売 <span className={`font-mono font-bold ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>{t.exit_date}</span> @ <span className="font-mono text-foreground">{ccy}{t.exit_price.toFixed(2)}</span></span>
+                                    <span className="text-neutral-500">売値 <span className={`font-mono font-bold ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>{ccy}{t.exit_price.toFixed(2)}</span> ({t.exit_date})</span>
                                   </div>
                                   {savedPct !== null && savedPct > 0 && (
                                     <div className="mt-2 text-xs text-[var(--signal-safe-500)] font-medium">
@@ -1721,71 +1800,298 @@ function SignalsPage() {
             {/* ── Tab: System ── */}
             <TabsContent value="system">
               <div className="space-y-4 plumb-animate-in">
-                <DocSection title="統合エントリーシステム 概要" defaultOpen>
-                  <p>
-                    統合エントリーシステムは、トレンド転換、EMA収束、相対強度（RS）の3条件を統合し、
-                    バックテスト検証済みのパラメータで売買タイミングを判定するシステムです。
+                {/* ── 使い方ガイド ── */}
+                <div className="rounded-lg border border-[var(--brand-200)] bg-[var(--brand-100)]/50 p-4">
+                  <h4 className="text-sm font-bold text-[var(--brand-700)] mb-2">はじめに</h4>
+                  <p className="text-xs leading-relaxed text-neutral-700">
+                    銘柄を分析したら、<strong className="text-foreground">「決済分析」タブ</strong> を開いて
+                    <strong className="text-[var(--brand-700)]"> 更新 </strong>ボタンを押してください。
+                    過去のシグナル履歴と現在のポジション状況が取得されます。
+                  </p>
+                </div>
+
+                {/* ── 概要 ── */}
+                <DocSection title="このシステムは何をするか" defaultOpen>
+                  <p className="text-sm leading-relaxed text-neutral-700">
+                    機械的なルールに従って <strong className="text-foreground">買い時</strong> と <strong className="text-foreground">売り時</strong> を判定します。
+                    感情で売買せず、ルールどおりに実行することで、長期的に勝ちやすくする狙いです。
+                  </p>
+                  <p className="mt-3 text-sm leading-relaxed text-neutral-700">
+                    判定はすべて <strong className="text-foreground">前日の終値が確定したあと</strong> に行い、
+                    シグナルが出たら <strong className="text-foreground">翌営業日の寄付</strong> で売買します。
                   </p>
                 </DocSection>
 
-                <DocSection title="エントリー条件">
+                {/* ── 買い時の判定 ── */}
+                <DocSection title="買い時の判定">
+                  <p className="text-sm text-neutral-700 mb-4">
+                    下の <strong className="text-foreground">3 つの条件がすべて揃ったとき</strong> に「買いシグナル」が出ます。
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5">
-                      <h4 className="text-sm font-bold text-[var(--signal-safe-500)] mb-2">1. 弱気転換</h4>
-                      <p className="text-xs leading-relaxed text-neutral-600">直近10個の転換点から弱気トレンド転換を検出。下落トレンドの開始を確認。</p>
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">条件 1</div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">下落トレンドの底打ち</h4>
+                      <p className="text-xs leading-relaxed text-neutral-600">価格の動きから「下落の流れが終わった」サインを検出します。</p>
                     </div>
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5">
-                      <h4 className="text-sm font-bold text-[var(--brand-700)] mb-2">2. 強気転換</h4>
-                      <p className="text-xs leading-relaxed text-neutral-600">弱気転換後の強気転換を検出。上昇トレンドへの反転を確認。</p>
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">条件 2</div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">上昇トレンドへの転換</h4>
+                      <p className="text-xs leading-relaxed text-neutral-600">底打ち後に、価格が上向きに反転したサインを確認します。</p>
                     </div>
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5">
-                      <h4 className="text-sm font-bold text-[var(--brand-500)] mb-2">3. EMA収束</h4>
-                      <p className="text-xs leading-relaxed text-neutral-600">8EMA と 21EMA が 1.5ATR 以内に収束。エントリーポイントの確認。</p>
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">条件 3</div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">移動平均線の収束</h4>
+                      <p className="text-xs leading-relaxed text-neutral-600">短期と中期の移動平均線が近づき、エントリーに最適なタイミングであることを確認します。</p>
                     </div>
                   </div>
                 </DocSection>
 
-                <DocSection title="運用モード比較">
-                  <DocTable
-                    headers={['モード', '説明', '平均リターン', 'PF']}
-                    rows={[
-                      ['標準', 'RS下落時はエントリー禁止', '+7.54%', '3.61'],
-                      ['積極型', 'RS無視で全エントリー', '+6.63%', '3.15'],
-                      ['慎重型', 'RS下落時は50%サイズ', '+6.96%', '3.64'],
-                    ]}
-                  />
+                {/* ── 売り時の判定 (4 つのルール) ── */}
+                <DocSection title="売り時の判定 (4 つのルール)">
+                  <p className="text-sm text-neutral-700 mb-4">
+                    買ったあとは <strong className="text-foreground">4 つのルールを毎日チェック</strong> し、
+                    どれか 1 つでも条件を満たせば売却シグナルを出します。
+                  </p>
+                  <div className="space-y-3">
+                    {/* ルール 1: 損切 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="flex items-start gap-3 flex-wrap">
+                        <div className="rounded-md border border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)] px-2.5 py-1.5 min-w-[88px]">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">損切</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--signal-danger-500)]" />
+                          </div>
+                          <div className="text-[11px] font-bold text-[var(--signal-danger-500)]">発動</div>
+                        </div>
+                        <div className="flex-1 min-w-[200px]">
+                          <h4 className="text-sm font-bold text-foreground mb-1">① 損切ライン (損失を最小限に)</h4>
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            価格が一定ライン以下まで下がったら <strong className="text-[var(--signal-danger-500)]">全額売却</strong>。
+                            想定外の下落から資金を守る防衛ラインです。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ルール 2: 反転 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="flex items-start gap-3 flex-wrap">
+                        <div className="rounded-md border border-[var(--signal-caution-300)] bg-[var(--signal-caution-100)] px-2.5 py-1.5 min-w-[88px]">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">反転</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--signal-caution-500)]" />
+                          </div>
+                          <div className="text-[11px] font-bold text-[var(--signal-caution-500)]">50% 売却済</div>
+                        </div>
+                        <div className="flex-1 min-w-[200px]">
+                          <h4 className="text-sm font-bold text-foreground mb-1">② 弱気転換 (トレンドの転換を察知)</h4>
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            上昇トレンドが弱まる兆候が出たら、まず <strong className="text-[var(--signal-caution-500)]">半分だけ売却</strong>。
+                            さらに転換が確定したら <strong className="text-[var(--signal-danger-500)]">残り 50% も売却</strong>。
+                            「全部売って失敗」を避けつつ、利益を守ります。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ルール 3: 利確 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="flex items-start gap-3 flex-wrap">
+                        <div className="rounded-md border border-[var(--brand-200)] bg-[var(--brand-100)] px-2.5 py-1.5 min-w-[88px]">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">利確</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-700)]" />
+                          </div>
+                          <div className="text-[11px] font-bold text-[var(--brand-700)]">追従中</div>
+                        </div>
+                        <div className="flex-1 min-w-[200px]">
+                          <h4 className="text-sm font-bold text-foreground mb-1">③ 利確ストップ (利益を伸ばしつつ確保)</h4>
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            含み益が一定以上まで伸びると <strong className="text-[var(--brand-700)]">追従モード</strong> に入り、
+                            高値が更新されるたびに売却ラインが自動で切り上がります。
+                            高値から一定割合下落したら <strong className="text-[var(--signal-danger-500)]">全額売却</strong>。
+                            利益を伸ばしながら確保する仕組みです。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ルール 4: 期限 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="flex items-start gap-3 flex-wrap">
+                        <div className="rounded-md border border-neutral-200 bg-card px-2.5 py-1.5 min-w-[88px]">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">期限</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />
+                          </div>
+                          <div className="text-[11px] font-bold text-neutral-500">監視中</div>
+                        </div>
+                        <div className="flex-1 min-w-[200px]">
+                          <h4 className="text-sm font-bold text-foreground mb-1">④ 保有期限 (長期保有のリスク回避)</h4>
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            買付からおよそ 1 年が経過したら、自動的に <strong className="text-foreground">全額売却</strong>。
+                            シグナルが出ないまま長期間保有するリスクを避けます。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </DocSection>
 
-                <DocSection title="4層決済システム">
-                  <DocTable
-                    headers={['層', '名称', 'アクション']}
-                    rows={[
-                      ['1', '損切ライン', '終値がATR×3.0下を割ると全額損切り'],
-                      ['2', '反転検出', '弱気転換で50%売却 → EMAデスクロスで残り売却'],
-                      ['3', '利確ストップ（追従型）', '高値に追従 — 下落時に自動利確'],
-                      ['4', '保有期限', '252営業日で強制決済'],
-                    ]}
-                  />
+                {/* ── 画面の色の見方 ── */}
+                <DocSection title="画面の色の見方">
+                  <p className="text-sm text-neutral-700 mb-4">
+                    画面では <strong className="text-foreground">2 種類の色</strong> が使われています。役割が違うので注意してください。
+                  </p>
+
+                  <div className="space-y-5">
+                    {/* (1) 状態 chip の色 */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">① 状態表示の色 — 「今どうなっているか」</h4>
+                      <p className="text-xs text-neutral-600 mb-3">
+                        損切 / 反転 / 利確 などの状態表示についている色は、<strong>そのルールが今どんな状態か</strong> を示します。
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="rounded-lg border border-neutral-200 bg-card px-3 py-2.5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full bg-neutral-300" />
+                            <span className="text-xs font-bold text-neutral-500">未発動</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-500">何も起きていない</div>
+                        </div>
+                        <div className="rounded-lg border border-[var(--brand-200)] bg-[var(--brand-100)] px-3 py-2.5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full bg-[var(--brand-700)]" />
+                            <span className="text-xs font-bold text-[var(--brand-700)]">追従中</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-500">利益確保フェーズ</div>
+                        </div>
+                        <div className="rounded-lg border border-[var(--signal-caution-300)] bg-[var(--signal-caution-100)] px-3 py-2.5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full bg-[var(--signal-caution-500)]" />
+                            <span className="text-xs font-bold text-[var(--signal-caution-500)]">部分発動</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-500">半分売却済</div>
+                        </div>
+                        <div className="rounded-lg border border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)] px-3 py-2.5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full bg-[var(--signal-danger-500)]" />
+                            <span className="text-xs font-bold text-[var(--signal-danger-500)]">発動</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-500">条件にヒット</div>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 mt-2 leading-relaxed">
+                        ※ <strong className="text-[var(--brand-700)]">青の追従中</strong> は「利益が伸びている良い状態」で、<strong>売却シグナルではありません</strong>。
+                      </p>
+                    </div>
+
+                    {/* (2) Verdict バッジの色 */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">② アクション表示の色 — 「何をすべきか」</h4>
+                      <p className="text-xs text-neutral-600 mb-3">
+                        ポジションごとの大きいアクション表示は <strong>今日やるべきこと</strong> を示します。これを見て売買を判断します。
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="rounded-lg px-3 py-2.5 bg-[var(--signal-safe-100)] text-[var(--signal-safe-500)]">
+                          <div className="text-sm font-bold mb-0.5">保有継続</div>
+                          <div className="text-[10px] opacity-90">何もしない</div>
+                        </div>
+                        <div className="rounded-lg px-3 py-2.5 bg-[var(--signal-caution-100)] text-[var(--signal-caution-500)]">
+                          <div className="text-sm font-bold mb-0.5">50% 売却</div>
+                          <div className="text-[10px] opacity-90">翌営業日の寄付で半分売る</div>
+                        </div>
+                        <div className="rounded-lg px-3 py-2.5 bg-[var(--signal-danger-100)] text-[var(--signal-danger-500)]">
+                          <div className="text-sm font-bold mb-0.5">全売却</div>
+                          <div className="text-[10px] opacity-90">翌営業日の寄付で全部売る</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 重要な注意 */}
+                    <div className="rounded-lg border border-[var(--brand-200)] bg-[var(--brand-100)]/50 p-3">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-[var(--brand-700)] mb-1">注意</div>
+                      <p className="text-xs leading-relaxed text-neutral-700">
+                        状態表示が <strong className="text-[var(--brand-700)]">青色 (追従中)</strong> でも、アクション表示が <strong className="text-[var(--signal-safe-500)]">緑色 (保有継続)</strong> なら売る必要はありません。
+                        状態表示は「ルールの状態」、アクション表示は「あなたが取るべき行動」と覚えてください。
+                      </p>
+                    </div>
+                  </div>
                 </DocSection>
 
-                <DocSection title="バックテスト結果（23銘柄 / 4年間）">
+                {/* ── バックテスト結果 ── */}
+                <DocSection title="バックテスト結果 (過去 10 年)">
+                  <p className="text-sm text-neutral-700 mb-4">
+                    生存バイアスを最小化した <strong className="text-foreground">3 つの市場</strong> での実績です。
+                    過去 10 年間に各指数の構成銘柄だった全銘柄を対象に、機械的にルール通り売買した場合の結果を集計しています。
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5 text-center">
-                      <div className="text-xs text-neutral-500 uppercase mb-1 font-medium">標準</div>
-                      <div className="text-base font-bold text-[var(--brand-700)]">+7.54%</div>
-                      <div className="text-xs text-neutral-500">PF 3.61</div>
+                    {/* S&P 500 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">米国大型株</div>
+                      <h4 className="text-sm font-bold text-foreground mb-3">S&P 500</h4>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-neutral-500">勝率</span><span className="font-mono font-bold text-[var(--signal-safe-500)]">69.6%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">平均リターン</span><span className="font-mono font-bold text-foreground">+3.70%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">PF</span><span className="font-mono font-bold text-foreground">4.76</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">トレード数</span><span className="font-mono text-neutral-600">42,622</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">対象銘柄</span><span className="font-mono text-neutral-600">591 / 698</span></div>
+                      </div>
                     </div>
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5 text-center">
-                      <div className="text-xs text-neutral-500 uppercase mb-1 font-medium">積極型</div>
-                      <div className="text-base font-bold text-[var(--signal-caution-500)]">+6.63%</div>
-                      <div className="text-xs text-neutral-500">PF 3.15</div>
+                    {/* NASDAQ 100 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">米国ハイテク</div>
+                      <h4 className="text-sm font-bold text-foreground mb-3">NASDAQ 100</h4>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-neutral-500">勝率</span><span className="font-mono font-bold text-[var(--signal-safe-500)]">70.9%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">平均リターン</span><span className="font-mono font-bold text-foreground">+4.13%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">PF</span><span className="font-mono font-bold text-foreground">5.10</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">トレード数</span><span className="font-mono text-neutral-600">8,266</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">対象銘柄</span><span className="font-mono text-neutral-600">156 / 194</span></div>
+                      </div>
                     </div>
-                    <div className="rounded-lg border border-neutral-200 bg-card p-5 text-center">
-                      <div className="text-xs text-neutral-500 uppercase mb-1 font-medium">慎重型</div>
-                      <div className="text-base font-bold text-[var(--signal-safe-500)]">+6.96%</div>
-                      <div className="text-xs text-neutral-500">PF 3.64</div>
+                    {/* Nikkei 225 */}
+                    <div className="rounded-lg border border-neutral-200 bg-card p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-1">日本株</div>
+                      <h4 className="text-sm font-bold text-foreground mb-3">Nikkei 225</h4>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-neutral-500">勝率</span><span className="font-mono font-bold text-[var(--signal-safe-500)]">72.8%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">平均リターン</span><span className="font-mono font-bold text-foreground">+4.28%</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">PF</span><span className="font-mono font-bold text-foreground">6.06</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">トレード数</span><span className="font-mono text-neutral-600">19,519</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">対象銘柄</span><span className="font-mono text-neutral-600">223 / 223</span></div>
+                      </div>
                     </div>
                   </div>
+                  <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-1.5 text-xs leading-relaxed text-neutral-600">
+                    <p><strong className="text-foreground">勝率</strong>: 全トレードのうち利益が出た割合 (高いほど良い)</p>
+                    <p><strong className="text-foreground">平均リターン</strong>: 1 トレードあたりの平均損益率 (高いほど良い)</p>
+                    <p><strong className="text-foreground">PF (Profit Factor)</strong>: 勝ちトレードの合計 ÷ 負けトレードの合計 (1 を超えていれば黒字、高いほど良い)</p>
+                    <p className="pt-1.5 border-t border-neutral-200"><strong className="text-foreground">期間</strong>: 2016-04-08 〜 2026-04-08 (10 年間)</p>
+                    <p>過去の実績は将来の成果を保証するものではありません。</p>
+                  </div>
+                </DocSection>
+
+                {/* ── 売買の流れ ── */}
+                <DocSection title="売買の流れ">
+                  <ol className="space-y-2.5 text-sm text-neutral-700">
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center">1</span>
+                      <span><strong className="text-foreground">前日の終値が確定</strong> したあと、システムが各銘柄の状態を判定します。</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center">2</span>
+                      <span>買いシグナルや売却シグナルが出たら、画面に <strong className="text-foreground">アクション表示</strong> が出ます。</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center">3</span>
+                      <span><strong className="text-foreground">翌営業日の寄付</strong> でバッジの内容どおりに売買します。</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--brand-100)] text-[var(--brand-700)] font-bold text-xs flex items-center justify-center">4</span>
+                      <span>保有中は毎日、4 つの売却ルールがチェックされ続けます。</span>
+                    </li>
+                  </ol>
                 </DocSection>
               </div>
             </TabsContent>

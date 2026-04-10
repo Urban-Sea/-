@@ -59,6 +59,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // ── localhost (開発) では Google 認証をスキップしてダミー user を入れる
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      setUser({ id: 'local-dev', email: 'dev@localhost', display_name: 'Local Dev', plan: 'free' });
+      setIsLoading(false);
+      return;
+    }
     fetchMe().finally(() => setIsLoading(false));
   }, [fetchMe]);
 

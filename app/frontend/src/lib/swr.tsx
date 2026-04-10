@@ -23,7 +23,9 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
       });
     }
     if (response.status === 401) {
-      if (typeof window !== 'undefined' && !isRedirecting()) {
+      // localhost (dev) では auth bypass しているので redirect ループを避けるためエラーだけ throw
+      const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+      if (typeof window !== 'undefined' && !isRedirecting() && !isLocalDev) {
         markRedirecting();
         fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
         window.location.href = '/login/';

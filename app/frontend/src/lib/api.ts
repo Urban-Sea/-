@@ -74,7 +74,9 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
     if (refreshed) {
       return fetchAPI(endpoint, options, true);
     }
-    if (typeof window !== 'undefined' && !isRedirecting()) {
+    // localhost (dev) では auth bypass しているので redirect ループを避けるためエラーだけ throw
+    const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+    if (typeof window !== 'undefined' && !isRedirecting() && !isLocalDev) {
       markRedirecting();
       fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
       window.location.href = '/login/';
