@@ -2,7 +2,7 @@
 /api/stock - 株価データAPI（二段キャッシュ付き）
 
 L1: インメモリキャッシュ（同一プロセス内、0ms）
-L2: Supabase stock_cache テーブル（全ユーザー共有、~10ms）
+L2: Redis キャッシュ（全ユーザー共有、~1ms）
 L3: yfinance API（200-500ms/銘柄）
 """
 import re
@@ -38,7 +38,7 @@ def _to_yf(ticker: str) -> str:
 _ALLOWED_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
 _ALLOWED_INTERVALS = {"1m", "5m", "15m", "1h", "1d", "1wk", "1mo"}
 
-# L1+L2 キャッシュ (インメモリ + Upstash Redis)
+# L1+L2 キャッシュ (インメモリ + Redis)
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 from market_hours import adaptive_ttl
 _QUOTE_TTL = 300     # 5分 (現在価格・info: リアルタイム性必要)

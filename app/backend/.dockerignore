@@ -6,7 +6,6 @@ __pycache__/
 !.env.example
 .git
 .gitignore
-railway.json
 *.md
 .pytest_cache/
 .mypy_cache/

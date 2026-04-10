@@ -10,7 +10,7 @@ Regime (V8: 4Regime対応):
   RECOVERY:   ベンチマーク < 200EMA かつ 短期EMA上向き → トレンド伸ばす
   BEAR:       ベンチマーク < 200EMA かつ 短期EMA下向き → 守り重視
 
-Railway環境向け簡略版: yfinanceを直接使用
+yfinance を直接使用してリアルタイム判定。
 """
 
 from dataclasses import dataclass

@@ -18,10 +18,10 @@ export default function AboutPage() {
           <h2 className="text-xl font-semibold tracking-tight text-slate-900 mt-8">技術スタック</h2>
           <ul className="list-disc pl-6 space-y-1">
             <li>フロントエンド: Next.js (App Router), Tailwind CSS, shadcn/ui</li>
-            <li>API: Cloudflare Workers (TypeScript)</li>
-            <li>計算エンジン: Python + FastAPI + yfinance (Cloud Run)</li>
+            <li>API: Go (Echo) + Python (FastAPI)</li>
+            <li>計算エンジン: Python + FastAPI + yfinance</li>
             <li>バッチ: Python (VPS cron)</li>
-            <li>監視: Sentry, PostHog</li>
+            <li>監視: Sentry</li>
           </ul>
 
           <h2 className="text-xl font-semibold tracking-tight text-slate-900 mt-8">開発者</h2>

@@ -2,7 +2,7 @@
 market_hours.py - 米国/日本市場の開閉場判定 + 適応型キャッシュ TTL
 
 閉場中は株価が変わらないため、キャッシュ TTL を延長して
-Redis コマンド・yfinance 呼び出し・Cloud Run 起動を削減する。
+Redis コマンド・yfinance 呼び出しを削減する。
 
 対応:
 - 米国 NYSE/NASDAQ: 9:30-16:00 ET (土日祝休)

@@ -32,7 +32,7 @@ export default function PrivacyPage() {
 
           <h2 className="text-xl font-semibold tracking-tight text-slate-900">外部サービス</h2>
           <p>
-            認証に Google OAuth、エラー監視に Sentry、アクセス解析に PostHog を利用しています。
+            認証に Google OAuth、エラー監視に Sentry を利用しています。
             これらのサービスのプライバシーポリシーは各サービスの公式ページをご確認ください。
           </p>
 

@@ -25,16 +25,11 @@ db-shell: ## Open psql shell
 db-dump: ## Dump database to file
 	docker compose exec postgres pg_dump -U app open_regime > db/seed/dump_$$(date +%Y%m%d).sql
 
-seed: ## Load seed data from Supabase export
+seed: ## Load seed data
 	docker compose exec -T postgres psql -U app open_regime < db/seed/seed_data.sql
 
-schema: ## Regenerate schema SQL from Supabase CSVs
+schema: ## Regenerate schema SQL
 	python scripts/generate_schema.py
-
-# --- Data Export ---
-
-export-supabase: ## Export data from Supabase REST API
-	bash scripts/export-supabase.sh
 
 # --- Help ---
 

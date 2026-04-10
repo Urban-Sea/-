@@ -32,7 +32,7 @@ Entry条件（全モード共通）:
   avg +20.12%, PF 5.82, win 54.6%, Bear +0.88%, n=524
   （V9 Baseline: avg +19.17%, PF 5.09, win 50.8%, Bear +0.84%, n=433）
 
-Railway環境向け簡略版: yfinanceを直接使用
+yfinance を直接使用してリアルタイム判定。
 """
 
 from dataclasses import dataclass
@@ -595,7 +595,7 @@ class CombinedEntryDetector:
             from cache_utils import fetch_ohlcv_cached
             return fetch_ohlcv_cached(ticker, "6mo")
         except ImportError:
-            # Fallback (non-Railway環境)
+            # Fallback (cache_utils 未 import 時)
             try:
                 stock = yf.Ticker(ticker)
                 df = stock.history(period="6mo")

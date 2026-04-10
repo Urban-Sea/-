@@ -1,8 +1,7 @@
 """
 cache_utils.py - OHLCV データの L1+L2 キャッシュ取得
 
-L1: インメモリ + L2: Upstash Redis (redis_cache.py) を使用。
-旧 Supabase stock_cache テーブルの役割を Redis に置き換え。
+L1: インメモリ + L2: Redis (redis_cache.py) を使用。
 """
 import logging
 

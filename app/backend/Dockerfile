@@ -13,8 +13,6 @@ COPY . .
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# ポート公開 (Docker: 8081, Cloud Run: PORT 環境変数で上書き)
 EXPOSE 8081
 
-# 起動コマンド
-CMD ["sh", "-c", "if [ -n \"${K_SERVICE:-}\" ]; then LOG_CFG=/app/log_config_stdout.json; else LOG_CFG=/app/log_config.json; fi; uvicorn main:app --host 0.0.0.0 --port ${PORT:-8081} --log-config $LOG_CFG"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081", "--log-config", "/app/log_config.json"]

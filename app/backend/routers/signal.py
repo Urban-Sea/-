@@ -40,7 +40,7 @@ def _detect_asset_class(ticker: str) -> AssetClass:
         return AssetClass.JP_STOCK
     return AssetClass.US_STOCK
 
-# L1+L2 キャッシュ (インメモリ + Upstash Redis)
+# L1+L2 キャッシュ (インメモリ + Redis)
 from redis_cache import cache_get as _cache_get, cache_set as _cache_set
 from market_hours import adaptive_ttl
 _SIGNAL_TTL = 300  # 5分 (秒)

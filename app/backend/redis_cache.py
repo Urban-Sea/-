@@ -2,13 +2,9 @@
 redis_cache.py - L1 (インメモリ) + L2 (Redis) キャッシュ
 
 L1: プロセスローカル dict（0ms、同一インスタンス内のみ）
-L2: Redis 直接接続 (Docker) or Upstash REST (Cloud Run フォールバック)
+L2: Docker Redis 直接接続
 
 Redis 未設定 or 障害時は L1 のみで動作（グレースフルデグレード）。
-
-接続方法:
-  REDIS_URL 設定時 → redis パッケージで直接接続 (Docker 環境)
-  UPSTASH_REDIS_REST_URL 設定時 → upstash_redis パッケージ (Cloud Run フォールバック)
 """
 import json
 import logging
@@ -52,32 +48,18 @@ def get_redis():
 
     _redis_init_attempted = True
 
-    # 優先: REDIS_URL (Docker 環境の直接接続)
     redis_url = os.getenv("REDIS_URL", "")
-    if redis_url:
-        try:
-            import redis
-            _redis = redis.from_url(redis_url, decode_responses=True)
-            _redis.ping()
-            logger.info("Redis connected: %s", redis_url)
-            return _redis
-        except Exception as e:
-            logger.warning("Redis direct init failed: %s", e)
-            _redis = None
-            return None
-
-    # フォールバック: Upstash REST API (Cloud Run 環境)
-    url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-    token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
-    if not url or not token:
+    if not redis_url:
         return None
     try:
-        from upstash_redis import Redis as UpstashRedis
-        _redis = UpstashRedis(url=url, token=token)
-        logger.info("Upstash Redis connected (fallback)")
+        import redis
+        _redis = redis.from_url(redis_url, decode_responses=True)
+        _redis.ping()
+        logger.info("Redis connected: %s", redis_url)
         return _redis
     except Exception as e:
-        logger.warning("Upstash Redis init failed: %s", e)
+        logger.warning("Redis init failed: %s", e)
+        _redis = None
         return None
 
 
