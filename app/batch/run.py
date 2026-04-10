@@ -119,8 +119,6 @@ import urllib.request
 
 logger = logging.getLogger("batch")
 
-# 2026-04-09: 旧 CF Worker URL (open-regime-api.ryu3ta-ke-mo100307.workers.dev) は
-# 2026-04-05 の DNS 切替で削除済み。本番 (https://open-regime.com) に向ける。
 BACKEND_URL = os.getenv("WARMUP_BACKEND_URL", "https://open-regime.com")
 
 # 2026-04-09: warmup 対象を「実際にキャッシュ実装済みエンドポイント」だけに絞る。

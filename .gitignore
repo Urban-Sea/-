@@ -7,6 +7,11 @@ demo/
 .agents/
 skills-lock.json
 
+# Private docs (IP, emails, infra details)
+tasks/
+app/docs/
+docs/
+
 # Environment variables (contains API keys)
 .env
 .env.local
@@ -52,6 +57,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+db/
 
 # Logs
 *.log
@@ -68,6 +74,7 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+tests/
 
 # Temporary files
 *.tmp
