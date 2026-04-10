@@ -12,7 +12,6 @@ Usage:
   python app/batch/run.py --employment       # 雇用データのみ（weekly_claims + economic_indicators）
   python app/batch/run.py --calc             # Layer計算のみ
   python app/batch/run.py --full             # 15年分フル取得 + Layer計算
-  python app/batch/run.py --precompute       # 事前計算のみ（API結果をSupabaseに保存）
   python app/batch/run.py --since 2025-01-01 # 指定日以降
 
 スケジューリング例 (crontab -e):
@@ -113,7 +112,7 @@ from app.batch.fetchers.fred import (
 from app.batch.fetchers.nyfed import fetch_srf_data
 from app.batch.fetchers.yahoo import fetch_bank_sector, fetch_market_indicators
 from app.batch.calculators.layer_stress import calculate_monthly_states
-from app.batch.calculators.precompute import precompute_all
+
 from app.batch.snapshot import take_daily_snapshot
 import urllib.request
 
@@ -295,8 +294,6 @@ def main():
     parser.add_argument("--employment", action="store_true",
                         help="雇用データのみ（weekly_claims + economic_indicators）")
     parser.add_argument("--calc", action="store_true", help="Layer計算のみ")
-    parser.add_argument("--precompute", action="store_true",
-                        help="事前計算のみ（API結果をSupabaseに保存）")
     parser.add_argument("--full", action="store_true", help="15年分フル取得 + Layer計算")
     parser.add_argument("--snapshot", action="store_true",
                         help="ポートフォリオスナップショットのみ")
@@ -352,7 +349,7 @@ def main():
         # デフォルト: 3年分
         start = (datetime.now() - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
-    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.precompute or args.daily or args.weekly or args.snapshot or getattr(args, 'backfill_snapshots', False)
+    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.daily or args.weekly or args.snapshot or getattr(args, 'backfill_snapshots', False)
     t0 = time.time()
 
     # ジョブ種別を決定
@@ -370,8 +367,6 @@ def main():
         job_type = "employment"
     elif args.calc:
         job_type = "calc"
-    elif args.precompute:
-        job_type = "precompute"
     elif args.snapshot:
         job_type = "snapshot"
     elif getattr(args, 'backfill_snapshots', False):
@@ -393,18 +388,12 @@ def main():
             since = args.since or (datetime.now() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
             backfill_snapshots(since=since)
 
-        elif args.precompute:
-            precompute_all()
-            _warmup_cache()
-
         elif args.daily:
             _run_daily(end)
-            precompute_all()
             _warmup_cache()
 
         elif args.weekly:
             _run_weekly(start, end)
-            precompute_all()
             _warmup_cache()
 
         else:
@@ -424,7 +413,6 @@ def main():
                 _run_calc()
 
             if not any_specific or args.full:
-                precompute_all()
                 _warmup_cache()
 
         elapsed = time.time() - t0
