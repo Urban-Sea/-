@@ -5,21 +5,21 @@ import { useSearchParams } from 'next/navigation';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Crosshair, Package, History, BookOpen, ShieldAlert } from 'lucide-react';
-import { getSignal, getStockHistory, getExitAnalysis, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
+import { Crosshair, History, BookOpen, ShieldAlert } from 'lucide-react';
+import { getSignal, getStockHistory, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection } from '@/components/shared/glass';
 import { TickerIcon } from '@/components/shared/TickerIcon';
 import { useUser } from '@/components/providers/UserProvider';
-import type { SignalResponse, StockHistoryData, ExitAnalysisResponse, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
+import type { SignalResponse, StockHistoryData, SignalHistoryResponse, ChartMarkersResponse, BatchResponse } from '@/types';
 
 // 色は CSS 変数 (var(--brand-*) / var(--signal-*)) で統一済み。
 // hex 定数が必要になったら employment/page.tsx の DA をコピー。
 
 type Mode = 'balanced' | 'aggressive' | 'conservative';
 type ExitMode = 'standard' | 'stable';
-type Tab = 'entry' | 'exit_analysis' | 'holding' | 'history' | 'system';
+type Tab = 'entry' | 'exit_analysis' | 'history' | 'system';
 type Period = '1d' | '5d' | '1mo' | '3mo' | '6mo' | 'ytd' | '1y' | '5y' | 'max';
 type ChartType = 'line' | 'candlestick';
 type ChartOption = 'ema' | 'fvg' | 'bos' | 'choch' | 'ob' | 'ote' | 'pd';
@@ -80,7 +80,7 @@ function SignalsPage() {
   const { data: stocksData } = useStocks({ active_only: true });
   const stocks = stocksData?.stocks ?? [];
   const [history, setHistory] = useState<StockHistoryData[]>([]);
-  const [exitAnalysis, setExitAnalysis] = useState<ExitAnalysisResponse | null>(null);
+  // exitAnalysis 削除 — holding タブ廃止により不要
   const [signalHistory, setSignalHistory] = useState<SignalHistoryResponse | null>(null);
   const [chartMarkers, setChartMarkers] = useState<ChartMarkersResponse | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -91,11 +91,10 @@ function SignalsPage() {
   const [period, setPeriod] = useState<Period>('6mo');
   const [chartType, setChartType] = useState<ChartType>('line');
   const [chartOptions, setChartOptions] = useState<Set<ChartOption>>(new Set(['ema']));
-  const [entryPrice, setEntryPrice] = useState('');
-  const [entryDate, setEntryDate] = useState('');
+  // entryPrice / entryDate 削除 — holding タブ廃止により不要
   const [batchResults, setBatchResults] = useState<BatchResponse | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [exitLoading, setExitLoading] = useState(false);
+  // exitLoading 削除 — holding タブ廃止により不要
   const [quickTickers, setQuickTickers] = useState<string[]>(defaultQuickTickers);
   const [jpTickers, setJpTickers] = useState<Array<{ ticker: string; name: string }>>(defaultJpTickers);
   const [showAddTicker, setShowAddTicker] = useState(false);
@@ -145,7 +144,7 @@ function SignalsPage() {
     const paramTab = searchParams.get('tab') as Tab | null;
     if (paramTicker) {
       setTicker(paramTicker.toUpperCase());
-      if (paramTab && ['entry', 'holding', 'history', 'system'].includes(paramTab)) {
+      if (paramTab && ['entry', 'exit_analysis', 'history', 'system'].includes(paramTab)) {
         setActiveTab(paramTab);
       }
       setInitialParamsHandled(true);
@@ -248,7 +247,6 @@ function SignalsPage() {
     setSignal(null);
     setBatchResults(null);
     setHistory([]);
-    setExitAnalysis(null);
     setChartMarkers(null);
     setTicker(targetTicker.toUpperCase());
     try {
@@ -264,27 +262,6 @@ function SignalsPage() {
       setError(err instanceof Error ? err.message : 'シグナル取得に失敗しました');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleExitAnalysis = async () => {
-    if (!ticker || !entryPrice) return;
-    const price = parseFloat(entryPrice);
-    if (isNaN(price) || price <= 0) {
-      setError('有効なエントリー価格を入力してください');
-      return;
-    }
-    setExitLoading(true);
-    setError(null);
-    try {
-      const res = await getExitAnalysis(ticker, price, entryDate || undefined);
-      setExitAnalysis(res);
-    } catch (err) {
-      console.error('Exit analysis failed:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(`保有分析に失敗しました: ${msg}`);
-    } finally {
-      setExitLoading(false);
     }
   };
 
@@ -345,9 +322,6 @@ function SignalsPage() {
       default: return 'bg-neutral-50 text-neutral-500 border-neutral-200';
     }
   };
-
-  const isJP = /^\d/.test(ticker);
-  const ccy = isJP ? '¥' : '$';
 
   const chartData = history.map((d, i) => {
     const ema8 = calculateEMA(history.slice(0, i + 1).map(h => h.close), 8);
@@ -817,12 +791,14 @@ function SignalsPage() {
                   obMarkers={chartMarkers?.order_blocks || []}
                   oteMarkers={chartMarkers?.ote_zones || []}
                   pdZone={chartMarkers?.premium_discount || null}
+                  initialVisibleCount={chartData.length}
                 />
               ) : (
                 <LineChartCanvas
                   data={chartData}
                   ticker={ticker}
                   showEMA={chartOptions.has('ema')}
+                  initialVisibleCount={chartData.length}
                 />
               )}
             </div>
@@ -861,8 +837,8 @@ function SignalsPage() {
             <TabsList variant="line" className="rounded-lg border border-neutral-200 bg-card px-1 py-0.5 w-full justify-start">
               <TabsTrigger value="entry" className="text-[11px] font-mono uppercase tracking-wider"><Crosshair className="w-3.5 h-3.5 mr-1.5" />エントリー判定</TabsTrigger>
               <TabsTrigger value="exit_analysis" className="text-[11px] font-mono uppercase tracking-wider"><ShieldAlert className="w-3.5 h-3.5 mr-1.5" />Exit分析</TabsTrigger>
-              <TabsTrigger value="holding" className="text-[11px] font-mono uppercase tracking-wider"><Package className="w-3.5 h-3.5 mr-1.5" />保有分析</TabsTrigger>
-              <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider"><History className="w-3.5 h-3.5 mr-1.5" />過去シグナル</TabsTrigger>
+
+              <TabsTrigger value="history" className="text-[11px] font-mono uppercase tracking-wider"><History className="w-3.5 h-3.5 mr-1.5" />過去のポジション</TabsTrigger>
               <TabsTrigger value="system" className="text-[11px] font-mono uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5 mr-1.5" />システム解説</TabsTrigger>
             </TabsList>
 
@@ -973,14 +949,14 @@ function SignalsPage() {
                     const isBuyNow = signal?.entry_allowed === true;
 
                     const exitReasonJP: Record<string, string> = {
-                      'ATR_Floor': '損切り（損切ライン割れ）',
-                      'ATR_Floor(partial)': '損切り（50%決済後）',
-                      'Mirror_Partial': '反転売却（転換→EMAデスクロス）',
-                      'Mirror_Full': '反転全決済',
-                      'Trail_Stop': '利確（利確ストップ）',
-                      'Trail_Stop(partial)': '利確（50%決済後・追従）',
-                      'Time_Stop': '保有期限到達（252日）',
-                      'Time_Stop(partial)': '期限到達（50%決済込み）',
+                      'ATR_Floor': '① 損切ライン',
+                      'ATR_Floor(partial)': '① 損切ライン (残り)',
+                      'Mirror_Partial': '② 弱気転換 (半分売却)',
+                      'Mirror_Full': '② 弱気転換 (全売却)',
+                      'Trail_Stop': '③ 利確ストップ',
+                      'Trail_Stop(partial)': '③ 利確ストップ (残り)',
+                      'Time_Stop': '④ 保有期限',
+                      'Time_Stop(partial)': '④ 保有期限 (残り)',
                     };
 
                     // Exit理由ごとの売却比率
@@ -1407,7 +1383,7 @@ function SignalsPage() {
 
                         {/* ── トレード履歴（最新5件） ── */}
                         {trades.length > 0 && (
-                          <div className="space-y-2.5">
+                          <div className="space-y-3">
                             <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">取引履歴（直近{Math.min(trades.length, 5)}件）</div>
                             {trades.slice(-5).reverse().map((t, i) => {
                               const isWin = t.return_pct >= 0;
@@ -1416,29 +1392,31 @@ function SignalsPage() {
                               const liveStatus = exitedPositions.find(s => s.entry_date === t.entry_date);
                               const savedPct = liveStatus ? t.return_pct - liveStatus.unrealized_pct : null;
                               return (
-                                <div key={`trade-${i}`} className="rounded-md border border-neutral-200 bg-card px-5 py-4">
-                                  <div className="flex items-center gap-3 text-sm flex-wrap">
-                                    <StatusChip label={isWin ? '利確' : '損切'} color={isWin ? 'green' : 'red'} />
-                                    <span className={`font-mono font-bold text-base ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                      {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
-                                    </span>
-                                    <span className="w-px h-4 bg-neutral-300" />
-                                    <span className="text-neutral-500">{reason}</span>
-                                    <span className="w-px h-4 bg-neutral-300" />
-                                    <span className="text-neutral-500">{sellPct}売却</span>
-                                    <span className="w-px h-4 bg-neutral-300" />
-                                    <span className="text-neutral-500">{t.holding_days}日保有</span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-sm mt-2 flex-wrap">
-                                    <span className="text-neutral-500">買値 <span className="font-mono text-foreground">{ccy}{t.entry_price.toFixed(2)}</span> ({t.entry_date})</span>
-                                    <span className="text-neutral-500">→</span>
-                                    <span className="text-neutral-500">売値 <span className={`font-mono font-bold ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>{ccy}{t.exit_price.toFixed(2)}</span> ({t.exit_date})</span>
-                                  </div>
-                                  {savedPct !== null && savedPct > 0 && (
-                                    <div className="mt-2 text-xs text-[var(--signal-safe-500)] font-medium">
-                                      決済効果: 保有し続けたら{liveStatus!.unrealized_pct >= 0 ? '+' : ''}{liveStatus!.unrealized_pct.toFixed(1)}% → 実際は{t.return_pct >= 0 ? '+' : ''}{t.return_pct.toFixed(1)}%（{savedPct.toFixed(1)}%分の損失を回避）
+                                <div key={`trade-${i}`} className={`rounded-xl border-2 bg-card overflow-hidden ${isWin ? 'border-[var(--signal-safe-300)]' : 'border-[var(--signal-danger-300)]'}`}>
+                                  <div className="flex">
+                                    {/* 左: 大きい損益% */}
+                                    <div className={`flex flex-col items-center justify-center px-5 py-4 min-w-[90px] ${isWin ? 'bg-[var(--signal-safe-100)]' : 'bg-[var(--signal-danger-100)]'}`}>
+                                      <span className={`text-xl font-extrabold font-mono ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                        {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
+                                      </span>
+                                      <span className={`text-[10px] font-bold mt-1 ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                        {isWin ? '利確' : '損切'}
+                                      </span>
                                     </div>
-                                  )}
+                                    {/* 右: 詳細 */}
+                                    <div className="flex-1 px-4 py-3 space-y-1">
+                                      <div className="text-sm font-bold text-foreground">{reason}</div>
+                                      <div className="text-xs text-neutral-500">{t.holding_days}日保有 · {sellPct}売却</div>
+                                      <div className="text-xs text-neutral-500 font-mono">
+                                        {ccy}{t.entry_price.toFixed(2)} ({t.entry_date}) → {ccy}{t.exit_price.toFixed(2)} ({t.exit_date})
+                                      </div>
+                                      {savedPct !== null && savedPct > 0 && (
+                                        <div className="text-xs text-[var(--signal-safe-500)] font-medium">
+                                          決済効果: {savedPct.toFixed(1)}% 分の損失を回避
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1455,206 +1433,13 @@ function SignalsPage() {
               </div>
             </TabsContent>
 
-            {/* ── Tab: Holding ── */}
-            <TabsContent value="holding">
-              <div className="rounded-xl border border-neutral-200 bg-card p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-base font-bold text-foreground">保有分析パネル</span>
-                  <StatusChip label="4層決済システム" color="purple" />
-                </div>
-                <p className="text-xs text-neutral-500 mb-5">前日の終値確定後に判定 → 売却シグナルが出たら翌営業日の寄付で売却</p>
-
-                {/* Entry Inputs */}
-                <div className="flex gap-4 mb-5 flex-wrap items-end">
-                  <div>
-                    <label className="text-xs text-neutral-500 block mb-1.5 font-medium">エントリー価格</label>
-                    <input
-                      type="number"
-                      value={entryPrice}
-                      onChange={(e) => setEntryPrice(e.target.value)}
-                      placeholder="例: 25.50"
-                      step="0.01"
-                      className="rounded-md border border-neutral-200 bg-white px-3 py-2 w-32 focus:outline-none focus:border-[var(--brand-500)] focus:ring-1 focus:ring-[var(--brand-500)]/30 transition-colors placeholder:text-neutral-400 text-foreground"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-neutral-500 block mb-1.5 font-medium">エントリー日（任意）</label>
-                    <input
-                      type="date"
-                      value={entryDate}
-                      onChange={(e) => setEntryDate(e.target.value)}
-                      className="rounded-md border border-neutral-200 bg-white px-3 py-2 focus:outline-none focus:border-[var(--brand-500)] focus:ring-1 focus:ring-[var(--brand-500)]/30 transition-colors text-foreground"
-                    />
-                  </div>
-                  <button
-                    onClick={handleExitAnalysis}
-                    disabled={exitLoading || !entryPrice}
-                    className="px-5 py-2 rounded-md text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--brand-500)] text-white hover:bg-[var(--brand-700)]"
-                  >
-                    {exitLoading ? '分析中...' : '保有分析'}
-                  </button>
-                  {signal && (
-                    <span className="text-xs text-neutral-500">現在価格: <span className="font-mono font-semibold text-foreground">{ccy}{signal.price.toFixed(2)}</span></span>
-                  )}
-                </div>
-
-                {/* Loading */}
-                {exitLoading && (
-                  <div className="flex justify-center items-center py-8 gap-3 text-neutral-500">
-                    <div className="w-5 h-5 border-2 border-neutral-200 border-t-[var(--brand-500)] rounded-full animate-spin" />
-                    <span className="text-sm">分析中...</span>
-                  </div>
-                )}
-
-                {/* Exit Analysis Results */}
-                {exitAnalysis && !exitLoading && (
-                  <div className="space-y-4 plumb-animate-in">
-                    {/* Exit Summary Hero */}
-                    <div className={`p-5 rounded-xl border ${
-                      exitAnalysis.should_exit
-                        ? 'border-[var(--signal-danger-300)] bg-[var(--signal-danger-100)]'
-                        : 'border-[var(--signal-safe-300)] bg-[var(--signal-safe-100)]'
-                    }`}>
-                      <div className="flex items-center justify-between flex-wrap gap-4">
-                        <div className="flex items-center gap-5">
-                          <div>
-                            <span className="text-xs text-neutral-500 uppercase block font-medium">総合判定</span>
-                            <span className={`text-3xl font-extrabold tracking-wider ${exitAnalysis.should_exit ? 'text-[var(--signal-danger-500)]' : 'text-[var(--signal-safe-500)]'}`}>
-                              {exitAnalysis.should_exit ? '売却' : '保有継続'}
-                            </span>
-                          </div>
-                          {exitAnalysis.should_exit && exitAnalysis.exit_pct > 0 && (
-                            <div>
-                              <span className="text-xs text-neutral-500 uppercase block font-medium">売却比率</span>
-                              <span className="text-xl font-bold text-[var(--signal-danger-500)]">{exitAnalysis.exit_pct}%</span>
-                            </div>
-                          )}
-                          <StatusChip
-                            label={exitAnalysis.urgency}
-                            color={exitAnalysis.urgency === 'LOW' ? 'green' : exitAnalysis.urgency === 'MEDIUM' ? 'amber' : exitAnalysis.urgency === 'HIGH' ? 'orange' : 'red'}
-                          />
-                        </div>
-                        <div className="flex gap-6">
-                          <div className="text-center">
-                            <div className="text-xs text-neutral-500 uppercase font-medium">エントリー</div>
-                            <div className="text-sm font-semibold font-mono text-foreground">{ccy}{exitAnalysis.entry_price.toFixed(2)}</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-xs text-neutral-500 uppercase font-medium">現在価格</div>
-                            <div className="text-sm font-semibold font-mono text-foreground">{ccy}{exitAnalysis.current_price.toFixed(2)}</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-xs text-neutral-500 uppercase font-medium">含み損益</div>
-                            <div className={`text-lg font-bold font-mono ${exitAnalysis.pnl_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                              {exitAnalysis.pnl_pct >= 0 ? '+' : ''}{exitAnalysis.pnl_pct.toFixed(2)}%
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      {exitAnalysis.exit_reason && (
-                        <div className="mt-4 pt-3 border-t border-neutral-200/50 text-sm text-neutral-600">
-                          <span className="text-neutral-500">理由:</span> {exitAnalysis.exit_reason}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* EMA Status & Structure Stop */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-neutral-200 bg-card p-5">
-                        <div className="text-xs text-neutral-500 uppercase tracking-wider mb-3 font-medium">EMAステータス</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          {[
-                            { label: 'EMA 8', val: exitAnalysis.ema_status?.ema_8, above: exitAnalysis.ema_status?.above_ema_8 },
-                            { label: 'EMA 13', val: exitAnalysis.ema_status?.ema_13, above: exitAnalysis.ema_status?.above_ema_13 },
-                            { label: 'EMA 21', val: exitAnalysis.ema_status?.ema_21, above: exitAnalysis.ema_status?.above_ema_21 },
-                          ].map((e) => (
-                            <div key={e.label} className="text-center">
-                              <div className="text-xs text-neutral-500 font-medium">{e.label}</div>
-                              <div className="text-sm font-semibold font-mono mt-0.5 text-foreground">{ccy}{(e.val ?? 0).toFixed(2)}</div>
-                              <div className={`text-xs font-bold mt-0.5 ${e.above ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                {e.above ? '上' : '下'}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-neutral-200 bg-card p-5">
-                        <div className="text-xs text-neutral-500 uppercase tracking-wider mb-3 font-medium">ストップライン</div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-xs text-neutral-500 font-medium">構造ストップ</div>
-                            <div className="text-lg font-bold text-[var(--signal-danger-500)] font-mono">{ccy}{(exitAnalysis.structure_stop ?? 0).toFixed(2)}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs text-neutral-500 font-medium">ストップまでの距離</div>
-                            <div className={`text-sm font-semibold font-mono ${
-                              ((exitAnalysis.current_price - (exitAnalysis.structure_stop ?? 0)) / exitAnalysis.current_price * 100) > 5
-                                ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-caution-500)]'
-                            }`}>
-                              {((exitAnalysis.current_price - (exitAnalysis.structure_stop ?? 0)) / exitAnalysis.current_price * 100).toFixed(1)}%
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Exit Layers */}
-                    <div className="rounded-xl border border-neutral-200 bg-card p-5">
-                      <div className="text-xs text-neutral-500 uppercase tracking-wider mb-3 font-medium">レイヤー判定</div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {exitAnalysis.layers.map((layer) => (
-                          <div key={layer.layer} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3.5">
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-xs text-neutral-500 font-mono font-medium">L{layer.layer}</span>
-                              <StatusChip
-                                label={layer.status}
-                                color={layer.status === 'SAFE' ? 'green' : layer.status === 'WARNING' ? 'orange' : 'red'}
-                              />
-                            </div>
-                            <div className="text-sm font-semibold text-foreground">{layer.name}</div>
-                            {layer.detail && <div className="text-xs text-neutral-500 mt-1 truncate">{layer.detail}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Targets */}
-                    {exitAnalysis.targets.length > 0 && (
-                      <div className="rounded-xl border border-neutral-200 bg-card p-5">
-                        <div className="text-xs text-neutral-500 uppercase tracking-wider mb-3 font-medium">利確ターゲット</div>
-                        <div className="flex gap-3 flex-wrap">
-                          {exitAnalysis.targets.map((t, i) => (
-                            <div key={i} className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-center min-w-[100px]">
-                              <div className="text-xs text-neutral-500 uppercase font-medium">{t.type}</div>
-                              <div className="text-base font-bold font-mono mt-0.5 text-foreground">{ccy}{t.price.toFixed(2)}</div>
-                              <div className="text-sm text-[var(--signal-safe-500)] font-mono font-semibold">+{t.pct.toFixed(1)}%</div>
-                              {t.exit_pct > 0 && (
-                                <div className="text-xs text-neutral-500 mt-1">売却 {t.exit_pct}%</div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Empty State */}
-                {!exitAnalysis && !exitLoading && (
-                  <div className="text-center py-10 text-neutral-500 text-sm">
-                    エントリー価格を入力して「保有分析」をクリックしてください
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
             {/* ── Tab: History ── */}
             <TabsContent value="history">
               <div className="rounded-xl border border-neutral-200 bg-card p-6">
                 <div className="flex items-center gap-3 mb-5">
-                  <span className="text-base font-bold text-foreground">過去シグナル履歴（1年間）</span>
+                  <span className="text-base font-bold text-foreground">過去のポジション（1 年間）</span>
                   {signalHistory && (
-                    <span className="text-sm text-neutral-500">({signalHistory.total_signals || signalHistory.stats.total_signals}件)</span>
+                    <span className="text-sm text-neutral-500">({(signalHistory.trade_results?.length ?? 0) + (signalHistory.live_exit_statuses?.filter(s => !s.trade_completed)?.length ?? 0)} 件)</span>
                   )}
                   <button
                     onClick={handleFetchSignalHistory}
@@ -1665,133 +1450,161 @@ function SignalsPage() {
                   </button>
                 </div>
 
-                {signalHistory && (
-                  <div className="space-y-4 plumb-animate-in">
-                    {/* Summary Stats */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center gap-3">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[var(--signal-safe-500)]" />
-                        <span className="text-sm text-neutral-600">買い: <strong className="text-[var(--signal-safe-500)]">{signalHistory.stats.entry_count || signalHistory.timeline?.filter(s => s.type === 'ENTRY').length || 0}</strong></span>
-                      </div>
-                      <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center gap-3">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[var(--signal-caution-500)]" />
-                        <span className="text-sm text-neutral-600">RSI過熱: <strong className="text-[var(--signal-caution-500)]">{signalHistory.stats.rsi_high_count || signalHistory.timeline?.filter(s => s.type === 'RSI_HIGH').length || 0}</strong></span>
-                      </div>
-                    </div>
+                {signalHistory && (() => {
+                  const trades = signalHistory.trade_results ?? [];
+                  const allStatuses = signalHistory.live_exit_statuses ?? [];
+                  const activePositions = allStatuses.filter(s => !s.trade_completed);
+                  const ccy2 = /^\d/.test(signal?.ticker || '') ? '¥' : '$';
+                  const reasonLabel = (r: string) => {
+                    const base = r.replace('(partial)', '').replace('_Partial', '_Full').trim();
+                    const map: Record<string, string> = {
+                      'ATR_Floor': '① 損切ライン', 'Mirror_Full': '② 弱気転換',
+                      'Trail_Stop': '③ 利確ストップ', 'Time_Stop': '④ 保有期限',
+                    };
+                    return map[base] || r;
+                  };
+                  const isPartial = (r: string) => r.includes('partial') || r.includes('Partial');
 
-                    {/* Exit Summary */}
-                    {signalHistory.timeline && signalHistory.timeline.filter(s => s.type === 'EXIT').length > 0 && (
-                      <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3">
-                        <div className="flex gap-4 flex-wrap items-center">
-                          <span className="text-xs text-neutral-500 uppercase tracking-wider font-medium">決済</span>
-                          {(() => {
-                            const exitSignals = signalHistory.timeline.filter(s => s.type === 'EXIT');
-                            const exitByCat: Record<string, number> = {};
-                            exitSignals.forEach(s => { exitByCat[s.exit_type || 'OTHER'] = (exitByCat[s.exit_type || 'OTHER'] || 0) + 1; });
+                  // entry_date でグルーピング (partial + full を 1 ポジションにまとめる)
+                  type PositionRow = {
+                    entryDate: string; entryPrice: number;
+                    finalExitDate: string | null; finalExitPrice: number | null;
+                    finalReturnPct: number; holdingDays: number;
+                    reason: string; isActive: boolean;
+                    halfSell: { date: string; pct: number; reason: string } | null;
+                  };
+                  const tradesByEntry = new Map<string, typeof trades>();
+                  trades.forEach(t => {
+                    const arr = tradesByEntry.get(t.entry_date) || [];
+                    arr.push(t);
+                    tradesByEntry.set(t.entry_date, arr);
+                  });
+
+                  const closedRows: PositionRow[] = [];
+                  tradesByEntry.forEach((group) => {
+                    const sorted = [...group].sort((a, b) => a.exit_date.localeCompare(b.exit_date));
+                    const partialTrade = sorted.find(t => isPartial(t.exit_reason));
+                    const fullTrade = sorted.find(t => !isPartial(t.exit_reason));
+                    const finalTrade = fullTrade || partialTrade!;
+                    const onlyPartial = partialTrade && !fullTrade;
+                    const halfReasonBase = partialTrade ? partialTrade.exit_reason.replace('(partial)', '').replace('_Partial', '_Full').trim() : '';
+
+                    closedRows.push({
+                      entryDate: finalTrade.entry_date, entryPrice: finalTrade.entry_price,
+                      finalExitDate: finalTrade.exit_date, finalExitPrice: finalTrade.exit_price,
+                      finalReturnPct: finalTrade.return_pct, holdingDays: finalTrade.holding_days,
+                      reason: onlyPartial
+                        ? `${reasonLabel(halfReasonBase)} (50% 売却)`
+                        : partialTrade && fullTrade
+                          ? `${reasonLabel(halfReasonBase)} → ${reasonLabel(fullTrade.exit_reason)}`
+                          : reasonLabel(finalTrade.exit_reason),
+                      isActive: false,
+                      halfSell: partialTrade && fullTrade
+                        ? { date: partialTrade.exit_date, pct: partialTrade.return_pct, reason: reasonLabel(halfReasonBase) }
+                        : null,
+                    });
+                  });
+
+                  const rows: PositionRow[] = [
+                    ...closedRows,
+                    ...activePositions.map(s => ({
+                      entryDate: s.entry_date, entryPrice: s.entry_price,
+                      finalExitDate: null as string | null, finalExitPrice: signal?.price ?? null,
+                      finalReturnPct: s.unrealized_pct, holdingDays: s.holding_days,
+                      reason: s.trail_active ? '追従中' : '監視中',
+                      isActive: true,
+                      halfSell: s.partial_exit_done ? { date: '—', pct: 0, reason: '半分売却済' } : null,
+                    })),
+                  ].sort((a, b) => b.entryDate.localeCompare(a.entryDate));
+
+                  const winCount = closedRows.filter(r => r.finalReturnPct >= 0).length;
+                  const totalCount = closedRows.length;
+
+                  return (
+                    <div className="space-y-4 plumb-animate-in">
+                      {/* サマリー */}
+                      <div className="flex items-center gap-4 flex-wrap text-sm">
+                        <span className="text-neutral-500">全 <strong className="text-foreground">{rows.length}</strong> ポジション</span>
+                        {totalCount > 0 && (
+                          <>
+                            <span className="w-px h-4 bg-neutral-300" />
+                            <span className="text-neutral-500">勝率 <strong className={winCount / totalCount >= 0.5 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}>{(winCount / totalCount * 100).toFixed(0)}%</strong> ({winCount}勝 {totalCount - winCount}敗)</span>
+                          </>
+                        )}
+                        {activePositions.length > 0 && (
+                          <>
+                            <span className="w-px h-4 bg-neutral-300" />
+                            <span className="text-neutral-500">保有中 <strong className="text-[var(--brand-700)]">{activePositions.length}</strong></span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* ポジション一覧 */}
+                      {rows.length > 0 ? (
+                        <div className="space-y-2">
+                          {rows.map((r, i) => {
+                            const isWin = r.finalReturnPct >= 0;
+                            const borderColor = r.isActive ? 'border-[var(--brand-200)]'
+                              : isWin ? 'border-[var(--signal-safe-300)]'
+                              : 'border-[var(--signal-danger-300)]';
+                            const leftBg = r.isActive ? 'bg-[var(--brand-100)]'
+                              : isWin ? 'bg-[var(--signal-safe-100)]'
+                              : 'bg-[var(--signal-danger-100)]';
+                            const pctColor = r.isActive ? 'text-[var(--brand-700)]'
+                              : isWin ? 'text-[var(--signal-safe-500)]'
+                              : 'text-[var(--signal-danger-500)]';
                             return (
-                              <>
-                                {exitByCat['MIRROR_FULL'] && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--signal-danger-500)]" />
-                                    <span className="text-xs text-neutral-600">反転全決済 <strong className="text-[var(--signal-danger-500)]">{exitByCat['MIRROR_FULL']}</strong><span className="text-[10px] text-neutral-500 ml-1">(100%)</span></span>
+                              <div key={`pos-${i}`} className={`rounded-xl border-2 ${borderColor} bg-card overflow-hidden`}>
+                                <div className="flex">
+                                  {/* 左: 損益% */}
+                                  <div className={`flex flex-col items-center justify-center px-4 py-3 min-w-[80px] ${leftBg}`}>
+                                    <span className={`text-lg font-extrabold font-mono ${pctColor}`}>
+                                      {isWin ? '+' : ''}{r.finalReturnPct.toFixed(1)}%
+                                    </span>
+                                    <span className={`text-[10px] font-bold mt-0.5 ${pctColor}`}>
+                                      {r.isActive ? '保有中' : isWin ? '利確' : '損切'}
+                                    </span>
                                   </div>
-                                )}
-                                {exitByCat['MIRROR_WARN'] && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--signal-caution-500)]" />
-                                    <span className="text-xs text-neutral-600">反転警戒 <strong className="text-[var(--signal-caution-500)]">{exitByCat['MIRROR_WARN']}</strong><span className="text-[10px] text-neutral-500 ml-1">(50%)</span></span>
+                                  {/* 右: 詳細 */}
+                                  <div className="flex-1 px-4 py-3 flex items-center justify-between flex-wrap gap-1">
+                                    <div className="space-y-0.5">
+                                      <div className="text-sm font-bold text-foreground">{r.reason}</div>
+                                      {r.halfSell && r.halfSell.date !== '—' && (
+                                        <div className="text-[11px] text-[var(--signal-caution-500)] font-medium">
+                                          50% 売却: {r.halfSell.date} ({r.halfSell.pct >= 0 ? '+' : ''}{r.halfSell.pct.toFixed(1)}%)
+                                        </div>
+                                      )}
+                                      {r.halfSell && r.halfSell.date === '—' && (
+                                        <div className="text-[11px] text-[var(--signal-caution-500)] font-medium">50% 売却済</div>
+                                      )}
+                                      <div className="text-xs text-neutral-500 font-mono">
+                                        {r.entryDate} → {r.finalExitDate || '保有中'}
+                                      </div>
+                                    </div>
+                                    <div className="text-right space-y-0.5">
+                                      <div className="text-xs text-neutral-500 font-mono">
+                                        {ccy2}{r.entryPrice.toFixed(2)} → {r.finalExitPrice ? `${ccy2}${r.finalExitPrice.toFixed(2)}` : '—'}
+                                      </div>
+                                      <div className="text-[10px] text-neutral-500">{r.holdingDays}日保有</div>
+                                    </div>
                                   </div>
-                                )}
-                                {exitByCat['TRAIL'] && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--brand-700)]" />
-                                    <span className="text-xs text-neutral-600">利確ストップ <strong className="text-[var(--brand-700)]">{exitByCat['TRAIL']}</strong><span className="text-[10px] text-neutral-500 ml-1">(100%)</span></span>
-                                  </div>
-                                )}
-                                {exitByCat['BEAR_CHOCH'] && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--signal-danger-300)]" />
-                                    <span className="text-xs text-neutral-600">弱気転換 <strong className="text-[var(--signal-danger-500)]">{exitByCat['BEAR_CHOCH']}</strong><span className="text-[10px] text-neutral-500 ml-1">(警告)</span></span>
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Timeline */}
-                    {signalHistory.timeline && signalHistory.timeline.length > 0 ? (
-                      <div className="relative pl-6">
-                        <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-neutral-200 rounded" />
-                        {signalHistory.timeline.slice().reverse().map((s, i) => {
-                          const getTypeStyle = () => {
-                            switch (s.type) {
-                              case 'ENTRY':
-                                return { dot: 'bg-[var(--signal-safe-500)] border-[var(--signal-safe-500)]', badge: 'green', label: '買いシグナル' };
-                              case 'RSI_HIGH':
-                                return { dot: 'bg-[var(--signal-caution-500)] border-[var(--signal-caution-500)]', badge: 'orange', label: 'RSI過熱' };
-                              case 'EXIT': {
-                                const exitColors: Record<string, { dot: string; badge: string; label: string }> = {
-                                  'MIRROR_FULL': { dot: 'bg-[var(--signal-danger-500)] border-[var(--signal-danger-500)]', badge: 'red', label: '反転全決済' },
-                                  'MIRROR_WARN': { dot: 'bg-[var(--signal-caution-500)] border-[var(--signal-caution-500)]', badge: 'orange', label: '反転警戒' },
-                                  'TRAIL':       { dot: 'bg-[var(--brand-700)] border-[var(--brand-700)]', badge: 'purple', label: '利確ストップ' },
-                                  'BEAR_CHOCH':  { dot: 'bg-[var(--signal-danger-300)] border-[var(--signal-danger-300)]', badge: 'red', label: '弱気転換' },
-                                };
-                                return exitColors[s.exit_type || ''] || { dot: 'bg-[var(--signal-danger-500)] border-[var(--signal-danger-500)]', badge: 'red', label: '売却' };
-                              }
-                              default:
-                                return { dot: 'bg-neutral-500 border-neutral-500', badge: 'blue', label: s.type };
-                            }
-                          };
-                          const style = getTypeStyle();
-                          const dateRange = s.days > 1 ? `${s.date} ~ ${s.end_date}` : s.date;
-                          const priceRange = s.days > 1 && s.end_price ? `${ccy}${s.price.toFixed(2)} → ${ccy}${s.end_price.toFixed(2)}` : `${ccy}${s.price.toFixed(2)}`;
-                          return (
-                            <div key={i} className="relative py-3 border-b border-neutral-100 last:border-b-0">
-                              <div className={`absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full border-2 ${style.dot}`} />
-                              <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                                <span className="text-xs text-neutral-500 font-mono">{dateRange}</span>
-                                <StatusChip label={style.label} color={style.badge} />
-                                {s.days > 1 && (
-                                  <span className="text-xs px-1.5 py-0.5 rounded border border-neutral-200 bg-neutral-50 text-neutral-500">{s.days}日間</span>
-                                )}
-                                <span className="text-sm font-semibold font-mono text-foreground">{priceRange}</span>
+                                </div>
                               </div>
-                              <div className="text-xs text-neutral-500">{s.detail}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : signalHistory.signals && signalHistory.signals.length > 0 ? (
-                      <div className="relative pl-6">
-                        <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-neutral-200 rounded" />
-                        {signalHistory.signals.slice().reverse().map((s, i) => (
-                          <div key={i} className="relative py-3 border-b border-neutral-100 last:border-b-0">
-                            <div className="absolute -left-[21px] top-4 w-2.5 h-2.5 rounded-full bg-[var(--signal-safe-500)] border-2 border-[var(--signal-safe-500)]" />
-                            <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                              <span className="text-xs text-neutral-500 font-mono">{s.date}</span>
-                              <StatusChip label="買いシグナル" color="green" />
-                              <span className="text-sm font-semibold font-mono text-foreground">{ccy}{s.price.toFixed(2)}</span>
-                            </div>
-                            <div className="text-xs text-neutral-500">
-                              買いシグナル（RS: {s.rs_diff >= 0 ? 'UP' : 'DOWN'}）EMA収束 {s.ema_convergence}%
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-10 text-neutral-500 text-sm">
-                        過去1年間にシグナルは検出されませんでした
-                      </div>
-                    )}
-                  </div>
-                )}
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-10 text-neutral-500 text-sm">
+                          過去 1 年間にポジションは検出されませんでした
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {!signalHistory && !historyLoading && (
                   <div className="text-center py-10 text-neutral-500 text-sm">
-                    「分析実行」をクリックして過去シグナルを取得してください
+                    「分析実行」をクリックして過去のポジションを取得してください
                   </div>
                 )}
               </div>
@@ -1889,6 +1702,10 @@ function SignalsPage() {
                             上昇トレンドが弱まる兆候が出たら、まず <strong className="text-[var(--signal-caution-500)]">半分だけ売却</strong>。
                             さらに転換が確定したら <strong className="text-[var(--signal-danger-500)]">残り 50% も売却</strong>。
                             「全部売って失敗」を避けつつ、利益を守ります。
+                          </p>
+                          <p className="text-xs leading-relaxed text-neutral-500 mt-1.5">
+                            ※ 半分売却した後の残り 50% は、①③④ のいずれかのルールで別途決済されます。
+                            「過去のポジション」タブでは「② 弱気転換 → ③ 利確ストップ」のように、どのルールの組み合わせで売られたかが表示されます。
                           </p>
                         </div>
                       </div>

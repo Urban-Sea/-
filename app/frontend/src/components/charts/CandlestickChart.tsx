@@ -51,7 +51,8 @@ export default function CandlestickChart({
   obMarkers = [],
   oteMarkers = [],
   pdZone = null,
-}: CandlestickChartProps) {
+  initialVisibleCount,
+}: CandlestickChartProps & { initialVisibleCount?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Viewport state (refs to avoid re-render on every pan)
@@ -61,9 +62,9 @@ export default function CandlestickChart({
   // Initialize viewport when data changes
   useEffect(() => {
     if (!data || data.length === 0) return;
-    const visible = Math.min(data.length, DEFAULT_VISIBLE);
+    const visible = Math.min(data.length, initialVisibleCount ?? DEFAULT_VISIBLE);
     viewRef.current = { start: data.length - visible, end: data.length };
-  }, [data]);
+  }, [data, initialVisibleCount]);
 
   const draw = useCallback(() => {
     if (!data || data.length === 0) return;
