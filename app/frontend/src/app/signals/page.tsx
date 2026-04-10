@@ -959,11 +959,6 @@ function SignalsPage() {
                       'Time_Stop(partial)': '④ 保有期限 (残り)',
                     };
 
-                    // Exit理由ごとの売却比率
-                    const exitSellPct: Record<string, string> = {
-                      'ATR_Floor': '100%', 'Mirror_Full': '100%', 'Trail_Stop': '100%', 'Time_Stop': '100%',
-                      'ATR_Floor(partial)': '残50%', 'Mirror_Partial': '残50%', 'Trail_Stop(partial)': '残50%', 'Time_Stop(partial)': '残50%',
-                    };
 
                     // アクティブポジションの判定
                     const latestActive = actives.length > 0 ? actives[actives.length - 1] : null;
@@ -1382,46 +1377,85 @@ function SignalsPage() {
                         })()}
 
                         {/* ── トレード履歴（最新5件） ── */}
-                        {trades.length > 0 && (
-                          <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">取引履歴（直近{Math.min(trades.length, 5)}件）</div>
-                            {trades.slice(-5).reverse().map((t, i) => {
-                              const isWin = t.return_pct >= 0;
-                              const reason = exitReasonJP[t.exit_reason] || t.exit_reason;
-                              const sellPct = exitSellPct[t.exit_reason] || '100%';
-                              const liveStatus = exitedPositions.find(s => s.entry_date === t.entry_date);
-                              const savedPct = liveStatus ? t.return_pct - liveStatus.unrealized_pct : null;
-                              return (
-                                <div key={`trade-${i}`} className={`rounded-xl border-2 bg-card overflow-hidden ${isWin ? 'border-[var(--signal-safe-300)]' : 'border-[var(--signal-danger-300)]'}`}>
-                                  <div className="flex">
-                                    {/* 左: 大きい損益% */}
-                                    <div className={`flex flex-col items-center justify-center px-5 py-4 min-w-[90px] ${isWin ? 'bg-[var(--signal-safe-100)]' : 'bg-[var(--signal-danger-100)]'}`}>
-                                      <span className={`text-xl font-extrabold font-mono ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                        {isWin ? '+' : ''}{t.return_pct.toFixed(1)}%
-                                      </span>
-                                      <span className={`text-[10px] font-bold mt-1 ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
-                                        {isWin ? '利確' : '損切'}
-                                      </span>
-                                    </div>
-                                    {/* 右: 詳細 */}
-                                    <div className="flex-1 px-4 py-3 space-y-1">
-                                      <div className="text-sm font-bold text-foreground">{reason}</div>
-                                      <div className="text-xs text-neutral-500">{t.holding_days}日保有 · {sellPct}売却</div>
-                                      <div className="text-xs text-neutral-500 font-mono">
-                                        {ccy}{t.entry_price.toFixed(2)} ({t.entry_date}) → {ccy}{t.exit_price.toFixed(2)} ({t.exit_date})
+                        {trades.length > 0 && (() => {
+                          const isPartialReason = (r: string) => r.includes('partial') || r.includes('Partial');
+                          const exitLabel = (r: string) => {
+                            const base = r.replace('(partial)', '').replace('_Partial', '_Full').trim();
+                            const map: Record<string, string> = { 'ATR_Floor': '① 損切ライン', 'Mirror_Full': '② 弱気転換', 'Trail_Stop': '③ 利確ストップ', 'Time_Stop': '④ 保有期限' };
+                            return map[base] || r;
+                          };
+                          // entry_date でグルーピング
+                          const grouped = new Map<string, typeof trades>();
+                          trades.forEach(t => { const a = grouped.get(t.entry_date) || []; a.push(t); grouped.set(t.entry_date, a); });
+                          const posRows = Array.from(grouped.values()).map(group => {
+                            const sorted = [...group].sort((a, b) => a.exit_date.localeCompare(b.exit_date));
+                            const partial = sorted.find(t => isPartialReason(t.exit_reason));
+                            const full = sorted.find(t => !isPartialReason(t.exit_reason));
+                            const final_ = full || partial!;
+                            const blended = partial && full ? partial.return_pct * 0.5 + full.return_pct * 0.5 : final_.return_pct;
+                            return { entry: final_, partial, full, blended, final: final_ };
+                          }).sort((a, b) => b.final.exit_date.localeCompare(a.final.exit_date)).slice(0, 5);
+
+                          const fmtD = (d: string) => d.slice(5).replace('-', '/');
+                          return (
+                            <div className="space-y-3">
+                              <div className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">取引履歴（直近{posRows.length}件）</div>
+                              {posRows.map((p, i) => {
+                                const isWin = p.blended >= 0;
+                                return (
+                                  <div key={`trade-${i}`} className={`rounded-xl border-2 bg-card overflow-hidden ${isWin ? 'border-[var(--signal-safe-300)]' : 'border-[var(--signal-danger-300)]'}`}>
+                                    <div className="flex">
+                                      <div className={`flex flex-col items-center justify-center px-5 py-4 min-w-[90px] ${isWin ? 'bg-[var(--signal-safe-100)]' : 'bg-[var(--signal-danger-100)]'}`}>
+                                        <span className={`text-xl font-extrabold font-mono ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                          {isWin ? '+' : ''}{p.blended.toFixed(1)}%
+                                        </span>
+                                        <span className={`text-[10px] font-bold mt-1 ${isWin ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                          {isWin ? '利確' : '損切'}
+                                        </span>
+                                        <span className="text-[10px] text-neutral-400 mt-1">{p.final.holding_days}日保有</span>
                                       </div>
-                                      {savedPct !== null && savedPct > 0 && (
-                                        <div className="text-xs text-[var(--signal-safe-500)] font-medium">
-                                          決済効果: {savedPct.toFixed(1)}% 分の損失を回避
+                                      <div className="flex-1 px-4 py-3">
+                                        <div className="relative pl-4 space-y-2.5">
+                                          <div className="absolute left-[5px] top-[6px] bottom-[6px] w-px bg-neutral-200" />
+                                          <div className="relative flex items-baseline gap-2">
+                                            <div className="absolute -left-4 top-[5px] w-2 h-2 rounded-full bg-neutral-400 ring-2 ring-white" />
+                                            <span className="text-[11px] text-neutral-400 w-12 shrink-0">買付</span>
+                                            <span className="text-xs font-mono text-neutral-600">{fmtD(p.final.entry_date)}</span>
+                                            <span className="text-xs font-mono text-neutral-500">{ccy}{p.final.entry_price.toFixed(2)}</span>
+                                          </div>
+                                          {p.partial && (
+                                            <div className="relative flex items-baseline gap-2">
+                                              <div className="absolute -left-4 top-[5px] w-2 h-2 rounded-full bg-[var(--signal-caution-400)] ring-2 ring-white" />
+                                              <span className="text-[11px] text-[var(--signal-caution-500)] font-medium w-12 shrink-0">50%売却</span>
+                                              <span className="text-xs font-mono text-neutral-600">{fmtD(p.partial.exit_date)}</span>
+                                              <span className="text-xs font-mono text-neutral-500">{ccy}{p.partial.exit_price.toFixed(2)}</span>
+                                              <span className={`text-xs font-bold font-mono ${p.partial.return_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                                {p.partial.return_pct >= 0 ? '+' : ''}{p.partial.return_pct.toFixed(1)}%
+                                              </span>
+                                              <span className="text-[10px] text-neutral-400">{exitLabel(p.partial.exit_reason)}</span>
+                                            </div>
+                                          )}
+                                          <div className="relative flex items-baseline gap-2">
+                                            <div className={`absolute -left-4 top-[5px] w-2 h-2 rounded-full ring-2 ring-white ${isWin ? 'bg-[var(--signal-safe-500)]' : 'bg-[var(--signal-danger-500)]'}`} />
+                                            <span className={`text-[11px] font-medium w-12 shrink-0 ${isWin ? 'text-[var(--signal-safe-600)]' : 'text-[var(--signal-danger-600)]'}`}>
+                                              {p.partial ? '残50%' : '全決済'}
+                                            </span>
+                                            <span className="text-xs font-mono text-neutral-600">{fmtD(p.final.exit_date)}</span>
+                                            <span className="text-xs font-mono text-neutral-500">{ccy}{p.final.exit_price.toFixed(2)}</span>
+                                            <span className={`text-xs font-bold font-mono ${p.final.return_pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                              {p.final.return_pct >= 0 ? '+' : ''}{p.final.return_pct.toFixed(1)}%
+                                            </span>
+                                            <span className="text-[10px] text-neutral-400">{exitLabel(p.final.exit_reason)}</span>
+                                          </div>
                                         </div>
-                                      )}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         {/* ── Empty state ── */}
                         {!signalHistory && !historyLoading && !isBuyNow && (
@@ -1469,9 +1503,10 @@ function SignalsPage() {
                   type PositionRow = {
                     entryDate: string; entryPrice: number;
                     finalExitDate: string | null; finalExitPrice: number | null;
-                    finalReturnPct: number; holdingDays: number;
-                    reason: string; isActive: boolean;
-                    halfSell: { date: string; pct: number; reason: string } | null;
+                    finalReturnPct: number; blendedReturnPct: number;
+                    holdingDays: number;
+                    fullReason: string; isActive: boolean;
+                    halfSell: { date: string; price: number; pct: number; reason: string } | null;
                   };
                   const tradesByEntry = new Map<string, typeof trades>();
                   trades.forEach(t => {
@@ -1486,21 +1521,20 @@ function SignalsPage() {
                     const partialTrade = sorted.find(t => isPartial(t.exit_reason));
                     const fullTrade = sorted.find(t => !isPartial(t.exit_reason));
                     const finalTrade = fullTrade || partialTrade!;
-                    const onlyPartial = partialTrade && !fullTrade;
                     const halfReasonBase = partialTrade ? partialTrade.exit_reason.replace('(partial)', '').replace('_Partial', '_Full').trim() : '';
+                    const blended = partialTrade && fullTrade
+                      ? partialTrade.return_pct * 0.5 + fullTrade.return_pct * 0.5
+                      : finalTrade.return_pct;
 
                     closedRows.push({
                       entryDate: finalTrade.entry_date, entryPrice: finalTrade.entry_price,
                       finalExitDate: finalTrade.exit_date, finalExitPrice: finalTrade.exit_price,
-                      finalReturnPct: finalTrade.return_pct, holdingDays: finalTrade.holding_days,
-                      reason: onlyPartial
-                        ? `${reasonLabel(halfReasonBase)} (50% 売却)`
-                        : partialTrade && fullTrade
-                          ? `${reasonLabel(halfReasonBase)} → ${reasonLabel(fullTrade.exit_reason)}`
-                          : reasonLabel(finalTrade.exit_reason),
+                      finalReturnPct: finalTrade.return_pct, blendedReturnPct: blended,
+                      holdingDays: finalTrade.holding_days,
+                      fullReason: fullTrade ? reasonLabel(fullTrade.exit_reason) : reasonLabel(halfReasonBase),
                       isActive: false,
-                      halfSell: partialTrade && fullTrade
-                        ? { date: partialTrade.exit_date, pct: partialTrade.return_pct, reason: reasonLabel(halfReasonBase) }
+                      halfSell: partialTrade
+                        ? { date: partialTrade.exit_date, price: partialTrade.exit_price, pct: partialTrade.return_pct, reason: reasonLabel(halfReasonBase) }
                         : null,
                     });
                   });
@@ -1510,14 +1544,15 @@ function SignalsPage() {
                     ...activePositions.map(s => ({
                       entryDate: s.entry_date, entryPrice: s.entry_price,
                       finalExitDate: null as string | null, finalExitPrice: signal?.price ?? null,
-                      finalReturnPct: s.unrealized_pct, holdingDays: s.holding_days,
-                      reason: s.trail_active ? '追従中' : '監視中',
+                      finalReturnPct: s.unrealized_pct, blendedReturnPct: s.unrealized_pct,
+                      holdingDays: s.holding_days,
+                      fullReason: s.trail_active ? '追従中' : '監視中',
                       isActive: true,
-                      halfSell: s.partial_exit_done ? { date: '—', pct: 0, reason: '半分売却済' } : null,
+                      halfSell: s.partial_exit_done ? { date: s.choch_exit_date ?? '—', price: 0, pct: 0, reason: '② 弱気転換' } : null,
                     })),
                   ].sort((a, b) => b.entryDate.localeCompare(a.entryDate));
 
-                  const winCount = closedRows.filter(r => r.finalReturnPct >= 0).length;
+                  const winCount = closedRows.filter(r => r.blendedReturnPct >= 0).length;
                   const totalCount = closedRows.length;
 
                   return (
@@ -1543,7 +1578,7 @@ function SignalsPage() {
                       {rows.length > 0 ? (
                         <div className="space-y-2">
                           {rows.map((r, i) => {
-                            const isWin = r.finalReturnPct >= 0;
+                            const isWin = r.blendedReturnPct >= 0;
                             const borderColor = r.isActive ? 'border-[var(--brand-200)]'
                               : isWin ? 'border-[var(--signal-safe-300)]'
                               : 'border-[var(--signal-danger-300)]';
@@ -1553,39 +1588,73 @@ function SignalsPage() {
                             const pctColor = r.isActive ? 'text-[var(--brand-700)]'
                               : isWin ? 'text-[var(--signal-safe-500)]'
                               : 'text-[var(--signal-danger-500)]';
+                            const fmtDate = (d: string) => d.slice(5).replace('-', '/');
                             return (
                               <div key={`pos-${i}`} className={`rounded-xl border-2 ${borderColor} bg-card overflow-hidden`}>
                                 <div className="flex">
                                   {/* 左: 損益% */}
-                                  <div className={`flex flex-col items-center justify-center px-4 py-3 min-w-[80px] ${leftBg}`}>
-                                    <span className={`text-lg font-extrabold font-mono ${pctColor}`}>
-                                      {isWin ? '+' : ''}{r.finalReturnPct.toFixed(1)}%
+                                  <div className={`flex flex-col items-center justify-center px-5 py-4 min-w-[90px] ${leftBg}`}>
+                                    <span className={`text-xl font-extrabold font-mono ${pctColor}`}>
+                                      {isWin ? '+' : ''}{r.blendedReturnPct.toFixed(1)}%
                                     </span>
-                                    <span className={`text-[10px] font-bold mt-0.5 ${pctColor}`}>
-                                      {r.isActive ? '保有中' : isWin ? '利確' : '損切'}
+                                    <span className={`text-[10px] font-bold mt-1 ${pctColor}`}>
+                                      {r.isActive ? '含み損益' : '実現損益'}
                                     </span>
+                                    <span className="text-[10px] text-neutral-400 mt-1">{r.holdingDays}日保有</span>
                                   </div>
-                                  {/* 右: 詳細 */}
-                                  <div className="flex-1 px-4 py-3 flex items-center justify-between flex-wrap gap-1">
-                                    <div className="space-y-0.5">
-                                      <div className="text-sm font-bold text-foreground">{r.reason}</div>
+                                  {/* 右: 決済タイムライン */}
+                                  <div className="flex-1 px-4 py-3">
+                                    <div className="relative pl-4 space-y-2.5">
+                                      {/* 縦線 */}
+                                      <div className="absolute left-[5px] top-[6px] bottom-[6px] w-px bg-neutral-200" />
+
+                                      {/* 買付 */}
+                                      <div className="relative flex items-baseline gap-2">
+                                        <div className="absolute -left-4 top-[5px] w-2 h-2 rounded-full bg-neutral-400 ring-2 ring-white" />
+                                        <span className="text-[11px] text-neutral-400 w-12 shrink-0">買付</span>
+                                        <span className="text-xs font-mono text-neutral-600">{fmtDate(r.entryDate)}</span>
+                                        <span className="text-xs font-mono text-neutral-500">{ccy2}{r.entryPrice.toFixed(2)}</span>
+                                      </div>
+
+                                      {/* 50% 売却 (partial) */}
                                       {r.halfSell && r.halfSell.date !== '—' && (
-                                        <div className="text-[11px] text-[var(--signal-caution-500)] font-medium">
-                                          50% 売却: {r.halfSell.date} ({r.halfSell.pct >= 0 ? '+' : ''}{r.halfSell.pct.toFixed(1)}%)
+                                        <div className="relative flex items-baseline gap-2">
+                                          <div className="absolute -left-4 top-[5px] w-2 h-2 rounded-full bg-[var(--signal-caution-400)] ring-2 ring-white" />
+                                          <span className="text-[11px] text-[var(--signal-caution-500)] font-medium w-12 shrink-0">50%売却</span>
+                                          <span className="text-xs font-mono text-neutral-600">{fmtDate(r.halfSell.date)}</span>
+                                          <span className="text-xs font-mono text-neutral-500">{ccy2}{r.halfSell.price.toFixed(2)}</span>
+                                          <span className={`text-xs font-bold font-mono ${r.halfSell.pct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                            {r.halfSell.pct >= 0 ? '+' : ''}{r.halfSell.pct.toFixed(1)}%
+                                          </span>
+                                          <span className="text-[10px] text-neutral-400">{r.halfSell.reason}</span>
                                         </div>
                                       )}
                                       {r.halfSell && r.halfSell.date === '—' && (
-                                        <div className="text-[11px] text-[var(--signal-caution-500)] font-medium">50% 売却済</div>
+                                        <div className="relative flex items-baseline gap-2">
+                                          <div className="absolute -left-4 top-[5px] w-2 h-2 rounded-full bg-[var(--signal-caution-400)] ring-2 ring-white" />
+                                          <span className="text-[11px] text-[var(--signal-caution-500)] font-medium">50% 売却済</span>
+                                        </div>
                                       )}
-                                      <div className="text-xs text-neutral-500 font-mono">
-                                        {r.entryDate} → {r.finalExitDate || '保有中'}
+
+                                      {/* 全決済 / 保有中 */}
+                                      <div className="relative flex items-baseline gap-2">
+                                        <div className={`absolute -left-4 top-[5px] w-2 h-2 rounded-full ring-2 ring-white ${r.isActive ? 'bg-[var(--brand-500)]' : isWin ? 'bg-[var(--signal-safe-500)]' : 'bg-[var(--signal-danger-500)]'}`} />
+                                        <span className={`text-[11px] font-medium w-12 shrink-0 ${r.isActive ? 'text-[var(--brand-700)]' : isWin ? 'text-[var(--signal-safe-600)]' : 'text-[var(--signal-danger-600)]'}`}>
+                                          {r.isActive ? '保有中' : r.halfSell ? '残50%' : '全決済'}
+                                        </span>
+                                        {r.finalExitDate && (
+                                          <span className="text-xs font-mono text-neutral-600">{fmtDate(r.finalExitDate)}</span>
+                                        )}
+                                        {r.finalExitPrice != null && (
+                                          <span className="text-xs font-mono text-neutral-500">{ccy2}{r.finalExitPrice.toFixed(2)}</span>
+                                        )}
+                                        {!r.isActive && (
+                                          <span className={`text-xs font-bold font-mono ${r.finalReturnPct >= 0 ? 'text-[var(--signal-safe-500)]' : 'text-[var(--signal-danger-500)]'}`}>
+                                            {r.finalReturnPct >= 0 ? '+' : ''}{r.finalReturnPct.toFixed(1)}%
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-neutral-400">{r.fullReason}</span>
                                       </div>
-                                    </div>
-                                    <div className="text-right space-y-0.5">
-                                      <div className="text-xs text-neutral-500 font-mono">
-                                        {ccy2}{r.entryPrice.toFixed(2)} → {r.finalExitPrice ? `${ccy2}${r.finalExitPrice.toFixed(2)}` : '—'}
-                                      </div>
-                                      <div className="text-[10px] text-neutral-500">{r.holdingDays}日保有</div>
                                     </div>
                                   </div>
                                 </div>
@@ -1909,6 +1978,70 @@ function SignalsPage() {
                       <span>保有中は毎日、4 つの売却ルールがチェックされ続けます。</span>
                     </li>
                   </ol>
+                </DocSection>
+
+                {/* ── 過去のポジションの見方 ── */}
+                <DocSection title="過去のポジションの見方">
+                  <p className="text-sm text-neutral-700 mb-4">
+                    「過去のポジション」タブでは、過去 1 年間の売買結果がカード形式で表示されます。
+                  </p>
+
+                  <div className="space-y-4">
+                    {/* カードの構造説明 */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">カードの読み方</h4>
+                      <div className="rounded-lg border border-neutral-200 bg-card p-4 space-y-3">
+                        <div className="flex gap-4">
+                          <div className="rounded-lg bg-[var(--signal-safe-100)] px-4 py-3 min-w-[80px] flex flex-col items-center justify-center shrink-0">
+                            <span className="text-lg font-extrabold font-mono text-[var(--signal-safe-500)]">+15.0%</span>
+                            <span className="text-[10px] font-bold text-[var(--signal-safe-500)]">実現損益</span>
+                          </div>
+                          <div className="flex-1 text-xs space-y-2 text-neutral-600">
+                            <p><strong className="text-foreground">左側 — 実現損益</strong>: ポジション全体の最終損益です。50% 売却がある場合は、前半と後半をそれぞれ 50% ずつ加重平均した値になります。</p>
+                            <p><strong className="text-foreground">右側 — 決済タイムライン</strong>: 買付から決済までの流れが時系列で表示されます。各ステップの損益% は買付価格からの変動率です。</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 50%売却の流れ */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">50% 売却がある場合の流れ</h4>
+                      <p className="text-xs text-neutral-600 mb-3">
+                        ② 弱気転換ルールが発動すると、まず保有の半分を売却します。残り半分は ①③④ のいずれかのルールで後日決済されます。
+                      </p>
+                      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                        <div className="relative pl-5 space-y-3">
+                          <div className="absolute left-[7px] top-[6px] bottom-[6px] w-px bg-neutral-300" />
+                          <div className="relative flex items-baseline gap-3">
+                            <div className="absolute -left-5 top-[5px] w-2.5 h-2.5 rounded-full bg-neutral-400 ring-2 ring-neutral-50" />
+                            <span className="text-[11px] text-neutral-400 w-14 shrink-0 font-medium">買付</span>
+                            <span className="text-xs text-neutral-600">シグナルに従って購入 (100%)</span>
+                          </div>
+                          <div className="relative flex items-baseline gap-3">
+                            <div className="absolute -left-5 top-[5px] w-2.5 h-2.5 rounded-full bg-[var(--signal-caution-400)] ring-2 ring-neutral-50" />
+                            <span className="text-[11px] text-[var(--signal-caution-500)] w-14 shrink-0 font-medium">50%売却</span>
+                            <span className="text-xs text-neutral-600">弱気転換を検出 → 半分だけ売却して利益を確保</span>
+                          </div>
+                          <div className="relative flex items-baseline gap-3">
+                            <div className="absolute -left-5 top-[5px] w-2.5 h-2.5 rounded-full bg-[var(--signal-safe-500)] ring-2 ring-neutral-50" />
+                            <span className="text-[11px] text-[var(--signal-safe-600)] w-14 shrink-0 font-medium">残50%</span>
+                            <span className="text-xs text-neutral-600">残り半分が ③ 利確ストップ等で決済される</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 損益の計算例 */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-2">実現損益の計算</h4>
+                      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs space-y-2 text-neutral-600">
+                        <p>例: $100 で買付 → 50% 売却で $110 (+10%) → 残50% を $120 で決済 (+20%)</p>
+                        <p className="font-mono text-foreground font-bold">実現損益 = (+10% × 0.5) + (+20% × 0.5) = <span className="text-[var(--signal-safe-500)]">+15.0%</span></p>
+                        <p className="text-neutral-500 pt-1 border-t border-neutral-200">50% 売却がない通常の決済では、そのまま 1 件の損益が表示されます。</p>
+                      </div>
+                    </div>
+                  </div>
                 </DocSection>
               </div>
             </TabsContent>

@@ -995,8 +995,13 @@ async def get_signal_history(
                 if result.exit_idx <= ep["entry_idx"]:
                     continue  # 0日保有（データ末尾エントリー）はスキップ
 
-                # partial exit (CHoCH 50%売却) がある場合、先に partial レコードを追加
-                if result.partial_exit_price is not None:
+                # partial exit (CHoCH 50%売却) — 同日でなければ 2 レコード、同日なら 1 レコード (blend)
+                has_split_partial = (
+                    result.partial_exit_price is not None
+                    and result.partial_exit_idx != result.exit_idx
+                )
+
+                if has_split_partial:
                     p_ret = (result.partial_exit_price - ep["entry_price"]) / ep["entry_price"] * 100
                     p_date = df['Date'].iloc[result.partial_exit_idx] if result.partial_exit_idx < len(df) else ep["date"]
                     p_days = result.partial_exit_idx - ep["entry_idx"]
@@ -1021,15 +1026,23 @@ async def get_signal_history(
                         "entry_price": round(ep["entry_price"], 2),
                     })
 
-                # full exit レコード（partial がない場合は唯一のレコード）
-                ret_pct = (result.exit_price - ep["entry_price"]) / ep["entry_price"] * 100
+                # full exit レコード（同日 partial の場合は blend して 1 レコード）
+                if result.partial_exit_price is not None and not has_split_partial:
+                    # 同日: 50% × partial + 50% × full の blend
+                    blended_price = result.partial_exit_price * 0.5 + result.exit_price * 0.5
+                    ret_pct = (blended_price - ep["entry_price"]) / ep["entry_price"] * 100
+                    exit_reason = result.exit_reason
+                else:
+                    ret_pct = (result.exit_price - ep["entry_price"]) / ep["entry_price"] * 100
+                    blended_price = result.exit_price
+                    exit_reason = result.exit_reason
                 exit_date = df['Date'].iloc[result.exit_idx] if result.exit_idx < len(df) else ep["date"]
                 trade_results.append({
                     "entry_date": ep["date"],
                     "exit_date": exit_date,
                     "entry_price": ep["entry_price"],
-                    "exit_price": result.exit_price,
-                    "exit_reason": result.exit_reason,
+                    "exit_price": blended_price,
+                    "exit_reason": exit_reason,
                     "return_pct": ret_pct,
                     "holding_days": result.exit_idx - ep["entry_idx"],
                 })
