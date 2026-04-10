@@ -24,7 +24,7 @@ func CORSMiddleware(cfg *config.Config) echo.MiddlewareFunc {
 	return middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     allowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Authorization", "X-MFA-Token"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "X-MFA-Token", "X-Requested-With"},
 		AllowCredentials: true,
 		MaxAge:           86400,
 	})

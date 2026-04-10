@@ -55,6 +55,7 @@ export async function refreshToken(): Promise<boolean> {
   refreshPromise = fetch(`${API_URL}/api/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
   }).then(r => r.ok).finally(() => { refreshPromise = null; });
   return refreshPromise;
 }
@@ -66,6 +67,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       ...options?.headers,
     },
   });
@@ -75,11 +77,10 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
     if (refreshed) {
       return fetchAPI(endpoint, options, true);
     }
-    // localhost (dev) では auth bypass しているので redirect ループを避けるためエラーだけ throw
-    const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-    if (typeof window !== 'undefined' && !isRedirecting() && !isLocalDev) {
+    // 開発環境では auth bypass しているので redirect ループを避けるためエラーだけ throw
+    if (typeof window !== 'undefined' && !isRedirecting() && process.env.NODE_ENV !== 'development') {
       markRedirecting();
-      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
       window.location.href = '/login/';
     }
     throw new ApiError(401, 'Session expired');

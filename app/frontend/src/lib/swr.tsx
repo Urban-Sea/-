@@ -23,11 +23,10 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
       });
     }
     if (response.status === 401) {
-      // localhost (dev) では auth bypass しているので redirect ループを避けるためエラーだけ throw
-      const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      if (typeof window !== 'undefined' && !isRedirecting() && !isLocalDev) {
+      // 開発環境では auth bypass しているので redirect ループを避けるためエラーだけ throw
+      if (typeof window !== 'undefined' && !isRedirecting() && process.env.NODE_ENV !== 'development') {
         markRedirecting();
-        fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+        fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
         window.location.href = '/login/';
       }
       throw new ApiError(401, 'Session expired');

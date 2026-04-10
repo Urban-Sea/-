@@ -45,7 +45,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const initial = email ? email.charAt(0).toUpperCase() : '?';
 
   const signOut = async () => {
-    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
     window.location.href = '/api/auth/google';
   };
 

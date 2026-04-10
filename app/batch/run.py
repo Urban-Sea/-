@@ -118,7 +118,10 @@ import urllib.request
 
 logger = logging.getLogger("batch")
 
-BACKEND_URL = os.getenv("WARMUP_BACKEND_URL", "https://open-regime.com")
+# warmup は Docker 内部ネットワーク経由で直接叩く (nginx を経由しない)
+# → 外部から ?purge=1 を叩けなくなる (nginx でブロック)
+_API_GO_URL = "http://api-go:8080"
+_API_PYTHON_URL = "http://api-python:8081"
 
 # 2026-04-09: warmup 対象を「実際にキャッシュ実装済みエンドポイント」だけに絞る。
 # api-go ハンドラのうち Redis cache を持つのは fx と employment (本日追加) のみ。
@@ -126,9 +129,9 @@ BACKEND_URL = os.getenv("WARMUP_BACKEND_URL", "https://open-regime.com")
 # 走って結果が捨てられるだけの無駄な DB 負荷になるので除外。
 # /api/regime は api-python が serve しているので Python の cache_get/cache_set が効く。
 WARMUP_ENDPOINTS = [
-    "/api/regime",                                       # api-python (24h cache, 既存)
-    "/api/employment/risk-score?purge=1",                # api-go (24h cache, 本日追加)
-    "/api/employment/risk-history?months=350&purge=1",   # api-go (24h cache, 本日追加)
+    (_API_PYTHON_URL, "/api/regime"),                                       # api-python (24h cache)
+    (_API_GO_URL, "/api/employment/risk-score?purge=1"),                    # api-go (24h cache)
+    (_API_GO_URL, "/api/employment/risk-history?months=350&purge=1"),       # api-go (24h cache)
 ]
 
 # api-go の ?purge=1 認証用ヘッダ。
@@ -145,9 +148,9 @@ def _warmup_cache():
     else:
         logger.warning("WARMUP_TOKEN env var not set — purge endpoints will return 403")
 
-    for ep in WARMUP_ENDPOINTS:
+    for base_url, ep in WARMUP_ENDPOINTS:
         try:
-            req = urllib.request.Request(f"{BACKEND_URL}{ep}", headers=headers)
+            req = urllib.request.Request(f"{base_url}{ep}", headers=headers)
             urllib.request.urlopen(req, timeout=60)
             logger.info(f"  ✓ {ep}")
         except Exception as e:

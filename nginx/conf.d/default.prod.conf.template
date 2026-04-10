@@ -66,6 +66,10 @@ server {
 
     # Go CRUD API
     location /api/ {
+        # Block external cache purge — warmup uses Docker internal network directly
+        if ($arg_purge) {
+            return 403;
+        }
         proxy_pass http://api_go;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -101,6 +105,9 @@ server {
 
     # Go API (so admin-frontend can use relative /api/ paths)
     location /api/ {
+        if ($arg_purge) {
+            return 403;
+        }
         proxy_pass http://api_go;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

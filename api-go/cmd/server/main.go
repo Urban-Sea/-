@@ -152,6 +152,7 @@ func main() {
 	}
 	e.Use(middleware.SecurityHeaders())
 	e.Use(middleware.CORSMiddleware(cfg))
+	e.Use(middleware.CSRFProtection())
 	e.Use(middleware.RateLimitMiddleware(rdb))
 
 	// ── Public routes ──

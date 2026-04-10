@@ -30,7 +30,7 @@ async function swrFetcher<T>(endpoint: string): Promise<T> {
     }
     if (response.status === 401) {
       if (typeof window !== 'undefined') {
-        fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+        fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
         window.location.href = '/api/auth/google';
       }
       throw new ApiError(401, 'Session expired');

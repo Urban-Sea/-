@@ -59,8 +59,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // ── localhost (開発) では Google 認証をスキップしてダミー user を入れる
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    // ── 開発環境では Google 認証をスキップしてダミー user を入れる
+    if (process.env.NODE_ENV === 'development') {
       setUser({ id: 'local-dev', email: 'dev@localhost', display_name: 'Local Dev', plan: 'free' });
       setIsLoading(false);
       return;
@@ -73,7 +73,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!user;
 
   const signOut = async () => {
-    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
     Sentry.setUser(null);
     window.location.href = '/login/';
   };

@@ -17,6 +17,7 @@ export async function refreshToken(): Promise<boolean> {
   refreshPromise = fetch(`${API_URL}/api/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
   }).then(r => r.ok).finally(() => { refreshPromise = null; });
   return refreshPromise;
 }
@@ -29,6 +30,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       ...(mfaToken ? { 'X-MFA-Token': mfaToken } : {}),
       ...options?.headers,
     },
@@ -40,7 +42,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit, isRetry = fa
       return fetchAPI(endpoint, options, true);
     }
     if (typeof window !== 'undefined') {
-      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
       window.location.href = '/api/auth/google';
     }
     throw new ApiError(401, 'Session expired');
