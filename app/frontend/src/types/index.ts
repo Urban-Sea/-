@@ -874,3 +874,41 @@ export interface BacktestData {
   total_months: number;
   event_timeline?: CrisisEvent[];
 }
+
+// ── Discovery (finviz Phase B) ──
+
+export interface DiscoveredStock {
+  scan_date: string;
+  ticker: string;
+  presets: string[];
+  finviz_score: number;
+  fundament: {
+    Ticker?: string;
+    Beta?: number | null;
+    ATR?: number | null;
+    SMA20?: number | null;
+    SMA50?: number | null;
+    SMA200?: number | null;
+    '52W High'?: number | null;
+    '52W Low'?: number | null;
+    RSI?: number | null;
+    Price?: number | null;
+    Change?: number | null;
+    Volume?: number | null;
+    ROE?: number | null;
+    'Debt/Eq'?: number | null;
+    [key: string]: unknown;
+  };
+  created_at: string;
+  had_signal?: boolean | null;
+  signal_grade?: string | null;
+}
+
+export interface DiscoveryResponse {
+  scan_date: string;
+  preset_counts: Record<string, number>;
+  total_unique: number;
+  after_threshold: number;
+  threshold: number;
+  tickers: DiscoveredStock[];
+}

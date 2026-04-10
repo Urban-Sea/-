@@ -158,6 +158,7 @@ services:
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - WARMUP_TOKEN=${WARMUP_TOKEN:-}
+      - PUBLISH_TOKEN=${PUBLISH_TOKEN:-}
       - ENVIRONMENT=production
     volumes:
       - /var/log/open-regime/api-go:/var/log/open-regime/api-go

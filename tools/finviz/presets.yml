@@ -17,6 +17,8 @@
 momentum:
   module: technical
   filters:
+    "Industry": "Stocks only (ex-Funds)"
+    "Beta": "Over 0.5"
     "52-Week High/Low": "0-10% below High"
     "200-Day Simple Moving Average": "Price above SMA200"
     "50-Day Simple Moving Average": "Price above SMA50"
@@ -27,6 +29,8 @@ momentum:
 pullback:
   module: technical
   filters:
+    "Industry": "Stocks only (ex-Funds)"
+    "Beta": "Over 0.5"
     "200-Day Simple Moving Average": "Price above SMA200"
     "50-Day Simple Moving Average": "Price below SMA50"
     "Average Volume": "Over 1M"
@@ -37,6 +41,8 @@ pullback:
 quality:
   module: financial
   filters:
+    "Industry": "Stocks only (ex-Funds)"
+    "Beta": "Over 0.5"
     "Return on Equity": "Over +20%"
     "P/E": "Under 25"
     "EPS growththis year": "Over 15%"
@@ -49,6 +55,8 @@ quality:
 breakout:
   module: technical
   filters:
+    "Industry": "Stocks only (ex-Funds)"
+    "Beta": "Over 0.5"
     "52-Week High/Low": "0-3% below High"
     "Relative Volume": "Over 1.5"
     "200-Day Simple Moving Average": "Price above SMA200"

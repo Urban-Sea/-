@@ -116,6 +116,7 @@ func main() {
 	liquidityRepo := repository.NewLiquidityRepository(pool)
 	employmentRepo := repository.NewEmploymentRepository(pool)
 	adminRepo := repository.NewAdminRepository(pool)
+	discoveryRepo := repository.NewDiscoveryRepository(pool)
 	mfaRepo := repository.NewMFARepository(pool)
 
 	// ── Services ──
@@ -137,6 +138,7 @@ func main() {
 	liquidityHandler := handler.NewLiquidityHandler(liquidityRepo)
 	employmentHandler := handler.NewEmploymentHandler(employmentRepo, rdb, cfg.WarmupToken)
 	adminHandler := handler.NewAdminHandler(adminRepo)
+	discoveryHandler := handler.NewDiscoveryHandler(discoveryRepo, adminRepo, rdb, cfg.PublishToken)
 	billingHandler := handler.NewBillingHandler(cfg, userRepo)
 
 	// ── Echo ──
@@ -218,6 +220,11 @@ func main() {
 	// ── Admin routes ──
 	admin := e.Group("/api/admin", middleware.AuthMiddleware(authSvc), middleware.AdminMFAMiddleware(cfg, pool))
 	adminHandler.Register(admin)
+
+	// Discovery (public GET + token-auth POST)
+	// POST uses X-Publish-Token (handler-level auth), not admin middleware.
+	discoveryPublic := e.Group("/api/discovery")
+	discoveryHandler.Register(admin, discoveryPublic)
 
 	// Admin MFA (auth + admin check, but no MFA required for setup)
 	adminMFA := e.Group("/api/admin/mfa", middleware.AuthMiddleware(authSvc), middleware.AdminMiddleware(cfg))

@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   BarChart3,
   Briefcase,
+  Search,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ const navItems: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
   { href: '/liquidity', label: '米国金融流動性', icon: Droplets },
   { href: '/employment', label: '米国景気リスク', icon: ShieldAlert },
+  { href: '/discovery', label: '銘柄発掘', icon: Search },
   { href: '/signals', label: '銘柄分析', icon: BarChart3 },
   { href: '/holdings', label: 'ポートフォリオ', icon: Briefcase },
 ];

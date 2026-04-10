@@ -512,3 +512,21 @@ CREATE TRIGGER set_updated_at_users
 CREATE TRIGGER set_updated_at_weekly_claims
     BEFORE UPDATE ON weekly_claims
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ── discovered_stocks (finviz Discovery Phase B) ──
+CREATE TABLE IF NOT EXISTS discovered_stocks (
+    scan_date        date         NOT NULL,
+    ticker           text         NOT NULL,
+    presets          text[]       NOT NULL,
+    finviz_score     numeric(4,2) NOT NULL,
+    fundament        jsonb        NOT NULL DEFAULT '{}',
+    created_at       timestamptz  NOT NULL DEFAULT now(),
+    had_signal       boolean,
+    signal_grade     text,
+    entry_triggered  boolean,
+    realized_pnl_pct numeric(6,2),
+    outcome_at       timestamptz,
+    PRIMARY KEY (scan_date, ticker)
+);
+CREATE INDEX idx_discovered_score  ON discovered_stocks (scan_date, finviz_score DESC);
+CREATE INDEX idx_discovered_ticker ON discovered_stocks (ticker, scan_date DESC);

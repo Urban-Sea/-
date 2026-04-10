@@ -34,6 +34,7 @@ import type {
   CashBalancesResponse,
   HoldingsInitResponse,
   WatchlistsResponse,
+  DiscoveryResponse,
 } from '@/types';
 
 import { isRedirecting, markRedirecting } from './auth-store';
@@ -601,4 +602,13 @@ export function useBatchQuotes(tickers: string[] | null) {
       count: results.reduce((s, r) => s + r.count, 0),
     };
   }, { refreshInterval: 5 * 60 * 1000, keepPreviousData: true });
+}
+
+// ── Discovery ──
+
+export function useDiscoveryToday() {
+  return useSWR<DiscoveryResponse>('/api/discovery/today', {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+  });
 }

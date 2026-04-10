@@ -47,6 +47,9 @@ type Config struct {
 	// Warmup token (batch から ?purge=1 を叩く際の認証ヘッダ X-Warmup-Token と照合)
 	WarmupToken string
 
+	// Publish token (finviz-publish.py から discovery upsert を叩く際の X-Publish-Token)
+	PublishToken string
+
 	// Environment
 	Environment string
 }
@@ -91,7 +94,8 @@ func Load() *Config {
 
 		SentryDSN: getEnv("SENTRY_DSN", ""),
 
-		WarmupToken: getEnv("WARMUP_TOKEN", ""),
+		WarmupToken:  getEnv("WARMUP_TOKEN", ""),
+		PublishToken: getEnv("PUBLISH_TOKEN", ""),
 
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
