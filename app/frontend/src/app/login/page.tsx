@@ -46,7 +46,7 @@ export default function LoginPage() {
         <div className="text-center space-y-2">
           <Image src="/icon.png" alt="" width={48} height={48} className="mx-auto rounded-lg" unoptimized />
           <h1 className="text-2xl font-bold">Open Regime</h1>
-          <p className="text-sm text-muted-foreground">アカウントにログイン</p>
+          <p className="text-sm text-muted-foreground">ログイン・新規登録</p>
         </div>
 
         {/* Google OAuth */}
@@ -80,6 +80,10 @@ export default function LoginPage() {
             </Button>
           </div>
         </GlassCard>
+
+        <p className="text-center text-xs text-muted-foreground">
+          初めての方はログイン時にアカウントが自動作成されます
+        </p>
       </div>
     </div>
   );
