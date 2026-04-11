@@ -6,7 +6,7 @@ import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Crosshair, History, BookOpen, ShieldAlert } from 'lucide-react';
-import { getSignal, getStockHistory, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker, createTrade, createHolding, useHoldings } from '@/lib/api';
+import { getSignal, getStockHistory, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker, createTrade, createHolding, useHoldings, deleteHolding, deleteTrade, getTrades } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection } from '@/components/shared/glass';
@@ -494,6 +494,65 @@ function SignalsPage() {
         </div>
       )}
 
+      {/* ── マイポジション ── */}
+      {holdingsData?.holdings?.filter((h: { shares: number }) => h.shares > 0).length > 0 && (
+        <div className="rounded-xl border border-[var(--brand-200)] bg-[var(--brand-50)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-bold text-foreground">マイポジション</span>
+            <span className="text-xs text-neutral-500">
+              {holdingsData.holdings.filter((h: { shares: number }) => h.shares > 0).length} 銘柄保有中
+            </span>
+          </div>
+          <div className="space-y-2">
+            {holdingsData.holdings
+              .filter((h: { shares: number }) => h.shares > 0)
+              .map((h: { id: string; ticker: string; avg_price: number; entry_date?: string; shares: number }) => (
+                <div key={h.id} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-neutral-200">
+                  <div className="flex items-center gap-3">
+                    <TickerIcon ticker={h.ticker} size={28} />
+                    <div>
+                      <span className="font-bold text-sm text-foreground">{h.ticker}</span>
+                      <span className="text-xs text-neutral-500 ml-2">
+                        ${h.avg_price?.toFixed(2)} で {h.entry_date?.slice(0, 10) || '日付不明'} に
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setTicker(h.ticker);
+                        handleAnalyze(h.ticker);
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--brand-100)] text-[var(--brand-700)] hover:bg-[var(--brand-200)] transition-colors"
+                    >
+                      分析
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm(`${h.ticker} のエントリー記録を取り消しますか？`)) return;
+                        try {
+                          await deleteHolding(h.id);
+                          const tradesRes = await getTrades({ ticker: h.ticker, action: 'BUY', limit: 1 });
+                          if (tradesRes?.trades?.[0]) {
+                            await deleteTrade(tradesRes.trades[0].id!);
+                          }
+                          mutateHoldings();
+                        } catch (e) {
+                          console.error('Cancel entry failed:', e);
+                        }
+                      }}
+                      className="px-2 py-1.5 text-xs font-medium rounded-md text-neutral-400 hover:text-[var(--signal-danger-500)] hover:bg-[var(--signal-danger-100)] transition-colors"
+                      title="取り消し"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Loading ── */}
       {loading && !batchLoading && <SignalsLoadingSkeleton />}
       {batchLoading && <BatchLoadingSkeleton />}
@@ -899,11 +958,39 @@ function SignalsPage() {
                       (h: { ticker: string; shares: number }) => h.ticker.toUpperCase() === signal.ticker.toUpperCase() && h.shares > 0
                     );
                     if (alreadyHeld) {
+                      const held = holdingsData?.holdings?.find(
+                        (h: { ticker: string; shares: number }) => h.ticker.toUpperCase() === signal.ticker.toUpperCase() && h.shares > 0
+                      );
                       return (
-                        <div className="mt-4">
+                        <div className="mt-4 flex items-center gap-3">
                           <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--signal-safe-100)] text-[var(--signal-safe-700)] text-sm font-semibold border border-[var(--signal-safe-300)]">
                             ✓ 保有中
+                            {held && (
+                              <span className="font-normal text-xs text-[var(--signal-safe-600)] ml-1">
+                                (${held.avg_price?.toFixed(2)} / {held.entry_date?.slice(0, 10) || ''})
+                              </span>
+                            )}
                           </span>
+                          {held && (
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm(`${signal.ticker} のエントリー記録を取り消しますか？`)) return;
+                                try {
+                                  await deleteHolding(held.id);
+                                  const tradesRes = await getTrades({ ticker: signal.ticker, action: 'BUY', limit: 1 });
+                                  if (tradesRes?.trades?.[0]) {
+                                    await deleteTrade(tradesRes.trades[0].id!);
+                                  }
+                                  mutateHoldings();
+                                } catch (e) {
+                                  console.error('Cancel entry failed:', e);
+                                }
+                              }}
+                              className="text-xs text-neutral-400 hover:text-[var(--signal-danger-500)] transition-colors"
+                            >
+                              ✕ 取り消し
+                            </button>
+                          )}
                         </div>
                       );
                     }

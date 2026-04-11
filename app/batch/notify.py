@@ -92,7 +92,7 @@ def _format_slack_message(entry_ready: list[dict], total: int, date_str: str) ->
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"Entry Signal — {date_str}",
+                "text": f"Entry Signal (機械判定) — {date_str}",
             },
         },
     ]
@@ -149,7 +149,7 @@ def _format_discord_message(entry_ready: list[dict], total: int, date_str: str) 
     if not entry_ready:
         return {
             "embeds": [{
-                "title": f"Entry Signal — {date_str}",
+                "title": f"Entry Signal (機械判定) — {date_str}",
                 "description": f"発掘 {total} 銘柄を分析しましたが、エントリー条件に合致する銘柄はありませんでした。",
                 "color": 0x808080,
             }],
@@ -176,7 +176,7 @@ def _format_discord_message(entry_ready: list[dict], total: int, date_str: str) 
 
     return {
         "embeds": [{
-            "title": f"Entry Signal — {date_str}",
+            "title": f"Entry Signal (機械判定) — {date_str}",
             "description": f"発掘 {total} 銘柄中 {len(entry_ready)} 銘柄がエントリー条件合致",
             "fields": fields,
             "color": 0x22C55E,  # green
@@ -284,7 +284,7 @@ def _format_exit_slack(alerts: list[dict], date_str: str) -> dict:
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"Exit Signal — {date_str}"},
+            "text": {"type": "plain_text", "text": f"Exit Signal (マイポジション) — {date_str}"},
         },
     ]
 
@@ -355,7 +355,7 @@ def _format_exit_discord(alerts: list[dict], date_str: str) -> dict:
     color = 0xEF4444 if any(a.get("should_exit") for a in alerts) else 0x22C55E
     return {
         "embeds": [{
-            "title": f"Exit Signal — {date_str}",
+            "title": f"Exit Signal (マイポジション) — {date_str}",
             "fields": fields,
             "color": color,
         }],

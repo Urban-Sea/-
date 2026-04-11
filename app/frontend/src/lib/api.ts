@@ -229,6 +229,10 @@ export async function createTrade(trade: Partial<TradeRecord>): Promise<TradeRec
   });
 }
 
+export async function deleteTrade(tradeId: string): Promise<void> {
+  return fetchAPI(`/api/trades/${tradeId}`, { method: 'DELETE' });
+}
+
 // Sell from Holding API
 export async function sellFromHolding(params: {
   holding_id: string;
