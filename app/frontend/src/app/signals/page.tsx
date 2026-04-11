@@ -6,7 +6,7 @@ import CandlestickChart from '@/components/charts/CandlestickChart';
 import LineChartCanvas from '@/components/charts/LineChartCanvas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Crosshair, History, BookOpen, ShieldAlert } from 'lucide-react';
-import { getSignal, getStockHistory, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker } from '@/lib/api';
+import { getSignal, getStockHistory, getSignalHistory, getChartMarkers, getBatchSignals, useStocks, useRegime, useWatchlist, addWatchlistTicker, removeWatchlistTicker, createTrade, createHolding, useHoldings } from '@/lib/api';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GlassCard, StatusChip, Metric, DocSection } from '@/components/shared/glass';
@@ -95,6 +95,8 @@ function SignalsPage() {
   const [batchResults, setBatchResults] = useState<BatchResponse | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   // exitLoading 削除 — holding タブ廃止により不要
+  const { data: holdingsData, mutate: mutateHoldings } = useHoldings();
+  const [entryRecording, setEntryRecording] = useState(false);
   const [quickTickers, setQuickTickers] = useState<string[]>(defaultQuickTickers);
   const [jpTickers, setJpTickers] = useState<Array<{ ticker: string; name: string }>>(defaultJpTickers);
   const [showAddTicker, setShowAddTicker] = useState(false);
@@ -891,6 +893,60 @@ function SignalsPage() {
                       ? `ポジションサイズ: ${signal.position_size_pct}%`
                       : signal.mode_note || '条件未達成'}
                   </div>
+                  {/* エントリー記録ボタン */}
+                  {signal.entry_allowed && (() => {
+                    const alreadyHeld = holdingsData?.holdings?.some(
+                      (h: { ticker: string; shares: number }) => h.ticker.toUpperCase() === signal.ticker.toUpperCase() && h.shares > 0
+                    );
+                    if (alreadyHeld) {
+                      return (
+                        <div className="mt-4">
+                          <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--signal-safe-100)] text-[var(--signal-safe-700)] text-sm font-semibold border border-[var(--signal-safe-300)]">
+                            ✓ 保有中
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-4">
+                        <button
+                          disabled={entryRecording}
+                          onClick={async () => {
+                            setEntryRecording(true);
+                            try {
+                              const today = new Date().toISOString().slice(0, 10);
+                              await createHolding({
+                                ticker: signal.ticker,
+                                shares: 1,
+                                avg_price: signal.price,
+                                entry_date: today,
+                                regime_at_entry: signal.regime || undefined,
+                                rs_at_entry: signal.relative_strength?.trend || undefined,
+                              });
+                              await createTrade({
+                                ticker: signal.ticker,
+                                action: 'BUY',
+                                shares: 1,
+                                price: signal.price,
+                                trade_date: today,
+                                regime: signal.regime || undefined,
+                                rs_trend: signal.relative_strength?.trend || undefined,
+                                reason: 'signal entry',
+                              });
+                              mutateHoldings();
+                            } catch (e) {
+                              console.error('Entry record failed:', e);
+                            } finally {
+                              setEntryRecording(false);
+                            }
+                          }}
+                          className="px-6 py-2.5 rounded-lg bg-[var(--signal-safe-500)] text-white text-sm font-bold hover:bg-[var(--signal-safe-600)] transition-colors disabled:opacity-50"
+                        >
+                          {entryRecording ? '記録中...' : 'エントリーした'}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Toggle Details */}

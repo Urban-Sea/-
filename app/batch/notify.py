@@ -246,3 +246,184 @@ def check_and_notify():
         _send_discord(discord_msg)
 
     logger.info("=== Notify pipeline done ===")
+
+
+# ===== Exit 通知 =====
+
+def _fetch_holdings() -> list[dict]:
+    """DB から保有中の銘柄を取得 (shares > 0)"""
+    try:
+        from app.batch.config import get_conn
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ticker, avg_price, entry_date, user_id "
+                "FROM holdings WHERE shares > 0"
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        logger.info(f"Holdings: {len(rows)} active positions")
+        return rows
+    except Exception as e:
+        logger.error(f"Failed to fetch holdings: {e}")
+        return []
+
+
+def _check_exit(ticker: str, entry_price: float, entry_date: str) -> dict | None:
+    """GET /api/exit/{ticker} で exit 判定"""
+    try:
+        params = f"?entry_price={entry_price}&entry_date={entry_date}"
+        return _api_get(_API_PYTHON_URL, f"/api/exit/{ticker}{params}", timeout=60)
+    except Exception as e:
+        logger.error(f"Exit check failed for {ticker}: {e}")
+        return None
+
+
+def _format_exit_slack(alerts: list[dict], date_str: str) -> dict:
+    """Exit 通知の Slack メッセージ"""
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"Exit Signal — {date_str}"},
+        },
+    ]
+
+    for a in alerts:
+        ticker = a["ticker"]
+        current = a.get("current_price", 0)
+        pnl = a.get("pnl_pct", 0)
+        reason = a.get("exit_reason", "")
+        urgency = a.get("urgency", "")
+        should_exit = a.get("should_exit", False)
+        exit_pct = a.get("exit_pct", 0)
+        entry_price = a.get("entry_price", 0)
+        days = a.get("holding_days", 0)
+
+        if should_exit:
+            icon = "🔴" if exit_pct >= 100 else "🟠"
+            action = f"全売却" if exit_pct >= 100 else f"{exit_pct}%売却"
+        else:
+            icon = "✅"
+            action = "保有継続"
+
+        pnl_str = f"+{pnl:.1f}%" if pnl >= 0 else f"{pnl:.1f}%"
+        price_str = f"${current:.2f}" if current else ""
+
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"{icon} *{ticker}* {price_str} — {action}\n"
+                    f"   理由: {reason}\n"
+                    f"   含み{'益' if pnl >= 0 else '損'}: {pnl_str} | 保有 {days}日"
+                ),
+            },
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"保有 {len(alerts)} 銘柄の exit 判定結果"}],
+    })
+
+    return {"blocks": blocks}
+
+
+def _format_exit_discord(alerts: list[dict], date_str: str) -> dict:
+    """Exit 通知の Discord メッセージ"""
+    fields = []
+    for a in alerts:
+        ticker = a["ticker"]
+        current = a.get("current_price", 0)
+        pnl = a.get("pnl_pct", 0)
+        reason = a.get("exit_reason", "")
+        should_exit = a.get("should_exit", False)
+        exit_pct = a.get("exit_pct", 0)
+        days = a.get("holding_days", 0)
+
+        icon = "🔴" if should_exit and exit_pct >= 100 else ("🟠" if should_exit else "✅")
+        action = "全売却" if should_exit and exit_pct >= 100 else (f"{exit_pct}%売却" if should_exit else "保有継続")
+        pnl_str = f"+{pnl:.1f}%" if pnl >= 0 else f"{pnl:.1f}%"
+
+        fields.append({
+            "name": f"{icon} {ticker} (${current:.2f}) — {action}",
+            "value": f"{reason} | {pnl_str} | {days}日",
+            "inline": False,
+        })
+
+    color = 0xEF4444 if any(a.get("should_exit") for a in alerts) else 0x22C55E
+    return {
+        "embeds": [{
+            "title": f"Exit Signal — {date_str}",
+            "fields": fields,
+            "color": color,
+        }],
+    }
+
+
+def check_exit_signals():
+    """保有銘柄の exit 判定 + Slack/Discord 通知"""
+    if not SLACK_WEBHOOK_URL and not DISCORD_WEBHOOK_URL:
+        return
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    logger.info(f"=== Exit check: {date_str} ===")
+
+    holdings = _fetch_holdings()
+    if not holdings:
+        logger.info("No active holdings, skipping exit check")
+        return
+
+    alerts = []
+    for h in holdings:
+        ticker = h["ticker"]
+        entry_price = float(h["avg_price"])
+        entry_date = str(h.get("entry_date") or "")[:10]
+
+        result = _check_exit(ticker, entry_price, entry_date)
+        if not result:
+            continue
+
+        should_exit = result.get("should_exit", False)
+        urgency = result.get("urgency", "LOW")
+
+        # 保有日数を計算
+        holding_days = 0
+        if entry_date:
+            try:
+                from datetime import date as _date
+                ed = _date.fromisoformat(entry_date)
+                holding_days = (_date.today() - ed).days
+            except Exception:
+                pass
+
+        alert = {
+            "ticker": ticker,
+            "current_price": result.get("current_price", 0),
+            "entry_price": entry_price,
+            "pnl_pct": result.get("pnl_pct", 0),
+            "should_exit": should_exit,
+            "exit_pct": result.get("exit_pct", 0),
+            "exit_reason": result.get("exit_reason", ""),
+            "urgency": urgency,
+            "holding_days": holding_days,
+        }
+
+        # 通知条件: should_exit=true または urgency=HIGH/CRITICAL
+        if should_exit or urgency in ("HIGH", "CRITICAL"):
+            alerts.append(alert)
+
+    logger.info(f"Exit check: {len(alerts)}/{len(holdings)} need attention")
+
+    if not alerts:
+        logger.info("No exit signals, skipping notification")
+        return
+
+    if SLACK_WEBHOOK_URL:
+        _send_slack(_format_exit_slack(alerts, date_str))
+
+    if DISCORD_WEBHOOK_URL:
+        _send_discord(_format_exit_discord(alerts, date_str))
+
+    logger.info("=== Exit check done ===")

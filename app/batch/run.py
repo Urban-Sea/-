@@ -389,8 +389,9 @@ def main():
 
     try:
         if args.notify:
-            from app.batch.notify import check_and_notify
+            from app.batch.notify import check_and_notify, check_exit_signals
             check_and_notify()
+            check_exit_signals()
 
         elif args.snapshot:
             take_daily_snapshot(snapshot_date=end)
