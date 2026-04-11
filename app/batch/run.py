@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timedelta
@@ -302,6 +303,8 @@ def main():
                         help="ポートフォリオスナップショットのみ")
     parser.add_argument("--backfill-snapshots", action="store_true",
                         help="過去の取引履歴からスナップショットをバックフィル")
+    parser.add_argument("--notify", action="store_true",
+                        help="発掘銘柄のentry判定 → Slack/Discord通知")
     parser.add_argument("--since", type=str, help="指定日以降を取得 (YYYY-MM-DD)")
     parser.add_argument("--verbose", "-v", action="store_true", help="DEBUG ログ")
     args = parser.parse_args()
@@ -352,7 +355,7 @@ def main():
         # デフォルト: 3年分
         start = (datetime.now() - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
-    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.daily or args.weekly or args.snapshot or getattr(args, 'backfill_snapshots', False)
+    any_specific = args.fred or args.yahoo or args.srf or args.employment or args.calc or args.daily or args.weekly or args.snapshot or args.notify or getattr(args, 'backfill_snapshots', False)
     t0 = time.time()
 
     # ジョブ種別を決定
@@ -370,6 +373,8 @@ def main():
         job_type = "employment"
     elif args.calc:
         job_type = "calc"
+    elif args.notify:
+        job_type = "notify"
     elif args.snapshot:
         job_type = "snapshot"
     elif getattr(args, 'backfill_snapshots', False):
@@ -383,7 +388,11 @@ def main():
     logger.info(f"=== Batch run: {start} → {end} ({job_type}) ===")
 
     try:
-        if args.snapshot:
+        if args.notify:
+            from app.batch.notify import check_and_notify
+            check_and_notify()
+
+        elif args.snapshot:
             take_daily_snapshot(snapshot_date=end)
 
         elif getattr(args, 'backfill_snapshots', False):

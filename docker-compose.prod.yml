@@ -232,6 +232,8 @@ services:
       # Cache warmup: batch から ?purge=1 で api-go の cache を強制リフレッシュする際の認証ヘッダ
       - WARMUP_TOKEN=${WARMUP_TOKEN:-}
       - WARMUP_BACKEND_URL=${WARMUP_BACKEND_URL:-https://open-regime.com}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
     volumes:
       - /var/log/open-regime/batch:/var/log/open-regime/batch
       - /opt/open-regime/backup:/backup

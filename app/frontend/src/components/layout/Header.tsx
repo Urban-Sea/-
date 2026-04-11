@@ -17,11 +17,7 @@ import {
 } from '@/components/ui/sheet';
 import {
   Home,
-  LayoutDashboard,
-  Droplets,
-  ShieldAlert,
   BarChart3,
-  Briefcase,
   Search,
   X,
   type LucideIcon,
@@ -29,12 +25,8 @@ import {
 
 const navItems: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/', label: 'ホーム', icon: Home },
-  { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
-  { href: '/liquidity', label: '米国金融流動性', icon: Droplets },
-  { href: '/employment', label: '米国景気リスク', icon: ShieldAlert },
   { href: '/discovery', label: '銘柄発掘', icon: Search },
   { href: '/signals', label: '銘柄分析', icon: BarChart3 },
-  { href: '/holdings', label: 'ポートフォリオ', icon: Briefcase },
 ];
 
 const LANDING_NAV: { href: string; label: string }[] = [

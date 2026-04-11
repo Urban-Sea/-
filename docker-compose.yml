@@ -59,6 +59,7 @@ services:
   # --- Python Compute API (signal, regime, exit, stock) ---
   api-python:
     build: ./app/backend
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081", "--log-config", "/app/log_config_stdout.json"]
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
