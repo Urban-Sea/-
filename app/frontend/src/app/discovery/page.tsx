@@ -17,6 +17,7 @@ const PRESET_LABELS: Record<string, { label: string; color: string; description:
   pullback: { label: '押し目', color: 'orange', description: '上昇トレンド中の一時下落' },
   quality: { label: 'ファンダ優良', color: 'green', description: '高ROE × 低PER × 利益成長' },
   breakout: { label: 'ブレイクアウト', color: 'purple', description: '新高値 × 出来高急増' },
+  sustained: { label: '継続上昇', color: 'red', description: 'SMA20>50>200整列 × 半年+30%' },
 };
 
 // ── Sort helpers ──
