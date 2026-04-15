@@ -107,3 +107,7 @@ kronos/
 
 # Go build artifacts
 api-go/server
+
+# Architecture diagram generators (local-only, regenerates tasks/architecture-*.md 図)
+scripts/arch_*.py
+scripts/architecture_diagram.py
