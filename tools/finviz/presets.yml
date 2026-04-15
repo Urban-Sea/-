@@ -62,6 +62,22 @@ breakout:
     "200-Day Simple Moving Average": "Price above SMA200"
     "Price": "Over $10"
 
+# ⑤ Sustained Uptrend: 「ずっと上がり続けている」強いトレンド
+# SMA20 > SMA50 > SMA200 が成立、高値圏キープ、半年・年ベースで大幅プラス。
+# Open Regime の BULL レジームで最も有利に働く銘柄群。
+sustained:
+  module: technical
+  filters:
+    "Industry": "Stocks only (ex-Funds)"
+    "Beta": "Over 0.5"
+    "20-Day Simple Moving Average": "Price above SMA20"
+    "50-Day Simple Moving Average": "Price above SMA50"
+    "200-Day Simple Moving Average": "Price above SMA200"
+    "52-Week High/Low": "0-10% below High"
+    "Performance": "Half +30%"   # 半年 +30% 以上
+    "Average Volume": "Over 1M"
+    "Price": "Over $10"
+
 # スコアリング重み (省略するとデフォルト値が使われる)
 # 詳細: tools/finviz/_scorer.py::DEFAULT_WEIGHTS
 scoring:
@@ -71,3 +87,4 @@ scoring:
     rel_volume_high: 0.6     # Rel Volume > 1.5
     rsi_pullback: 0.5        # 30 < RSI < 50
     quality_fundament: 0.4   # ROE > 15% かつ Debt/Eq < 1.0
+    sustained_uptrend: 0.7   # SMA20>50>200 整列 + 半年 +30% (sustained プリセット想定)

@@ -79,6 +79,7 @@ def main() -> int:
 
     headers = {
         "X-Publish-Token": PUBLISH_TOKEN,
+        "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/json",
     }
 

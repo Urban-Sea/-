@@ -1,0 +1,70 @@
+name: Daily Finviz Discovery
+
+on:
+  schedule:
+    # 平日 7:30 JST = 22:30 UTC (前日)
+    # 米国市場クローズ後 (JST 5:00 = UTC 20:00) から 2.5 時間後
+    - cron: '30 22 * * 0-4'  # UTC 日-木 = JST 月-金
+  workflow_dispatch:
+    inputs:
+      top:
+        description: 'Max tickers to select'
+        default: '50'
+      threshold:
+        description: 'Min finviz_score'
+        default: '1.5'
+      dry_run:
+        description: 'Dry run (skip publish)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-finviz
+  cancel-in-progress: false
+
+jobs:
+  scan-and-publish:
+    name: Scan finviz + publish to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'tools/finviz/requirements.txt'
+
+      - name: Install dependencies
+        working-directory: tools/finviz
+        run: pip install -r requirements.txt
+
+      - name: Run finviz scan (5 presets)
+        working-directory: tools/finviz
+        env:
+          FINVIZ_TOP: ${{ github.event.inputs.top || '50' }}
+          FINVIZ_THRESHOLD: ${{ github.event.inputs.threshold || '1.5' }}
+        run: |
+          python finviz-scan.py \
+            --top "$FINVIZ_TOP" \
+            --threshold "$FINVIZ_THRESHOLD" \
+            --verbose
+
+      - name: Upload scan JSON as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: finviz-scan-${{ github.run_number }}
+          path: tools/finviz/output/*.json
+          retention-days: 30
+
+      - name: Publish to VPS
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        working-directory: tools/finviz
+        env:
+          OPEN_REGIME_API_URL: ${{ secrets.OPEN_REGIME_API_URL }}
+          OPEN_REGIME_PUBLISH_TOKEN: ${{ secrets.OPEN_REGIME_PUBLISH_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: python finviz-publish.py

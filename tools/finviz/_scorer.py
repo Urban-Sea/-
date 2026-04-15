@@ -30,6 +30,7 @@ DEFAULT_WEIGHTS = {
     "rel_volume_high": 0.6,
     "rsi_pullback": 0.5,
     "quality_fundament": 0.4,
+    "sustained_uptrend": 0.7,
 }
 
 
@@ -41,6 +42,7 @@ class ScoreBreakdown:
     rel_volume_high: float = 0.0
     rsi_pullback: float = 0.0
     quality_fundament: float = 0.0
+    sustained_uptrend: float = 0.0
 
     @property
     def total(self) -> float:
@@ -49,7 +51,8 @@ class ScoreBreakdown:
             + self.near_52w_high
             + self.rel_volume_high
             + self.rsi_pullback
-            + self.quality_fundament,
+            + self.quality_fundament
+            + self.sustained_uptrend,
             2,
         )
 
@@ -60,6 +63,7 @@ class ScoreBreakdown:
             "rel_volume_high": self.rel_volume_high,
             "rsi_pullback": self.rsi_pullback,
             "quality_fundament": self.quality_fundament,
+            "sustained_uptrend": self.sustained_uptrend,
             "total": self.total,
         }
 
@@ -105,6 +109,35 @@ def _rsi_pullback(row: Mapping[str, Any]) -> bool:
     return rsi is not None and 30.0 < rsi < 50.0
 
 
+def _sustained_uptrend(row: Mapping[str, Any]) -> float:
+    """継続上昇スコア (0.0-1.0)。
+
+    SMA20 / SMA50 / SMA200 が全て価格より下 (= 価格がすべてのSMA上) で満点 0.6、
+    加えて半年パフォーマンス >=30% なら +0.4 で最大 1.0。
+
+    technical プリセットでは SMA20 カラムは返らないことがあるので、
+    SMA20 が None なら SMA50 > 0 と SMA200 > 0 のみで 0.6 を付ける。
+    Perf Half が None なら上昇整列分のみ。
+    """
+    sma20 = parse_pct(row.get("SMA20"))
+    sma50 = parse_pct(row.get("SMA50"))
+    sma200 = parse_pct(row.get("SMA200"))
+    perf_half = parse_pct(row.get("Perf Half"))
+
+    score = 0.0
+    aligned = (sma50 is not None and sma50 > 0) and (sma200 is not None and sma200 > 0)
+    # SMA20 が取れていれば追加で要件化、なければ 50/200 のみで判定
+    if sma20 is not None:
+        aligned = aligned and sma20 > 0
+    if aligned:
+        score += 0.6
+
+    if perf_half is not None and perf_half >= 0.30:
+        score += 0.4
+
+    return round(score, 4)
+
+
 def _quality_fundament(row: Mapping[str, Any]) -> float:
     """ファンダ品質スコア (0.0-1.0)。
 
@@ -145,6 +178,7 @@ def calc_score(
     bd.rel_volume_high = w["rel_volume_high"] * (1.0 if _rel_volume_high(row) else 0.0)
     bd.rsi_pullback = w["rsi_pullback"] * (1.0 if _rsi_pullback(row) else 0.0)
     bd.quality_fundament = w["quality_fundament"] * _quality_fundament(row)
+    bd.sustained_uptrend = w["sustained_uptrend"] * _sustained_uptrend(row)
     return bd
 
 
