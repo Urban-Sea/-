@@ -495,19 +495,21 @@ function SignalsPage() {
       )}
 
       {/* ── マイポジション ── */}
-      {holdingsData?.holdings?.filter((h: { shares: number }) => h.shares > 0).length > 0 && (
+      {(() => {
+        const activeHoldings = holdingsData?.holdings?.filter((h) => h.shares > 0) ?? [];
+        if (activeHoldings.length === 0) return null;
+        return (
         <div className="rounded-xl border border-[var(--brand-200)] bg-[var(--brand-50)] p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-sm font-bold text-foreground">マイポジション</span>
             <span className="text-xs text-neutral-500">
-              {holdingsData.holdings.filter((h: { shares: number }) => h.shares > 0).length} 銘柄保有中
+              {activeHoldings.length} 銘柄保有中
             </span>
           </div>
           <div className="space-y-2">
-            {holdingsData.holdings
-              .filter((h: { shares: number }) => h.shares > 0)
-              .map((h: { id: string; ticker: string; avg_price: number; entry_date?: string; shares: number }) => (
-                <div key={h.id} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-neutral-200">
+            {activeHoldings
+              .map((h) => (
+                <div key={h.id ?? h.ticker} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-neutral-200">
                   <div className="flex items-center gap-3">
                     <TickerIcon ticker={h.ticker} size={28} />
                     <div>
@@ -529,6 +531,7 @@ function SignalsPage() {
                     </button>
                     <button
                       onClick={async () => {
+                        if (!h.id) return;
                         if (!window.confirm(`${h.ticker} のエントリー記録を取り消しますか？`)) return;
                         try {
                           await deleteHolding(h.id);
@@ -551,7 +554,8 @@ function SignalsPage() {
               ))}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Loading ── */}
       {loading && !batchLoading && <SignalsLoadingSkeleton />}
@@ -974,6 +978,7 @@ function SignalsPage() {
                           {held && (
                             <button
                               onClick={async () => {
+                                if (!held.id) return;
                                 if (!window.confirm(`${signal.ticker} のエントリー記録を取り消しますか？`)) return;
                                 try {
                                   await deleteHolding(held.id);
