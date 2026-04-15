@@ -44,7 +44,7 @@ python tools/finviz/finviz-scan.py
 
 | フラグ | デフォルト | 説明 |
 |---|---|---|
-| `--preset NAME` | `all` | `momentum` / `pullback` / `quality` / `breakout` / `all` |
+| `--preset NAME` | `all` | `momentum` / `pullback` / `quality` / `breakout` / `sustained` / `all` |
 | `--top N` | `50` | グローバル top N で件数キャップ |
 | `--threshold FLOAT` | `1.5` | `finviz_score >=` の閾値 |
 | `--output PATH` | `output/YYYY-MM-DD.json` | 出力 JSON のパス |
@@ -97,7 +97,8 @@ finviz_score = 1.0 * in_uptrend          (SMA200 上)
              + 0.6 * (rel_volume > 1.5)
              + 0.5 * rsi_pullback        (30 < RSI < 50)
              + 0.4 * quality_fundament   (ROE > 15% かつ Debt/Eq < 1.0)
-# 0.00 - 3.30 の連続値
+             + 0.7 * sustained_uptrend   (SMA20>50>200 整列 0.6 + 半年+30% 0.4)
+# 0.00 - 4.00 の連続値
 ```
 
 重みは [presets.yml](presets.yml) の `scoring.weights` で上書き可。
@@ -154,11 +155,69 @@ Python 3.9 以上が必要です (`python3 --version` で確認)。
 ```
 
 将来的には:
-- **Phase B**: `tools/finviz/finviz-publish.py` を追加 (`_scanner.py` を再利用)
+- **Phase B**: `tools/finviz/finviz-publish.py` を追加 (`_scanner.py` を再利用) ✅
 - **Phase C**: open-regime frontend に Discovery タブ
-- **Phase D**: GitHub Actions cron で自動化 (CLI と環境変数でそのまま動く設計)
+- **Phase D**: GitHub Actions cron で自動化 (CLI と環境変数でそのまま動く設計) ✅
 
 詳細: [tasks/finviz-discovery-plan.md](../../tasks/finviz-discovery-plan.md)
+
+## GitHub Actions 自動実行 (Phase D, 2026-04-15 稼働開始)
+
+`.github/workflows/daily-finviz.yml` が JST 7:30 (UTC 22:30) 月〜金 に自動実行し、
+全 5 プリセットをスキャン → VPS (`https://open-regime.com/api/discovery/upsert`)
+に POST して `discovered_stocks` テーブルを更新します。
+
+### なぜ VPS ではなく GitHub Actions なのか
+
+- Finviz の ToS はスクレイピング禁止 → IP BAN リスクがある
+- VPS 固定 IP だと BAN 後の復旧が面倒 (IP 変更、プロキシ設定)
+- GitHub Actions は毎回異なる IP なので BAN されにくく、仮にされても即復活
+- VPS (Sakura 1GB) のメモリを消費しない
+
+### 必要な GitHub Secrets
+
+```bash
+gh secret set OPEN_REGIME_API_URL        -b 'https://open-regime.com'
+gh secret set OPEN_REGIME_PUBLISH_TOKEN  -b '<VPS /opt/open-regime/.env の PUBLISH_TOKEN>'
+# CF Access service token は現在不要 (api.open-regime.com は bypass 設定済み)
+# 必要になったら:
+# gh secret set CF_ACCESS_CLIENT_ID     -b '<service token client id>'
+# gh secret set CF_ACCESS_CLIENT_SECRET -b '<service token client secret>'
+```
+
+### 手動トリガー
+
+```bash
+# dry-run (publish スキップ、JSON 生成のみ) — 初回テスト用
+gh workflow run daily-finviz.yml -f dry_run=true
+
+# 実 publish (デフォルト)
+gh workflow run daily-finviz.yml
+
+# パラメータ上書き
+gh workflow run daily-finviz.yml -f top=100 -f threshold=1.8
+```
+
+### 結果の確認
+
+```bash
+# artifact (JSON) ダウンロード
+gh run list --workflow=daily-finviz.yml --limit 1
+gh run download <RUN_ID> --dir /tmp/finviz-test
+
+# VPS 側で受信確認
+curl -s -H 'X-Requested-With: XMLHttpRequest' \
+  https://open-regime.com/api/discovery/today | jq '.scan_date, (.tickers | length)'
+```
+
+### CSRF ヘッダー注意
+
+`api-go/internal/middleware/csrf.go` が POST に `X-Requested-With` を要求します。
+`finviz-publish.py` は自動で付けますが、curl で手動テストする時は必須:
+
+```bash
+curl -H 'X-Requested-With: XMLHttpRequest' ...
+```
 
 ## ライセンス / 帰属
 
