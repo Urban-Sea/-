@@ -523,11 +523,19 @@ export async function getWatchlists(): Promise<WatchlistsResponse> {
 }
 
 export async function addWatchlistTicker(ticker: string): Promise<void> {
-  await fetchAPI(`/api/watchlist/add-ticker?ticker=${encodeURIComponent(ticker)}`, { method: 'POST' });
+  // Backend: POST /api/watchlist/:id/tickers with body {action, ticker}
+  // id="default" auto-finds or creates the default watchlist.
+  await fetchAPI('/api/watchlist/default/tickers', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'add', ticker }),
+  });
 }
 
 export async function removeWatchlistTicker(ticker: string): Promise<void> {
-  await fetchAPI(`/api/watchlist/remove-ticker?ticker=${encodeURIComponent(ticker)}`, { method: 'POST' });
+  await fetchAPI('/api/watchlist/default/tickers', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'remove', ticker }),
+  });
 }
 
 export function useWatchlist() {

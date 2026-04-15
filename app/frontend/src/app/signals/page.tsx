@@ -110,13 +110,13 @@ function SignalsPage() {
   const { data: wlData, mutate: mutateWl } = useWatchlist();
   const migrated = useRef(false);
 
-  // Sync quickTickers from backend watchlist when available
+  // Sync quickTickers from backend watchlist when available.
+  // 空の watchlist（全削除状態）もそのまま反映する。旧版は length guard があり、
+  // 全削除後にリロードするとデフォルト ticker が復活してしまっていた。
   useEffect(() => {
     if (!wlData?.watchlists?.length) return;
     const defaultWl = wlData.watchlists.find(w => w.is_default) ?? wlData.watchlists[0];
-    if (defaultWl?.tickers?.length) {
-      setQuickTickers(defaultWl.tickers);
-    }
+    setQuickTickers(defaultWl?.tickers ?? []);
   }, [wlData]);
 
   // One-time migration: localStorage → backend on first auth
@@ -204,7 +204,14 @@ function SignalsPage() {
     setNewTickerInput('');
     setShowAddTicker(false);
     if (email) {
-      try { await addWatchlistTicker(tick); mutateWl(); } catch { /* ignore */ }
+      try {
+        await addWatchlistTicker(tick);
+        mutateWl();
+      } catch (err) {
+        console.error('addWatchlistTicker failed:', err);
+        // API 失敗時はバックエンド側の真実に戻す
+        mutateWl();
+      }
     } else {
       localStorage.setItem('quickTickers', JSON.stringify(newList));
     }
@@ -214,7 +221,13 @@ function SignalsPage() {
     const newList = quickTickers.filter(x => x !== t);
     setQuickTickers(newList);
     if (email) {
-      try { await removeWatchlistTicker(t); mutateWl(); } catch { /* ignore */ }
+      try {
+        await removeWatchlistTicker(t);
+        mutateWl();
+      } catch (err) {
+        console.error('removeWatchlistTicker failed:', err);
+        mutateWl();
+      }
     } else {
       localStorage.setItem('quickTickers', JSON.stringify(newList));
     }
@@ -493,69 +506,6 @@ function SignalsPage() {
           </button>
         </div>
       )}
-
-      {/* ── マイポジション ── */}
-      {(() => {
-        const activeHoldings = holdingsData?.holdings?.filter((h) => h.shares > 0) ?? [];
-        if (activeHoldings.length === 0) return null;
-        return (
-        <div className="rounded-xl border border-[var(--brand-200)] bg-[var(--brand-50)] p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-bold text-foreground">マイポジション</span>
-            <span className="text-xs text-neutral-500">
-              {activeHoldings.length} 銘柄保有中
-            </span>
-          </div>
-          <div className="space-y-2">
-            {activeHoldings
-              .map((h) => (
-                <div key={h.id ?? h.ticker} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-neutral-200">
-                  <div className="flex items-center gap-3">
-                    <TickerIcon ticker={h.ticker} size={28} />
-                    <div>
-                      <span className="font-bold text-sm text-foreground">{h.ticker}</span>
-                      <span className="text-xs text-neutral-500 ml-2">
-                        ${h.avg_price?.toFixed(2)} で {h.entry_date?.slice(0, 10) || '日付不明'} に
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setTicker(h.ticker);
-                        handleAnalyze(h.ticker);
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--brand-100)] text-[var(--brand-700)] hover:bg-[var(--brand-200)] transition-colors"
-                    >
-                      分析
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (!h.id) return;
-                        if (!window.confirm(`${h.ticker} のエントリー記録を取り消しますか？`)) return;
-                        try {
-                          await deleteHolding(h.id);
-                          const tradesRes = await getTrades({ ticker: h.ticker, action: 'BUY', limit: 1 });
-                          if (tradesRes?.trades?.[0]) {
-                            await deleteTrade(tradesRes.trades[0].id!);
-                          }
-                          mutateHoldings();
-                        } catch (e) {
-                          console.error('Cancel entry failed:', e);
-                        }
-                      }}
-                      className="px-2 py-1.5 text-xs font-medium rounded-md text-neutral-400 hover:text-[var(--signal-danger-500)] hover:bg-[var(--signal-danger-100)] transition-colors"
-                      title="取り消し"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-        );
-      })()}
 
       {/* ── Loading ── */}
       {loading && !batchLoading && <SignalsLoadingSkeleton />}
