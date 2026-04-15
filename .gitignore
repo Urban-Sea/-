@@ -101,3 +101,9 @@ db/seed/
 
 # Supabase CSV exports (one-time use)
 Supabase Snippet List Public Tables*.csv
+
+# kronos (local-only workspace)
+kronos/
+
+# Go build artifacts
+api-go/server
