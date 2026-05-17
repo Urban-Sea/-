@@ -1,0 +1,109 @@
+# ----------------------------------------------------------------------------
+# security-scan.yml
+#
+# 目的: 依存脆弱性 (Trivy) と SBOM (Syft) を継続的に可視化する。
+# 出力:
+#   - trivy-fs.sarif → GitHub Security タブ (Code Scanning)
+#   - trivy-fs.json  → artifact (30 日保持) ※トリアージ用の生データ
+#   - sbom.spdx.json → artifact (90 日保持) ※リリース間 diff の元データ
+#
+# 設計判断:
+#   - 全 Action を commit SHA で pin (mutable tag の書き換え攻撃を遮断)
+#   - permissions は read を default、SARIF upload のみ write 昇格
+#   - schedule は 18:00 UTC = 03:00 JST 翌日 (低トラフィック帯)
+#   - scan-type=fs のみ。image scan は GHCR pull 型 deploy 移行後に有効化予定
+# ----------------------------------------------------------------------------
+
+name: security-scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-fs:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write  # SARIF upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Run Trivy (SARIF for Code Scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+
+      - name: Upload SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@bc0b696b4103f5fe60f15749af68a046868d511a  # codeql-bundle-v2.25.4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Run Trivy (JSON for triage)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: json
+          output: trivy-fs.json
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+
+      - name: Upload Trivy JSON artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: trivy-fs-json
+          path: trivy-fs.json
+          retention-days: 30
+          if-no-files-found: error
+
+  syft-sbom:
+    name: Syft SBOM (SPDX)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Generate SBOM (SPDX JSON)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+          retention-days: 90
+          if-no-files-found: error
+
+# ----------------------------------------------------------------------------
+# 将来対応 (現状未実装の理由):
+#   - trivy-image: SCP tar 直送デプロイのため CI で image を build していない。
+#                   GHCR pull 型に移行したら needs: build の form で追加する。
+#   - trivy-config: Dockerfile + compose の IaC scan。今回は fs scan に集中する
+#                   ため別 PR で導入予定。
+#   - Cosign / SLSA provenance: GHCR 移行と併せて。
+# ----------------------------------------------------------------------------
