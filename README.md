@@ -61,7 +61,7 @@
 | Cache | **Redis 7** (Alpine, LRU) | キャッシュレイヤー |
 | Proxy | **Nginx** (Alpine) | リバースプロキシ / TLS 終端 |
 | Container | **Docker Compose** | 開発 & 本番オーケストレーション |
-| CDN / DNS | **Cloudflare** (Pages, Access) | CDN / DDoS 防御 / ゼロトラスト |
+| CDN / DNS | **Cloudflare** (DNS Proxy, WAF, Access) | CDN / DDoS 防御 / ゼロトラスト (admin サブドメイン) |
 | Backup | **rclone → Cloudflare R2** | DB バックアップ |
 | Deploy | **SCP → さくら VPS** (1GB) | 本番デプロイ |
 | Logging | **JSON 構造化ログ** | SIEM (Wazuh) 連携 |

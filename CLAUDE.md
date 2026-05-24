@@ -50,3 +50,7 @@
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+
+## Communication
+
+- **必ず日本語で回答すること**: ユーザーへの返答・説明・要約・質問・エラー報告など、すべて日本語で書く。コード内の identifier や英語の固有名詞 (API 名・ライブラリ名・コミットメッセージなど) はそのまま英語で良いが、地の文・解説は日本語で統一する。

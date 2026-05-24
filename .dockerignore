@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+tasks
+tools
+kronos
+demo
+docs
+tests
+node_modules
+.next
+*.pptx

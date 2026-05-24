@@ -73,6 +73,84 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  notify:
+    name: Slack notification
+    needs: [trivy-fs]
+    runs-on: ubuntu-24.04
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Download Trivy JSON
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: trivy-fs-json
+
+      - name: Build and send Slack message
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set, skipping notification"
+            exit 0
+          fi
+
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-fs.json 2>/dev/null || echo 0)
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-fs.json 2>/dev/null || echo 0)
+          TOTAL=$((CRITICAL + HIGH))
+
+          if [ "$TOTAL" -eq 0 ]; then
+            COLOR="#36a64f"
+            STATUS="No HIGH/CRITICAL vulnerabilities found"
+          else
+            COLOR="#ff0000"
+            STATUS="${CRITICAL} CRITICAL, ${HIGH} HIGH vulnerabilities detected"
+          fi
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SECURITY_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/security/code-scanning"
+
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg status "$STATUS" \
+            --arg total "$TOTAL" \
+            --arg run_url "$RUN_URL" \
+            --arg security_url "$SECURITY_URL" \
+            '{
+              attachments: [{
+                color: $color,
+                blocks: [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: ("*Security Scan Report*\n" + $status)
+                    }
+                  },
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Workflow Run" },
+                        url: $run_url
+                      },
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Code Scanning Alerts" },
+                        url: $security_url
+                      }
+                    ]
+                  }
+                ]
+              }]
+            }')
+
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
+
   syft-sbom:
     name: Syft SBOM (SPDX)
     runs-on: ubuntu-24.04

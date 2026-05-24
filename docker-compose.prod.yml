@@ -1,7 +1,7 @@
 services:
   # --- Reverse Proxy ---
   nginx:
-    image: nginx:alpine
+    image: nginx:1.30.1-alpine3.23  # CVE-2026-42945 (rewrite RCE) 修正版。version pin で予期せぬ更新を防止
     ports:
       - "80:80"
       - "443:443"
@@ -37,7 +37,7 @@ services:
 
   # --- PostgreSQL (tuned for 1GB VPS) ---
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine3.21
     command:
       - postgres
       - -c
