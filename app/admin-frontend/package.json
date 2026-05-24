@@ -21,7 +21,8 @@
     "tailwind-merge": "^3.5.0"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "picomatch": "^4.0.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

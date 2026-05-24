@@ -16,7 +16,7 @@ slowapi==0.1.9
 pyotp==2.9.0
 qrcode[pil]==8.0
 PyJWT>=2.8.0,<3.0.0
-cryptography>=43.0.0,<44.0.0
+cryptography>=46.0.5,<49.0.0
 
 # Monitoring
 sentry-sdk[fastapi]>=2.0.0,<3.0.0
