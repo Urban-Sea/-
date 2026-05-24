@@ -75,15 +75,16 @@ jobs:
 
   notify:
     name: Slack notification
-    needs: [trivy-fs]
+    needs: [trivy-fs, trivy-image]
     runs-on: ubuntu-24.04
     if: always()
     timeout-minutes: 5
     steps:
-      - name: Download Trivy JSON
+      - name: Download all Trivy artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: trivy-fs-json
+          pattern: trivy-*
+          merge-multiple: true
 
       - name: Build and send Slack message
         env:
@@ -97,16 +98,41 @@ jobs:
             exit 0
           fi
 
-          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-fs.json 2>/dev/null || echo 0)
-          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-fs.json 2>/dev/null || echo 0)
-          TOTAL=$((CRITICAL + HIGH))
+          # fs scan results
+          FS_CRITICAL=0; FS_HIGH=0
+          if [ -f trivy-fs.json ]; then
+            FS_CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-fs.json 2>/dev/null || echo 0)
+            FS_HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-fs.json 2>/dev/null || echo 0)
+          fi
+
+          # image scan results
+          IMG_LINES=""
+          IMG_TOTAL_C=0; IMG_TOTAL_H=0
+          for f in trivy-image-*.json; do
+            [ -f "$f" ] || continue
+            NAME=$(echo "$f" | sed 's/trivy-image-//;s/\.json//')
+            C=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "$f" 2>/dev/null || echo 0)
+            H=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "$f" 2>/dev/null || echo 0)
+            IMG_TOTAL_C=$((IMG_TOTAL_C + C))
+            IMG_TOTAL_H=$((IMG_TOTAL_H + H))
+            IMG_LINES="${IMG_LINES}  ${NAME}: C:${C} H:${H}\n"
+          done
+
+          TOTAL_C=$((FS_CRITICAL + IMG_TOTAL_C))
+          TOTAL_H=$((FS_HIGH + IMG_TOTAL_H))
+          TOTAL=$((TOTAL_C + TOTAL_H))
 
           if [ "$TOTAL" -eq 0 ]; then
             COLOR="#36a64f"
             STATUS="No HIGH/CRITICAL vulnerabilities found"
           else
             COLOR="#ff0000"
-            STATUS="${CRITICAL} CRITICAL, ${HIGH} HIGH vulnerabilities detected"
+            STATUS="${TOTAL_C} CRITICAL, ${TOTAL_H} HIGH vulnerabilities detected"
+          fi
+
+          DETAIL="*FS scan:* C:${FS_CRITICAL} H:${FS_HIGH}"
+          if [ -n "$IMG_LINES" ]; then
+            DETAIL="${DETAIL}\n*Image scan:*\n${IMG_LINES}"
           fi
 
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -115,7 +141,7 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg color "$COLOR" \
             --arg status "$STATUS" \
-            --arg total "$TOTAL" \
+            --arg detail "$DETAIL" \
             --arg run_url "$RUN_URL" \
             --arg security_url "$SECURITY_URL" \
             '{
@@ -126,7 +152,7 @@ jobs:
                     type: "section",
                     text: {
                       type: "mrkdwn",
-                      text: ("*Security Scan Report*\n" + $status)
+                      text: ("*Security Scan Report*\n" + $status + "\n\n" + $detail)
                     }
                   },
                   {
@@ -177,11 +203,62 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+  trivy-image:
+    name: Trivy image scan (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: open-regime-frontend
+            context: ./app/frontend
+            dockerfile: ./app/frontend/Dockerfile
+          - image: open-regime-admin
+            context: ./app/admin-frontend
+            dockerfile: ./app/admin-frontend/Dockerfile
+          - image: open-regime-api-python
+            context: ./app/backend
+            dockerfile: ./app/backend/Dockerfile
+          - image: open-regime-api-go
+            context: ./api-go
+            dockerfile: ./api-go/Dockerfile
+          - image: open-regime-batch
+            context: .
+            dockerfile: ./app/batch/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Build image
+        run: docker build -t ${{ matrix.image }}:scan -f ${{ matrix.dockerfile }} ${{ matrix.context }}
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:scan
+          format: json
+          output: trivy-image-${{ matrix.image }}.json
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+
+      - name: Print summary
+        run: |
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-image-${{ matrix.image }}.json 2>/dev/null || echo 0)
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-image-${{ matrix.image }}.json 2>/dev/null || echo 0)
+          echo "### ${{ matrix.image }}: ${CRITICAL} CRITICAL, ${HIGH} HIGH" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload scan result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: trivy-image-${{ matrix.image }}
+          path: trivy-image-${{ matrix.image }}.json
+          retention-days: 30
+          if-no-files-found: error
+
 # ----------------------------------------------------------------------------
-# 将来対応 (現状未実装の理由):
-#   - trivy-image: SCP tar 直送デプロイのため CI で image を build していない。
-#                   GHCR pull 型に移行したら needs: build の form で追加する。
-#   - trivy-config: Dockerfile + compose の IaC scan。今回は fs scan に集中する
-#                   ため別 PR で導入予定。
+# 将来対応:
 #   - Cosign / SLSA provenance: GHCR 移行と併せて。
 # ----------------------------------------------------------------------------
