@@ -233,6 +233,7 @@ jobs:
             if [ "$HEALTHY" = true ]; then
               rm -f images/*.tar.gz
               docker image prune -f
+              echo "DEPLOY_STATUS=success" >> /tmp/deploy-result
             else
               echo "Health check failed after 30 attempts — rolling back"
               for img in api-python api-go frontend admin batch; do
@@ -240,5 +241,73 @@ jobs:
                 [ -n "$OLD_ID" ] && docker tag "$OLD_ID" "open-regime-$img:latest"
               done
               docker compose -f docker-compose.prod.yml up -d --pull never
+              echo "DEPLOY_STATUS=rollback" >> /tmp/deploy-result
               exit 1
             fi
+
+  notify:
+    name: Slack deploy notification
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send Slack notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set, skipping"
+            exit 0
+          fi
+
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            COLOR="#36a64f"
+            STATUS="Deploy succeeded"
+          elif [ "$DEPLOY_RESULT" = "skipped" ]; then
+            COLOR="#cccccc"
+            STATUS="Deploy skipped (no changes)"
+          else
+            COLOR="#ff0000"
+            STATUS="Deploy failed — rolled back"
+          fi
+
+          TITLE=$(echo "$COMMIT_MSG" | head -1)
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg status "$STATUS" \
+            --arg title "$TITLE" \
+            --arg run_url "$RUN_URL" \
+            '{
+              attachments: [{
+                color: $color,
+                blocks: [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: ("*" + $status + "*\n" + $title)
+                    }
+                  },
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Workflow Run" },
+                        url: $run_url
+                      }
+                    ]
+                  }
+                ]
+              }]
+            }')
+
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
