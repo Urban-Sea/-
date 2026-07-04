@@ -1,7 +1,7 @@
 FROM python:3.12-slim AS builder
 WORKDIR /build
 
-ARG RCLONE_VERSION=1.74.1
+ARG RCLONE_VERSION=1.74.3
 RUN apt-get update && apt-get install -y --no-install-recommends curl unzip \
     && curl -fsSL "https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip" \
        -o /tmp/rclone.zip \
