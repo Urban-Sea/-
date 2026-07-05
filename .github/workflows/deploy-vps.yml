@@ -16,11 +16,16 @@ concurrency:
   group: deploy-vps
   cancel-in-progress: false
 
+# 既定は最小権限 (空)。各ジョブで必要な分だけ付与する
+permissions: {}
+
 jobs:
   # ─── Job 1: Detect which services changed ───
   detect-changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       api-python: ${{ steps.filter.outputs.api-python }}
       api-go: ${{ steps.filter.outputs.api-go }}
@@ -29,9 +34,9 @@ jobs:
       batch: ${{ steps.filter.outputs.batch }}
       infra: ${{ steps.filter.outputs.infra }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         if: github.event_name == 'push'
         with:
@@ -65,13 +70,15 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api-python == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build image
         run: docker build -t open-regime-api-python:latest ./app/backend
       - name: Save and compress
         run: docker save open-regime-api-python:latest | gzip > open-regime-api-python.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-api-python
           path: open-regime-api-python.tar.gz
@@ -82,13 +89,15 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api-go == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build image
         run: docker build -t open-regime-api-go:latest ./api-go
       - name: Save and compress
         run: docker save open-regime-api-go:latest | gzip > open-regime-api-go.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-api-go
           path: open-regime-api-go.tar.gz
@@ -99,13 +108,15 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build image
         run: docker build -t open-regime-frontend:latest ./app/frontend
       - name: Save and compress
         run: docker save open-regime-frontend:latest | gzip > open-regime-frontend.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-frontend
           path: open-regime-frontend.tar.gz
@@ -116,13 +127,15 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.admin == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build image
         run: docker build -t open-regime-admin:latest ./app/admin-frontend
       - name: Save and compress
         run: docker save open-regime-admin:latest | gzip > open-regime-admin.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-admin
           path: open-regime-admin.tar.gz
@@ -133,13 +146,15 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.batch == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build image
         run: docker build -t open-regime-batch:latest -f app/batch/Dockerfile .
       - name: Save and compress
         run: docker save open-regime-batch:latest | gzip > open-regime-batch.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-batch
           path: open-regime-batch.tar.gz
@@ -159,12 +174,14 @@ jobs:
         needs.detect-changes.outputs.infra == 'true'
       )
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       # Download all image artifacts (only those that exist)
       - name: Download image artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: image-*
           merge-multiple: true
@@ -173,7 +190,7 @@ jobs:
 
       # SCP infrastructure files
       - name: Transfer infra files
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -184,7 +201,7 @@ jobs:
 
       # SCP image tar.gz files (if any were built)
       - name: Transfer images
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         if: hashFiles('images/*.tar.gz') != ''
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -196,7 +213,7 @@ jobs:
 
       # SSH: load images, deploy, health check
       - name: Deploy
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

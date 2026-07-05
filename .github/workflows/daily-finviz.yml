@@ -22,16 +22,21 @@ concurrency:
   group: daily-finviz
   cancel-in-progress: false
 
+# 既定は最小権限 (空)。ジョブで必要な分だけ付与する
+permissions: {}
+
 jobs:
   scan-and-publish:
     name: Scan finviz + publish to VPS
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -53,7 +58,7 @@ jobs:
             --verbose
 
       - name: Upload scan JSON as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: finviz-scan-${{ github.run_number }}
           path: tools/finviz/output/*.json
