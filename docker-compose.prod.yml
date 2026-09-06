@@ -2,6 +2,13 @@ services:
   # --- Reverse Proxy ---
   nginx:
     image: nginx:1.30.1-alpine3.23  # CVE-2026-42945 (rewrite RCE) 修正版。version pin で予期せぬ更新を防止
+    # --- ハードニング (2026-09) ---
+    # master は root、worker は nginx ユーザー。cap_drop ALL 後に必要な分だけ戻す。
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, NET_BIND_SERVICE]
+    networks: [edge]
     ports:
       - "80:80"
       - "443:443"
@@ -38,6 +45,14 @@ services:
   # --- PostgreSQL (tuned for 1GB VPS) ---
   postgres:
     image: postgres:16.9-alpine3.21
+    # --- ハードニング (2026-09) ---
+    # entrypoint が root → su-exec postgres するので SETUID/SETGID/CHOWN 系が要る。
+    # backend は internal ネットワーク = 外向き通信なし・nginx から到達不可。
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    networks: [backend]
     command:
       - postgres
       - -c
@@ -88,11 +103,21 @@ services:
   # --- Redis ---
   redis:
     image: redis:7-alpine
+    # --- ハードニング (2026-09) ---
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    networks: [backend]
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis_data:/data
+    environment:
+      # redis-cli -a はコマンドライン引数にパスワードが乗り ps から見える。
+      # REDISCLI_AUTH 経由にして healthcheck プロセスの argv から外す。
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -108,6 +133,11 @@ services:
   # --- Python Compute API (signal, regime, exit, stock) ---
   api-python:
     image: open-regime-api-python:latest
+    # --- ハードニング (2026-09) --- USER appuser で起動するため cap は全部落とせる
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [edge, backend]
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -138,6 +168,11 @@ services:
   # --- Go CRUD API (auth, CRUD, Stripe) ---
   api-go:
     image: open-regime-api-go:latest
+    # --- ハードニング (2026-09) --- distroless nonroot (65532) なので cap は全部落とせる
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [edge, backend]
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -179,6 +214,11 @@ services:
   # --- Frontend (Next.js SSR) ---
   frontend:
     image: open-regime-frontend:latest
+    # --- ハードニング (2026-09) --- USER nextjs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [edge]
     environment:
       - NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN:-}
       - NEXT_PUBLIC_GA_ID=${GA_ID:-}
@@ -197,6 +237,11 @@ services:
   # --- Admin Frontend (Next.js SSR) ---
   admin-frontend:
     image: open-regime-admin:latest
+    # --- ハードニング (2026-09) --- USER nextjs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [edge]
     environment:
       - PORT=3002
       - NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN:-}
@@ -217,6 +262,11 @@ services:
   # --- Batch (on-demand via docker compose run) ---
   batch:
     image: open-regime-batch:latest
+    # --- ハードニング (2026-09) --- USER appuser。R2/FRED への外向き通信があるので edge にも所属
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [edge, backend]
     profiles: [tools]
     environment:
       - DB_HOST=postgres
@@ -254,3 +304,13 @@ services:
 volumes:
   pg_data:
   redis_data:
+
+networks:
+  # nginx が受ける側 + 外向き通信が要るサービス
+  edge:
+    driver: bridge
+  # postgres / redis を隔離。internal:true で外部ネットワークへの経路を持たない。
+  # nginx は backend に居ないので、nginx 侵害から DB への横移動が直接はできない。
+  backend:
+    driver: bridge
+    internal: true

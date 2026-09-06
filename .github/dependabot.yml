@@ -1,0 +1,109 @@
+# 依存の脆弱性追従を自動化する設定。
+# 2026-07 に Trivy 指摘を全消化したあと 2 ヶ月で CRITICAL 1 / HIGH 17 が再蓄積したため、
+# 「検出 (security-scan.yml) だけあって追従がない」状態を埋める目的で追加。
+version: 2
+updates:
+  # --- Go (api-go) ---
+  - package-ecosystem: gomod
+    directory: /api-go
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+
+  # --- npm (frontend / admin-frontend) ---
+  - package-ecosystem: npm
+    directory: /app/frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /app/admin-frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  # --- pip (backend / batch / finviz ツール) ---
+  - package-ecosystem: pip
+    directory: /app/backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+
+  - package-ecosystem: pip
+    directory: /app/batch
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+
+  - package-ecosystem: pip
+    directory: /tools/finviz
+    schedule:
+      interval: monthly
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "fix(deps)"
+
+  # --- Docker ベースイメージ ---
+  - package-ecosystem: docker
+    directories:
+      - /api-go
+      - /app/backend
+      - /app/batch
+      - /app/frontend
+      - /app/admin-frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+
+  # --- GitHub Actions (SHA pin 済のため digest 追従が要る) ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
