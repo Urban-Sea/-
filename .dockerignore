@@ -1,12 +1,45 @@
+# batch は repo root をビルドコンテキストにしている (-f app/batch/Dockerfile .)。
+# 秘密ファイルと巨大ディレクトリを Docker daemon に送らないための除外。
+# 注意: Docker の除外パターンはパス先頭からのマッチなので、入れ子を消すには ** が要る。
+
+# --- 秘密 ---
+.env
+.env.*
+ssl
+*.pem
+*.key
+
+# --- VCS / エディタ / エージェント ---
 .git
 .github
 .claude
-tasks
-tools
+.agent
+.agents
+.DS_Store
+
+# --- ビルド成果物・依存 ---
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.wrangler
+
+# --- batch ビルドに不要なサブプロジェクト ---
+api-go
+app/frontend
+app/admin-frontend
 kronos
 demo
 docs
+tasks
 tests
-node_modules
-.next
+tools
+
+# --- 資料類 ---
 *.pptx
+*.csv
+*.png
+*.jpeg
+*.jpg
+*.html

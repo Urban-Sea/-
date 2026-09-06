@@ -40,6 +40,19 @@ server {
     # HSTS — force browsers to use HTTPS for 1 year
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
+    # --- セキュリティヘッダー (2026-09 追加) ---
+    # nginx の add_header は location 側に add_header があると server 側の分が全部消える。
+    # 現状 location 側で add_header を使っているのは /health (Content-Type) だけなので、
+    # そこだけヘッダーが付かない (静的な 'ok' のみなので影響なし)。
+    # 値は api-go の security ミドルウェアと揃えてある (/api/ 応答での重複は同値なので無害)。
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-XSS-Protection "0" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.jsdelivr.net https://*.googleusercontent.com https://www.google-analytics.com; font-src 'self' data:; connect-src 'self' https://www.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io; frame-src 'none'; upgrade-insecure-requests" always;
+
     # Upstream endpoints as variables (forces DNS re-resolution per request)
     set $upstream_api_python http://api-python:8081;
     set $upstream_api_go     http://api-go:8080;
@@ -101,6 +114,19 @@ server {
     ssl_certificate_key /etc/nginx/ssl/origin-key.pem;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # --- セキュリティヘッダー (2026-09 追加) ---
+    # nginx の add_header は location 側に add_header があると server 側の分が全部消える。
+    # 現状 location 側で add_header を使っているのは /health (Content-Type) だけなので、
+    # そこだけヘッダーが付かない (静的な 'ok' のみなので影響なし)。
+    # 値は api-go の security ミドルウェアと揃えてある (/api/ 応答での重複は同値なので無害)。
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-XSS-Protection "0" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self'; frame-src 'none'; upgrade-insecure-requests" always;
 
     # Upstream endpoints as variables (forces DNS re-resolution per request)
     set $upstream_api_go_admin     http://api-go:8080;

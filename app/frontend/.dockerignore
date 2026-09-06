@@ -1,6 +1,15 @@
+# node_modules は deps ステージ (npm ci) が作るものを使う。
+# ホスト側の node_modules を COPY . . で上書きすると、sharp のような
+# ネイティブモジュールが darwin バイナリのまま Linux イメージに入る。
 node_modules
 .next
 out
 out 4
-.env*
 *.tsbuildinfo
+
+# ビルド時に拾わせない (CI と手元でビルド結果が変わる原因になる)
+.env*
+
+.git
+.DS_Store
+npm-debug.log*

@@ -12,7 +12,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.574.0",
-    "next": "^15.5.18",
+    "next": "^15.5.21",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.4.3",
     "react": "^18.3.1",
@@ -21,8 +21,10 @@
     "tailwind-merge": "^3.5.0"
   },
   "overrides": {
-    "postcss": "^8.5.10",
-    "picomatch": "^4.0.4"
+    "postcss": "^8.5.23",
+    "picomatch": "^4.0.4",
+    "nanoid": "^3.3.18",
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -235,12 +235,22 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --remove-orphans --pull never
 
             # Health check with retry (max 60s)
+            #
+            # 旧実装は http://localhost/health を見ていたが、:80 の server ブロックは
+            # 301 を返すだけなので「nginx が起動している」以上のことを何も保証しておらず、
+            # frontend / api-go が死んでいてもデプロイが success になっていた (Q6 監査 M18)。
+            # https + Host ヘッダで実際の経路を 3 点確認する:
+            #   1. nginx        -> /health が 200 'ok'
+            #   2. frontend SSR -> / が 2xx (Next.js standalone が応答している)
+            #   3. api-go       -> /api/auth/me が 401 (認証が効いた上でプロセス生存。502 なら死)
             echo "Waiting for health check..."
             HEALTHY=false
             for i in $(seq 1 30); do
-              if curl -sf -H "Host: open-regime.com" http://localhost/health > /dev/null 2>&1; then
+              if curl -skf -H "Host: open-regime.com" https://localhost/health > /dev/null 2>&1 \
+                 && curl -skf -o /dev/null -H "Host: open-regime.com" https://localhost/ \
+                 && [ "$(curl -sk -o /dev/null -w '%{http_code}' -H 'Host: open-regime.com' https://localhost/api/auth/me)" = "401" ]; then
                 HEALTHY=true
-                echo "Health check passed (attempt $i)"
+                echo "Health check passed (attempt $i): nginx + frontend + api-go"
                 break
               fi
               echo "Attempt $i/30 failed, retrying in 2s..."
