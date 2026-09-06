@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 
 ARG RCLONE_VERSION=1.74.3
@@ -16,7 +16,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY app/batch/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.12-slim AS runner
+FROM python:3.14-slim AS runner
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
