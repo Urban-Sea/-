@@ -5,7 +5,7 @@
 #
 # 完全 pin の理由: FinViz の HTML 変更で finvizfinance の挙動が変わる可能性があり、
 # 再現性最優先で固定する。アップデートは pip install -U で明示的に行う。
-finvizfinance==1.3.0
+finvizfinance==1.5.0
 
 # pandas メジャーバージョンは app/backend/requirements.txt (pandas==2.2.0) と整合
 pandas>=2.2.0,<3.0.0
