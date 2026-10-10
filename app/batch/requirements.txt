@@ -1,5 +1,5 @@
 # Batch processing dependencies
-psycopg2-binary>=2.9.0,<3.0.0
+psycopg2-binary>=2.9.12,<3.0.0
 pandas>=2.2.0,<3.0.0
 numpy>=1.26.0,<2.0.0
 yfinance>=0.2.40
