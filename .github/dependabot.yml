@@ -1,6 +1,9 @@
 # 依存の脆弱性追従を自動化する設定。
 # 2026-07 に Trivy 指摘を全消化したあと 2 ヶ月で CRITICAL 1 / HIGH 17 が再蓄積したため、
 # 「検出 (security-scan.yml) だけあって追従がない」状態を埋める目的で追加。
+# 2026-11-27 一時停止中: 全 ecosystem の open-pull-requests-limit を 0 にしている。
+# 再開するときは、この行を含むコミットを revert し、リポジトリ設定の
+# "Dependabot security updates" を有効に戻す。
 version: 2
 updates:
   # --- Go (api-go) ---
@@ -11,7 +14,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -33,7 +36,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -54,7 +57,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -76,7 +79,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -94,7 +97,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -110,7 +113,7 @@ updates:
     schedule:
       interval: monthly
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -134,7 +137,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
@@ -153,7 +156,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # major は自動 PR にしない。next 15->16 や typescript 5->7 のような破壊的変更が
       # 週次で大量に積まれると、結局「通知が多すぎて誰も見ない」状態に戻るため。
